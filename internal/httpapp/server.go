@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"log/slog"
 	"net"
 	"net/http"
 	"time"
@@ -13,7 +12,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 
-	"github.com/stohirov/database-ide/internal/postgres"
+	"github.com/stohirov/database-ide/internal/manager"
 	"github.com/stohirov/database-ide/internal/webassets"
 )
 
@@ -28,18 +27,13 @@ const (
 	maxHeaderBytes    = 1 << 16 // 64 KiB
 )
 
-// PGQuerier is the M0 slice of the PostgreSQL adapter the API depends on.
-type PGQuerier interface {
-	SelectOne(ctx context.Context) (*postgres.Result, error)
-}
-
-// Config carries everything the HTTP layer needs. A nil PG or Assets is a
-// documented, user-visible degraded state rather than a startup failure.
+// Config carries everything the HTTP layer needs. A nil Assets is a documented,
+// user-visible degraded state rather than a startup failure.
 type Config struct {
 	Version string
 	Token   string
 	Assets  fs.FS
-	PG      PGQuerier
+	Manager *manager.Manager
 	// ExtraOrigins allows the Vite dev server origin during frontend work.
 	ExtraOrigins []string
 }
@@ -131,7 +125,21 @@ func NewHandler(cfg Config, origins []string) http.Handler {
 		writeError(w, http.StatusMethodNotAllowed, CodeMethod, "That method is not allowed on this route.")
 	})
 	api.Get("/health", cfg.handleHealth)
-	api.Post("/bootstrap/select-one", cfg.handleSelectOne)
+
+	api.Get("/auth/status", cfg.handleAuthStatus)
+	api.Post("/auth/setup", cfg.handleAuthSetup)
+	api.Post("/auth/unlock", cfg.handleAuthUnlock)
+	api.Post("/auth/lock", cfg.handleAuthLock)
+
+	// Registered flat rather than nested so /api/connections resolves without
+	// depending on a trailing-slash redirect.
+	api.Get("/connections", cfg.handleListConnections)
+	api.Post("/connections", cfg.handleCreateConnection)
+	api.Put("/connections/{id}", cfg.handleUpdateConnection)
+	api.Delete("/connections/{id}", cfg.handleDeleteConnection)
+	api.Post("/connections/{id}/test", cfg.handleTestConnection)
+	api.Post("/connections/{id}/open", cfg.handleOpenConnection)
+	api.Post("/connections/{id}/close", cfg.handleCloseConnection)
 
 	r.Mount("/api", api)
 
@@ -146,42 +154,12 @@ func NewHandler(cfg Config, origins []string) http.Handler {
 }
 
 type healthResponse struct {
-	Status   string `json:"status"`
-	Version  string `json:"version"`
-	Database string `json:"database"` // "configured" | "not_configured"
+	Status  string `json:"status"`
+	Version string `json:"version"`
 }
 
 func (c Config) handleHealth(w http.ResponseWriter, _ *http.Request) {
-	db := "not_configured"
-	if c.PG != nil {
-		db = "configured"
-	}
-	writeJSON(w, http.StatusOK, healthResponse{Status: "ok", Version: c.Version, Database: db})
-}
-
-// handleSelectOne is M0 scaffolding: it ignores any request body and runs one
-// fixed statement. M2 replaces it with the real query endpoint.
-func (c Config) handleSelectOne(w http.ResponseWriter, r *http.Request) {
-	if c.PG == nil {
-		writeError(w, http.StatusServiceUnavailable, CodeDBUnavailable,
-			"No PostgreSQL connection is configured. Set DBIDE_DEV_POSTGRES_DSN and restart.")
-		return
-	}
-	res, err := c.PG.SelectOne(r.Context())
-	if err != nil {
-		f := postgres.Classify(err)
-		slog.Warn("bootstrap query failed", "component", "httpapp", "code", f.Code)
-		status := http.StatusBadGateway
-		switch f.Code {
-		case "query_failed":
-			status = http.StatusUnprocessableEntity
-		case "query_timeout", "query_cancelled":
-			status = http.StatusGatewayTimeout
-		}
-		writeError(w, status, f.Code, f.Message)
-		return
-	}
-	writeJSON(w, http.StatusOK, res)
+	writeJSON(w, http.StatusOK, healthResponse{Status: "ok", Version: c.Version})
 }
 
 func notBuiltHandler(w http.ResponseWriter, _ *http.Request) {

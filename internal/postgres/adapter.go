@@ -1,8 +1,9 @@
-// Package postgres holds the M0 PostgreSQL round-trip scaffolding.
+// Package postgres adapts a stored connection to a live PostgreSQL client and
+// converts driver errors into safe, user-facing failures.
 //
-// SCAFFOLDING: the single hardcoded connection and the fixed statement below
-// are replaced by the connection registry in M1 and the real query path in M2.
-// Nothing outside this package should grow to depend on the fixed query.
+// Clients are always built from individual fields. A connection URL is never
+// assembled, so a password cannot leak into a log line, an error string, or a
+// process listing.
 package postgres
 
 import (
@@ -13,12 +14,6 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgconn"
-	"github.com/jackc/pgx/v5/pgxpool"
-)
-
-const (
-	connectTimeout = 5 * time.Second
-	queryTimeout   = 10 * time.Second
 )
 
 // Column describes one result column. This mirrors the shape M2 will use so the
@@ -37,87 +32,6 @@ type Result struct {
 	Rows       [][]any  `json:"rows"`
 	RowCount   int      `json:"rowCount"`
 	DurationMs int64    `json:"durationMs"`
-}
-
-// Adapter owns one pgx pool.
-type Adapter struct {
-	pool *pgxpool.Pool
-}
-
-// Open parses dsn and creates a lazily-connecting pool. It does not dial; use
-// Ping to verify reachability.
-func Open(dsn string) (*Adapter, error) {
-	cfg, err := pgxpool.ParseConfig(dsn)
-	if err != nil {
-		// The DSN may embed a password; never surface the parse input.
-		return nil, fmt.Errorf("%w: connection string is not valid", ErrConfig)
-	}
-	cfg.MaxConns = 4
-	cfg.ConnConfig.ConnectTimeout = connectTimeout
-
-	pool, err := pgxpool.NewWithConfig(context.Background(), cfg)
-	if err != nil {
-		return nil, fmt.Errorf("%w: pool could not be created", ErrConfig)
-	}
-	return &Adapter{pool: pool}, nil
-}
-
-// Ping verifies the database is reachable.
-func (a *Adapter) Ping(ctx context.Context) error {
-	ctx, cancel := context.WithTimeout(ctx, connectTimeout)
-	defer cancel()
-	return a.pool.Ping(ctx)
-}
-
-// Close releases all pooled connections.
-func (a *Adapter) Close() {
-	if a != nil && a.pool != nil {
-		a.pool.Close()
-	}
-}
-
-// SelectOne executes the literal bootstrap statement. User-supplied SQL is
-// deliberately not accepted in M0.
-func (a *Adapter) SelectOne(ctx context.Context) (*Result, error) {
-	return a.queryFixed(ctx, "SELECT 1 AS value")
-}
-
-func (a *Adapter) queryFixed(ctx context.Context, sql string) (*Result, error) {
-	ctx, cancel := context.WithTimeout(ctx, queryTimeout)
-	defer cancel()
-
-	start := time.Now()
-	rows, err := a.pool.Query(ctx, sql)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	fields := rows.FieldDescriptions()
-	cols := make([]Column, len(fields))
-	for i, f := range fields {
-		cols[i] = Column{Name: f.Name, TypeOID: f.DataTypeOID, TypeName: typeName(f.DataTypeOID)}
-	}
-
-	out := &Result{Columns: cols, Rows: [][]any{}}
-	for rows.Next() {
-		vals, err := rows.Values()
-		if err != nil {
-			return nil, err
-		}
-		encoded := make([]any, len(vals))
-		for i, v := range vals {
-			encoded[i] = encode(v)
-		}
-		out.Rows = append(out.Rows, encoded)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-
-	out.RowCount = len(out.Rows)
-	out.DurationMs = time.Since(start).Milliseconds()
-	return out, nil
 }
 
 // encode stringifies a value so JSON round-trips it exactly. Booleans and nulls
@@ -185,9 +99,21 @@ func typeName(oid uint32) string {
 // ErrConfig marks an unusable connection configuration.
 var ErrConfig = errors.New("postgres configuration error")
 
+// Failure codes shared with the frontend. Keep them stable.
+const (
+	CodeUnavailable    = "database_unavailable"
+	CodeConnectTimeout = "connect_timeout"
+	CodeAuthFailed     = "authentication_failed"
+	CodeTLSFailed      = "tls_verification_failed"
+	CodeQueryFailed    = "query_failed"
+	CodeQueryTimeout   = "query_timeout"
+	CodeCancelled      = "query_cancelled"
+	CodeUnsupported    = "unsupported_configuration"
+)
+
 // Failure is the safe, classified form of a driver error. It never carries a
-// DSN, a stack trace, or the driver's internal error text verbatim unless that
-// text came from the server as a SQL error message.
+// DSN, a password, or driver internals; the one exception is a message the
+// server itself sent in response to our statement.
 type Failure struct {
 	Code    string
 	Message string
@@ -199,23 +125,52 @@ func Classify(err error) Failure {
 	switch {
 	case err == nil:
 		return Failure{}
-	case errors.Is(err, context.DeadlineExceeded):
-		return Failure{Code: "query_timeout", Message: "The query exceeded the time limit and was cancelled."}
 	case errors.Is(err, context.Canceled):
-		return Failure{Code: "query_cancelled", Message: "The query was cancelled."}
+		return Failure{Code: CodeCancelled, Message: "The operation was cancelled."}
 	case errors.Is(err, ErrConfig):
-		return Failure{Code: "database_unavailable", Message: "The PostgreSQL connection is not configured correctly."}
+		return Failure{Code: CodeUnsupported, Message: "This connection configuration is not supported."}
 	}
 
 	var pgErr *pgconn.PgError
 	if errors.As(err, &pgErr) {
+		if isAuthCode(pgErr.Code) {
+			return Failure{Code: CodeAuthFailed, Message: "The server rejected the username or password."}
+		}
 		// A PgError is a server response to our statement: safe to show.
-		return Failure{Code: "query_failed", Message: pgErr.Severity + " " + pgErr.Code + ": " + pgErr.Message}
+		return Failure{Code: CodeQueryFailed, Message: pgErr.Severity + " " + pgErr.Code + ": " + pgErr.Message}
 	}
 
-	var connErr *pgconn.ConnectError
-	if errors.As(err, &connErr) {
-		return Failure{Code: "database_unavailable", Message: "PostgreSQL could not be reached."}
+	if f, ok := classifyTLS(err); ok {
+		return f
 	}
-	return Failure{Code: "database_unavailable", Message: "PostgreSQL could not be reached."}
+
+	// A deadline during connect is a timeout reaching the host; during a query
+	// it is a statement that ran too long. The caller distinguishes them by
+	// which operation it was running, so report the transport case here only
+	// when the error came from dialling.
+	if errors.Is(err, context.DeadlineExceeded) || isTimeout(err) {
+		var connErr *pgconn.ConnectError
+		if errors.As(err, &connErr) {
+			return Failure{Code: CodeConnectTimeout, Message: "Could not reach the host before the timeout."}
+		}
+		return Failure{Code: CodeQueryTimeout, Message: "The operation exceeded the time limit and was cancelled."}
+	}
+
+	return Failure{Code: CodeUnavailable, Message: "PostgreSQL could not be reached."}
+}
+
+// isAuthCode reports SQLSTATE classes that mean "your credentials were
+// rejected" rather than "your statement was wrong".
+func isAuthCode(code string) bool {
+	switch code {
+	case "28P01", // invalid_password
+		"28000": // invalid_authorization_specification
+		return true
+	}
+	return false
+}
+
+func isTimeout(err error) bool {
+	var timeout interface{ Timeout() bool }
+	return errors.As(err, &timeout) && timeout.Timeout()
 }

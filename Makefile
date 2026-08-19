@@ -1,6 +1,6 @@
 # Database IDE — development and build commands.
 #
-# Prerequisites: Go 1.24+, Node.js 20+.
+# Prerequisites: Go 1.25+, Node.js 20+.
 
 BINARY      := dbide
 BUILD_DIR   := bin

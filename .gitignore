@@ -10,6 +10,10 @@ web/node_modules/
 .env
 .env.local
 
+# Screenshots produced by browser-driven verification
+/*.png
+/.playwright-mcp/
+
 # Editors and OS
 .DS_Store
 .idea/

@@ -2,7 +2,9 @@ package postgres
 
 import (
 	"context"
+	"crypto/x509"
 	"errors"
+	"fmt"
 	"math"
 	"strings"
 	"testing"
@@ -60,12 +62,14 @@ func TestClassify(t *testing.T) {
 		wantCode string
 	}{
 		{"nil", nil, ""},
-		{"deadline", context.DeadlineExceeded, "query_timeout"},
-		{"cancel", context.Canceled, "query_cancelled"},
-		{"config", ErrConfig, "database_unavailable"},
-		{"wrapped config", errors.New("x: " + ErrConfig.Error()), "database_unavailable"},
-		{"sql error", &pgconn.PgError{Severity: "ERROR", Code: "42P01", Message: "relation does not exist"}, "query_failed"},
-		{"unknown", errors.New("some driver internal"), "database_unavailable"},
+		{"deadline", context.DeadlineExceeded, CodeQueryTimeout},
+		{"cancel", context.Canceled, CodeCancelled},
+		{"config", ErrConfig, CodeUnsupported},
+		{"wrapped config", fmt.Errorf("building the pool: %w", ErrConfig), CodeUnsupported},
+		{"sql error", &pgconn.PgError{Severity: "ERROR", Code: "42P01", Message: "relation does not exist"}, CodeQueryFailed},
+		{"unknown", errors.New("some driver internal"), CodeUnavailable},
+		{"bad password", &pgconn.PgError{Severity: "FATAL", Code: "28P01", Message: "password authentication failed"}, CodeAuthFailed},
+		{"unknown authority", x509.UnknownAuthorityError{}, CodeTLSFailed},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -86,18 +90,5 @@ func TestClassifySurfacesServerErrorDetail(t *testing.T) {
 		if !strings.Contains(f.Message, want) {
 			t.Fatalf("message %q is missing %q", f.Message, want)
 		}
-	}
-}
-
-func TestOpenRejectsBadDSNWithoutEchoingIt(t *testing.T) {
-	_, err := Open("postgres://user:sup3rs3cret@%%%bad-host/db")
-	if err == nil {
-		t.Fatal("expected an error for an invalid DSN")
-	}
-	if !errors.Is(err, ErrConfig) {
-		t.Fatalf("error = %v, want ErrConfig", err)
-	}
-	if strings.Contains(err.Error(), "sup3rs3cret") {
-		t.Fatalf("the DSN password leaked into the error: %q", err.Error())
 	}
 }

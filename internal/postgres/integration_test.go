@@ -2,72 +2,129 @@ package postgres
 
 import (
 	"context"
+	"net/url"
 	"os"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/stohirov/database-ide/internal/connections"
 )
 
-// TestSelectOneAgainstRealPostgres is opt-in: it runs only when
-// DBIDE_TEST_POSTGRES_DSN points at a throwaway database. CI is expected to
-// provide one; a developer without a local server sees a skip, not a failure.
-func TestSelectOneAgainstRealPostgres(t *testing.T) {
+// configFromDSN turns the opt-in test DSN into a stored connection config so
+// the integration test exercises the same field-based path the app uses.
+func configFromDSN(t *testing.T, dsn string) (connections.Config, string) {
+	t.Helper()
+	u, err := url.Parse(dsn)
+	if err != nil {
+		t.Fatalf("DBIDE_TEST_POSTGRES_DSN is not a URL: %v", err)
+	}
+	port := connections.DefaultPostgresPort
+	if p := u.Port(); p != "" {
+		if port, err = strconv.Atoi(p); err != nil {
+			t.Fatalf("DBIDE_TEST_POSTGRES_DSN has a bad port: %v", err)
+		}
+	}
+	password, _ := u.User.Password()
+	tlsMode := connections.TLSDisable
+	if u.Query().Get("sslmode") == "require" {
+		tlsMode = connections.TLSRequire
+	}
+	return connections.Config{
+		ID:          "integration",
+		Name:        "integration",
+		Engine:      connections.EnginePostgres,
+		Host:        u.Hostname(),
+		Port:        port,
+		Database:    strings.TrimPrefix(u.Path, "/"),
+		Username:    u.User.Username(),
+		TLSMode:     tlsMode,
+		Environment: connections.EnvDev,
+	}, password
+}
+
+func testConfig(t *testing.T) (connections.Config, string) {
+	t.Helper()
 	dsn := os.Getenv("DBIDE_TEST_POSTGRES_DSN")
 	if dsn == "" {
 		t.Skip("set DBIDE_TEST_POSTGRES_DSN to run the PostgreSQL integration test")
 	}
+	return configFromDSN(t, dsn)
+}
 
-	a, err := Open(dsn)
-	if err != nil {
-		t.Fatalf("Open: %v", err)
-	}
-	defer a.Close()
-
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+func TestAgainstRealPostgres(t *testing.T) {
+	cfg, password := testConfig(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 
-	if err := a.Ping(ctx); err != nil {
-		t.Fatalf("Ping: %v", Classify(err).Message)
+	info, err := Test(ctx, cfg, password)
+	if err != nil {
+		t.Fatalf("Test: %s", Classify(err).Message)
+	}
+	if info.Engine != string(connections.EnginePostgres) {
+		t.Fatalf("engine = %q", info.Engine)
+	}
+	if info.ServerVersion == "" {
+		t.Error("the server version should be reported")
+	}
+	if info.LatencyMs < 0 {
+		t.Errorf("latency = %d", info.LatencyMs)
 	}
 
-	res, err := a.SelectOne(ctx)
+	pool, err := OpenPool(ctx, cfg, password)
 	if err != nil {
-		t.Fatalf("SelectOne: %v", Classify(err).Message)
+		t.Fatalf("OpenPool: %s", Classify(err).Message)
 	}
-	if res.RowCount != 1 || len(res.Rows) != 1 {
-		t.Fatalf("rowCount = %d, rows = %d, want 1 and 1", res.RowCount, len(res.Rows))
+	defer pool.Close()
+
+	var got int
+	if err := pool.QueryRow(ctx, "SELECT 1").Scan(&got); err != nil {
+		t.Fatalf("query through the pool: %v", err)
 	}
-	if len(res.Columns) != 1 || res.Columns[0].Name != "value" || res.Columns[0].TypeName != "int4" {
-		t.Fatalf("columns = %+v", res.Columns)
+	if got != 1 {
+		t.Fatalf("SELECT 1 returned %d", got)
 	}
-	if got := res.Rows[0][0]; got != "1" {
-		t.Fatalf("value = %#v, want the string \"1\"", got)
+}
+
+func TestWrongPasswordIsClassifiedAsAuthenticationFailure(t *testing.T) {
+	cfg, _ := testConfig(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+
+	_, err := Test(ctx, cfg, "definitely-not-the-password")
+	if err == nil {
+		t.Skip("this server accepts any password; cannot test the auth failure path")
 	}
-	if res.DurationMs < 0 {
-		t.Fatalf("durationMs = %d", res.DurationMs)
+	f := Classify(err)
+	if f.Code != CodeAuthFailed {
+		t.Fatalf("code = %q, want %q (message %q)", f.Code, CodeAuthFailed, f.Message)
+	}
+	if strings.Contains(f.Message, "definitely-not-the-password") {
+		t.Fatalf("the password leaked into the message: %q", f.Message)
 	}
 }
 
 // TestUnreachableServerIsClassifiedSafely needs no database: it dials a port
 // nothing listens on.
 func TestUnreachableServerIsClassifiedSafely(t *testing.T) {
-	a, err := Open("postgres://nobody:secret@127.0.0.1:1/nodb?connect_timeout=1")
-	if err != nil {
-		t.Fatalf("Open: %v", err)
+	cfg := connections.Config{
+		ID: "unreachable", Engine: connections.EnginePostgres,
+		Host: "127.0.0.1", Port: 1, Database: "postgres", Username: "postgres",
+		TLSMode: connections.TLSDisable,
 	}
-	defer a.Close()
-
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	err = a.Ping(ctx)
+	_, err := Test(ctx, cfg, "secret")
 	if err == nil {
 		t.Skip("something is listening on port 1; cannot test the unreachable path")
 	}
 	f := Classify(err)
-	if f.Code != "database_unavailable" {
-		t.Fatalf("code = %q, want database_unavailable", f.Code)
+	if f.Code != CodeUnavailable && f.Code != CodeConnectTimeout {
+		t.Fatalf("code = %q, want an unreachable-host code (message %q)", f.Code, f.Message)
 	}
-	if got := f.Message; got != "PostgreSQL could not be reached." {
-		t.Fatalf("message = %q, want a safe fixed message", got)
+	if strings.Contains(f.Message, "secret") {
+		t.Fatalf("the password leaked into the message: %q", f.Message)
 	}
 }

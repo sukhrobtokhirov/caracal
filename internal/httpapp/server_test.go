@@ -3,7 +3,7 @@ package httpapp
 import (
 	"context"
 	"encoding/json"
-	"errors"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -11,18 +11,7 @@ import (
 	"strings"
 	"testing"
 	"testing/fstest"
-
-	"github.com/jackc/pgx/v5/pgconn"
-
-	"github.com/stohirov/database-ide/internal/postgres"
 )
-
-type fakePG struct {
-	res *postgres.Result
-	err error
-}
-
-func (f fakePG) SelectOne(context.Context) (*postgres.Result, error) { return f.res, f.err }
 
 func authedGet(h http.Handler, target string) *httptest.ResponseRecorder {
 	req := httptest.NewRequest(http.MethodGet, target, nil)
@@ -33,7 +22,11 @@ func authedGet(h http.Handler, target string) *httptest.ResponseRecorder {
 }
 
 func authedPost(h http.Handler, target string) *httptest.ResponseRecorder {
-	req := httptest.NewRequest(http.MethodPost, target, nil)
+	return authedPostBody(h, target, nil)
+}
+
+func authedPostBody(h http.Handler, target string, body io.Reader) *httptest.ResponseRecorder {
+	req := httptest.NewRequest(http.MethodPost, target, body)
 	req.Header.Set("Authorization", "Bearer "+testToken)
 	req.Header.Set("Origin", testOrigin)
 	rec := httptest.NewRecorder()
@@ -70,7 +63,7 @@ func TestUnknownAPIRouteReturnsJSONNotIndex(t *testing.T) {
 
 func TestWrongMethodOnAPIRoute(t *testing.T) {
 	h := NewHandler(Config{Token: testToken, Assets: indexFS()}, []string{testOrigin})
-	rec := authedGet(h, "/api/bootstrap/select-one")
+	rec := authedGet(h, "/api/auth/unlock")
 	if rec.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("status = %d, want 405 (body=%s)", rec.Code, rec.Body.String())
 	}
@@ -111,70 +104,8 @@ func TestHealth(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
 		t.Fatalf("bad health body: %v", err)
 	}
-	if got.Status != "ok" || got.Version != "1.2.3" || got.Database != "not_configured" {
+	if got.Status != "ok" || got.Version != "1.2.3" {
 		t.Fatalf("health = %+v", got)
-	}
-}
-
-func TestSelectOneSuccess(t *testing.T) {
-	res := &postgres.Result{
-		Columns:    []postgres.Column{{Name: "value", TypeOID: 23, TypeName: "int4"}},
-		Rows:       [][]any{{"1"}},
-		RowCount:   1,
-		DurationMs: 3,
-	}
-	h := NewHandler(Config{Token: testToken, PG: fakePG{res: res}}, []string{testOrigin})
-	rec := authedPost(h, "/api/bootstrap/select-one")
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200 (body=%s)", rec.Code, rec.Body.String())
-	}
-	var got postgres.Result
-	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
-		t.Fatalf("bad result body: %v", err)
-	}
-	if got.RowCount != 1 || len(got.Rows) != 1 || got.Rows[0][0] != "1" {
-		t.Fatalf("result = %+v", got)
-	}
-}
-
-func TestSelectOneWithoutDatabase(t *testing.T) {
-	h := NewHandler(Config{Token: testToken}, []string{testOrigin})
-	rec := authedPost(h, "/api/bootstrap/select-one")
-	if rec.Code != http.StatusServiceUnavailable {
-		t.Fatalf("status = %d, want 503", rec.Code)
-	}
-	if got := decodeError(t, rec.Body.String()).Code; got != CodeDBUnavailable {
-		t.Fatalf("error code = %q, want %q", got, CodeDBUnavailable)
-	}
-}
-
-func TestSelectOneFailureMapping(t *testing.T) {
-	cases := []struct {
-		name       string
-		err        error
-		wantStatus int
-		wantCode   string
-	}{
-		{"unreachable server", errors.New("dial tcp: connection refused"), http.StatusBadGateway, "database_unavailable"},
-		{"timeout", context.DeadlineExceeded, http.StatusGatewayTimeout, "query_timeout"},
-		{"cancelled", context.Canceled, http.StatusGatewayTimeout, "query_cancelled"},
-		{"sql error", &pgconn.PgError{Severity: "ERROR", Code: "42601", Message: "syntax error"}, http.StatusUnprocessableEntity, "query_failed"},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			h := NewHandler(Config{Token: testToken, PG: fakePG{err: tc.err}}, []string{testOrigin})
-			rec := authedPost(h, "/api/bootstrap/select-one")
-			if rec.Code != tc.wantStatus {
-				t.Fatalf("status = %d, want %d", rec.Code, tc.wantStatus)
-			}
-			apiErr := decodeError(t, rec.Body.String())
-			if apiErr.Code != tc.wantCode {
-				t.Fatalf("code = %q, want %q", apiErr.Code, tc.wantCode)
-			}
-			if strings.Contains(apiErr.Message, "dial tcp") {
-				t.Fatalf("driver internals leaked to the client: %q", apiErr.Message)
-			}
-		})
 	}
 }
 
@@ -225,14 +156,16 @@ func TestServerAllowsItsOwnOrigin(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Listen: %v", err)
 	}
-	srv := New(Config{Token: testToken, PG: fakePG{res: &postgres.Result{Rows: [][]any{}}}}, ln)
+	srv := New(newTestConfig(t), ln)
 	go func() { _ = srv.Serve() }()
 	defer srv.Shutdown(context.Background())
 
 	base := "http://127.0.0.1:" + strconv.Itoa(srv.Port())
-	req, _ := http.NewRequest(http.MethodPost, base+"/api/bootstrap/select-one", nil)
+	body := strings.NewReader(`{"password":"` + masterPassword + `"}`)
+	req, _ := http.NewRequest(http.MethodPost, base+"/api/auth/setup", body)
 	req.Header.Set("Authorization", "Bearer "+testToken)
 	req.Header.Set("Origin", base)
+	req.Header.Set("Content-Type", "application/json")
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatalf("request: %v", err)

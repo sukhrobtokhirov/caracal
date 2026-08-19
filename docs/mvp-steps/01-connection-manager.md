@@ -231,15 +231,88 @@ Use integration databases in CI where available. Unit-test transport and auth fa
 
 ## Completion checklist
 
-- [ ] SQLite migrations create the source-plan schema and encryption metadata.
-- [ ] Secrets are sealed with Argon2id-derived AES-GCM keys and unique nonces.
-- [ ] No connection API response includes passwords or sealed bytes.
-- [ ] PostgreSQL and Redis connections can be created, tested, opened, closed, edited, and deleted.
-- [ ] Open clients are managed by a concurrency-safe in-memory registry.
-- [ ] Production and read-only connections are unambiguous in the UI.
-- [ ] Connections survive application restart and unlock.
-- [ ] The M0 hardcoded connection is removed.
+- [x] SQLite migrations create the source-plan schema and encryption metadata.
+- [x] Secrets are sealed with Argon2id-derived AES-GCM keys and unique nonces.
+- [x] No connection API response includes passwords or sealed bytes.
+- [x] PostgreSQL and Redis connections can be created, tested, opened, closed, edited, and deleted.
+- [x] Open clients are managed by a concurrency-safe in-memory registry.
+- [x] Production and read-only connections are unambiguous in the UI.
+- [x] Connections survive application restart and unlock.
+- [x] The M0 hardcoded connection is removed.
 
 ## Exit criterion
 
 Real PostgreSQL and Redis connections can be saved securely, survive a restart, and reconnect after the user unlocks the application.
+
+---
+
+## Implementation notes
+
+Status: **complete**. Verified on 2026-08-20 against PostgreSQL 16 and Redis 7
+in Docker.
+
+### Decisions this guide left open
+
+- **Secret change contract.** `secret` is a nested object,
+  `{"changed": bool, "value": string}`. Omitting the key entirely leaves the
+  stored credential untouched; `{"changed": true, "value": ""}` deliberately
+  clears it; `changed: false` ignores any value sent alongside it, so a form
+  that posts an empty password field cannot silently wipe a credential.
+- **Locked state covers listing, not just secrets.** Every `/api/connections`
+  route requires an unlocked vault, matching the guide's statement that
+  connection summaries are visible only when unlocked.
+- **Locking closes clients.** `Lock` discards the derived key *and* closes every
+  live pool, so a locked application is not still talking to production.
+- **Schema version storage.** The applied migration version lives in
+  `app_metadata` under `schema_version`, as the guide requires. `app_metadata`
+  itself is created outside the versioned steps, since it holds the version.
+- **Name uniqueness.** A unique index on `connections.name` returns a
+  `duplicate_name` conflict. Two connections with the same name would make the
+  environment badges useless as a safety signal.
+- **Redis TLS.** `disable` and `require` only; `require` verifies the
+  certificate. PostgreSQL keeps all three modes, where `require` encrypts
+  without verifying, matching libpq's meaning of the word.
+
+### Intentional deviations
+
+| Deviation | Reason |
+|---|---|
+| Go toolchain floor moved from 1.22 to 1.25 | `pgx` v5.10, `x/crypto`, and `modernc.org/sqlite` all now require Go 1.25. Pinning older releases across four modules to hold a 1.22 floor is not worth it; Go downloads the toolchain automatically. |
+| The M0 result view (`ResultTable`) was deleted rather than kept | Its only consumer, the bootstrap query panel, was removed with the M0 scaffold, and M2 replaces it with a virtualized grid and per-OID encoders. The Go-side wire format (`postgres.Result`, `Column`, `encode`) is kept and still tested: M2 builds directly on it. |
+
+### M0 scaffolding removed
+
+- `DBIDE_DEV_POSTGRES_DSN`, the hardcoded `postgres.Adapter` in `main`, and
+  `.env.example`.
+- `POST /api/bootstrap/select-one` and `Adapter.SelectOne`.
+- The `database` field on `/api/health`, which reported whether the single
+  development connection was configured.
+
+### Verification record
+
+- `make test`: 250 Go tests and 82 frontend tests pass; TypeScript type check and
+  `go vet` clean. The registry and vault also pass under `-race`.
+- Integration tests pass against PostgreSQL 16 and Redis 7, covering a
+  successful connection, a wrong database password classified as
+  `authentication_failed`, and an unreachable host.
+- Full manual acceptance scenario passed against both engines from an empty data
+  directory: setup, create both connections, mark one `prod` and `read_only`,
+  test and open both, restart, unlock, confirm both survived with their
+  passwords intact and unshown, edit a colour without touching the secret,
+  reject a wrong master password, and delete a connection.
+- On disk: the database file is `0600`, `app_metadata` holds only the salt,
+  parameters, verifier, and schema version, and no plaintext password appears
+  anywhere in the file.
+- Additional checks beyond the scenario: changing a host on an open connection
+  closes its stale client; a cosmetic edit does not; open, close, and delete are
+  idempotent; and no connection API response contains a password or sealed bytes.
+- Browser check: setup, unlock, list, detail, test, open, and edit all work under
+  the production CSP with zero console errors, and the edit form shows
+  "Leave saved password unchanged" rather than a prefilled field.
+
+### Bug found by the acceptance run
+
+Listing connections after a restart reported an empty runtime status instead of
+`closed`, because the manager read the registry's map directly and every
+connection is absent from it on a fresh process. Fixed in `Manager.List`, with a
+regression test that lists through a newly created registry.

@@ -1,31 +1,11 @@
 package httpapp
 
 import (
-	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 )
-
-const (
-	testToken  = "test-token-value"
-	testOrigin = "http://127.0.0.1:43127"
-)
-
-func testHandler(t *testing.T) http.Handler {
-	t.Helper()
-	return NewHandler(Config{Version: "test", Token: testToken}, []string{testOrigin})
-}
-
-func decodeError(t *testing.T, body string) APIError {
-	t.Helper()
-	var env errorEnvelope
-	if err := json.Unmarshal([]byte(body), &env); err != nil {
-		t.Fatalf("response is not a JSON error envelope: %v (body=%q)", err, body)
-	}
-	return env.Error
-}
 
 func TestTokenAuth(t *testing.T) {
 	cases := []struct {
@@ -71,7 +51,7 @@ func TestOriginGuard(t *testing.T) {
 		origin     string
 		wantStatus int
 	}{
-		{"permitted origin on post", http.MethodPost, testOrigin, http.StatusServiceUnavailable},
+		{"permitted origin on post", http.MethodPost, testOrigin, http.StatusBadRequest},
 		{"hostile origin on post", http.MethodPost, "https://evil.example", http.StatusForbidden},
 		{"missing origin on post", http.MethodPost, "", http.StatusForbidden},
 		{"origin differing only by port", http.MethodPost, "http://127.0.0.1:1", http.StatusForbidden},
@@ -84,7 +64,7 @@ func TestOriginGuard(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			target := "/api/health"
 			if tc.method == http.MethodPost {
-				target = "/api/bootstrap/select-one"
+				target = "/api/auth/unlock"
 			}
 			req := httptest.NewRequest(tc.method, target, nil)
 			req.Header.Set("Authorization", "Bearer "+testToken)
@@ -107,7 +87,7 @@ func TestOriginGuard(t *testing.T) {
 
 func TestAuthRunsBeforeOriginCheck(t *testing.T) {
 	// An unauthenticated hostile request must not learn which origins pass.
-	req := httptest.NewRequest(http.MethodPost, "/api/bootstrap/select-one", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/unlock", nil)
 	req.Header.Set("Origin", "https://evil.example")
 	rec := httptest.NewRecorder()
 	testHandler(t).ServeHTTP(rec, req)

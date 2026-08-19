@@ -14,18 +14,18 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/stohirov/database-ide/internal/appdata"
 	"github.com/stohirov/database-ide/internal/browser"
 	"github.com/stohirov/database-ide/internal/httpapp"
-	"github.com/stohirov/database-ide/internal/postgres"
+	"github.com/stohirov/database-ide/internal/manager"
+	"github.com/stohirov/database-ide/internal/registry"
+	"github.com/stohirov/database-ide/internal/secrets"
+	"github.com/stohirov/database-ide/internal/store"
 	"github.com/stohirov/database-ide/internal/webassets"
 )
 
 // version is overridden at build time with -ldflags "-X main.version=...".
 var version = "dev"
-
-// devDSNEnv is M0 scaffolding: one hardcoded development database. M1 replaces
-// it with the encrypted connection store.
-const devDSNEnv = "DBIDE_DEV_POSTGRES_DSN"
 
 const shutdownGrace = 10 * time.Second
 
@@ -41,6 +41,7 @@ func run() error {
 		port      = flag.Int("port", 0, "TCP port on 127.0.0.1; 0 selects a free port")
 		noOpen    = flag.Bool("no-open", false, "do not launch a browser; print the URL only")
 		devOrigin = flag.String("dev-origin", "", "additional allowed origin for the Vite dev server, e.g. http://localhost:5173")
+		dataDir   = flag.String("data-dir", "", "directory holding the configuration database; defaults to the platform application data directory")
 		verbose   = flag.Bool("verbose", false, "enable debug logging")
 	)
 	flag.Parse()
@@ -57,29 +58,23 @@ func run() error {
 		assets = nil
 	}
 
-	var pg *postgres.Adapter
-	if dsn := strings.TrimSpace(os.Getenv(devDSNEnv)); dsn != "" {
-		pg, err = postgres.Open(dsn)
-		if err != nil {
-			// The message is already scrubbed of the DSN by the adapter.
-			return err
-		}
-		defer pg.Close()
-
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		pingErr := pg.Ping(ctx)
-		cancel()
-		if pingErr != nil {
-			f := postgres.Classify(pingErr)
-			slog.Warn("PostgreSQL is not reachable at startup",
-				"component", "main", "code", f.Code, "message", f.Message)
-		} else {
-			slog.Info("PostgreSQL connection ready", "component", "main")
-		}
-	} else {
-		slog.Warn("no development database configured",
-			"component", "main", "hint", "set "+devDSNEnv)
+	dbPath, err := appdata.DatabasePath(*dataDir)
+	if err != nil {
+		return err
 	}
+	ctx, cancelStartup := context.WithTimeout(context.Background(), 15*time.Second)
+	st, err := store.Open(ctx, dbPath)
+	cancelStartup()
+	if err != nil {
+		return err
+	}
+	defer func() { _ = st.Close() }()
+	slog.Info("configuration store ready", "component", "main", "path", dbPath)
+
+	vault := secrets.NewVault(st)
+	reg := registry.New()
+	mgr := manager.New(st, vault, reg)
+	defer mgr.Shutdown()
 
 	ln, err := httpapp.Listen(*port)
 	if err != nil {
@@ -90,9 +85,7 @@ func run() error {
 		Version: version,
 		Token:   httpapp.NewToken(),
 		Assets:  assets,
-	}
-	if pg != nil {
-		cfg.PG = pg
+		Manager: mgr,
 	}
 	if *devOrigin != "" {
 		cfg.ExtraOrigins = []string{strings.TrimRight(*devOrigin, "/")}
@@ -127,9 +120,9 @@ func run() error {
 		slog.Info("shutting down", "component", "main", "signal", sig.String())
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), shutdownGrace)
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownGrace)
 	defer cancel()
-	if err := srv.Shutdown(ctx); err != nil {
+	if err := srv.Shutdown(shutdownCtx); err != nil {
 		return fmt.Errorf("shutdown did not complete cleanly: %w", err)
 	}
 	slog.Info("stopped", "component", "main")
