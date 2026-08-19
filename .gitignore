@@ -1,0 +1,16 @@
+# Build output
+/bin/
+internal/webassets/dist/*
+!internal/webassets/dist/.gitkeep
+
+# Frontend
+web/node_modules/
+
+# Local environment — never commit a working connection string
+.env
+.env.local
+
+# Editors and OS
+.DS_Store
+.idea/
+.vscode/

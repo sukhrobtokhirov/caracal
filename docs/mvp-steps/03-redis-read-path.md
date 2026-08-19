@@ -1,0 +1,407 @@
+# M3 — Redis Read Path
+
+## Outcome
+
+Deliver a production-conscious Redis workflow: inspect server health, browse keys with bounded `SCAN`, view metadata, page through values according to their Redis type, and run raw commands through a guard that blocks dangerous operations by default.
+
+The defining rule is that browsing must never block Redis the way `KEYS *` can. Every collection operation is cursor- or range-based and bounded by count, time, bytes, and server iterations.
+
+## User-visible workflow
+
+1. Select and open a saved Redis connection.
+2. View a compact `INFO` summary and connectivity state.
+3. Browse keys by pattern, optional type, and prefix grouping.
+4. Select a key to see type, TTL, memory estimate, and existence state.
+5. Page through its value with a viewer suited to string, hash, set, sorted set, list, or stream.
+6. Pretty-print JSON-looking values without changing the underlying text.
+7. Run a raw Redis command and see a bounded, type-aware response.
+8. Receive explicit warnings or blocks for dangerous commands and production operations.
+
+## Scope
+
+### Included
+
+- Bounded `SCAN` key browser with pattern and type filter
+- Pipelined `TYPE`, `TTL`, and `MEMORY USAGE` metadata
+- Prefix-tree grouping in the frontend
+- Type-aware, paged value viewers
+- TTL and memory display
+- Selected `INFO` metrics
+- Raw command console accepting structured argument arrays
+- Dangerous-command guard and production typed confirmation
+- Server-side read-only policy
+
+### Not included
+
+- Redis Cluster or Sentinel topology
+- `MONITOR`, pub/sub viewer, slow-log explorer, or profiler
+- Key editing, renaming, deletion, TTL mutation, or bulk actions
+- Live charts or metric retention
+- Lua editor/debugger
+- Unbounded full-value downloads
+
+## API contract
+
+Implement the Redis endpoints from the source plan:
+
+```text
+GET  /api/redis/:id/info
+GET  /api/redis/:id/scan?cursor=&match=&type=&count=
+GET  /api/redis/:id/key?name=
+GET  /api/redis/:id/value?name=&cursor=&offset=&limit=
+POST /api/redis/:id/command
+```
+
+Every endpoint verifies that the saved connection exists, is Redis, is unlocked, and has an open runtime client. Key names are data, not URL path segments; keep them in encoded query parameters so slashes and binary-adjacent characters do not alter routing.
+
+Use base-10 cursor strings in JSON and URLs. Redis cursors are unsigned 64-bit values, which can exceed JavaScript's exact integer range. Never serialize them as JSON numbers.
+
+## Work packages
+
+### 3.1 Define safe resource limits
+
+Centralize limits rather than scattering magic numbers across handlers. Provide conservative defaults for:
+
+- requested keys per page;
+- maximum SCAN calls per HTTP request;
+- total SCAN duration;
+- pipelined metadata batch size;
+- collection entries per value page;
+- string byte range per page;
+- maximum bytes per API response;
+- command response depth, element count, and bytes;
+- Redis operation timeout.
+
+Client-provided `count` and `limit` values are hints capped by the server. An empty page can be a successful result, not an error.
+
+### 3.2 Implement bounded key scanning
+
+The scan endpoint must call Redis `SCAN`; it must never use `KEYS`, including as an optimization for small databases.
+
+Request behavior:
+
+- `cursor` defaults to `0` for a new traversal.
+- `match` defaults to `*` but is passed as a Redis glob, not a regular expression.
+- `type` is optional and validated against a fixed list of supported types.
+- `count` is capped and passed as Redis's count hint.
+
+Server algorithm:
+
+1. Begin with the supplied cursor.
+2. Call `SCAN` with `MATCH`, optional `TYPE`, and bounded `COUNT`.
+3. Append returned keys until the page target is reached.
+4. Continue across empty batches while the cursor is nonzero, but stop after the configured iteration or time budget.
+5. Return collected keys and the latest cursor.
+6. Mark traversal complete only when Redis returns cursor `0`.
+
+Do not treat an empty key batch as completion. `MATCH` can produce many empty batches while the cursor continues to advance. `COUNT` is only a hint, so responses may contain fewer keys than requested.
+
+Redis may return duplicates during a changing scan. Deduplicate within one response on the server and across the active browsing session in the client where practical. Do not promise snapshot consistency; explain that keys created/deleted during browsing can be missed or repeated.
+
+If server support for `SCAN TYPE` is unavailable, either return a capability error or fall back to bounded post-filtering with pipelined `TYPE`. Never perform an unbounded full scan to satisfy a type filter.
+
+Suggested response:
+
+```json
+{
+  "cursor": "72863164105861143",
+  "complete": false,
+  "keys": [
+    {"name": "user:42:profile", "type": "hash", "ttlSeconds": 3580, "memoryBytes": 912}
+  ],
+  "iterations": 3
+}
+```
+
+### 3.3 Pipeline key metadata
+
+For the collected page, pipeline metadata commands instead of making serial round trips:
+
+- `TYPE key`
+- `TTL key`
+- `MEMORY USAGE key`
+
+Keep results associated by original key position. A key can expire or be deleted between `SCAN` and the pipeline, so model `missing` as a normal race rather than failing the page.
+
+TTL semantics:
+
+- non-negative value: seconds until expiry;
+- `-1`: exists with no expiry;
+- `-2`: key no longer exists.
+
+Memory usage is an estimate and may be unavailable because of server version, permissions, or command configuration. Return `null` with a per-field capability/error marker rather than failing the entire page.
+
+Do not pipeline an unbounded number of commands. Since three commands are issued per key, cap the page and split a large page into bounded pipeline batches if necessary.
+
+### 3.4 Build key browser and prefix grouping
+
+The key list is the source of truth; the prefix tree is a presentation derived from keys already returned. It must not trigger hidden full-database scans.
+
+Frontend behavior:
+
+- Search input uses Redis glob syntax and explains common forms such as `user:*`.
+- Type filter supports string, hash, list, set, zset, and stream.
+- **Load more** continues from the last cursor; **Refresh** starts from `0` and clears deduplication state.
+- Completion is shown only when cursor `0` is returned.
+- Empty intermediate results show scan progress and allow continuation automatically within UI bounds.
+- Group keys by a configurable delimiter, default `:`. For example, `user:42:profile` appears under `user` → `42`.
+- Show the original full key name and never reconstruct commands from truncated display labels.
+- Display type badge, TTL state, and optional memory estimate.
+- Clearly state that browsing is not a consistent snapshot.
+
+Large key names must be truncated visually while remaining copyable. Render key names as text only.
+
+### 3.5 Implement key metadata lookup
+
+`GET /key?name=` refreshes one selected key independently from the scan page. Pipeline `TYPE`, `TTL`, and `MEMORY USAGE` and return:
+
+- exact key name;
+- existence state;
+- Redis type;
+- TTL state/value;
+- optional memory bytes;
+- which viewer/pagination mode applies.
+
+If the key expires, the UI should close or mark the value viewer stale without turning the whole Redis workspace into an error.
+
+### 3.6 Implement type-aware value paging
+
+All value responses share these fields:
+
+```json
+{
+  "key": "example",
+  "type": "hash",
+  "items": [],
+  "nextCursor": "0",
+  "nextOffset": null,
+  "complete": true,
+  "truncated": false
+}
+```
+
+Validate the current key type before reading. If it changed since selection, return `key_type_changed` with the new type so the UI can reload the proper viewer.
+
+#### String
+
+- Use `STRLEN` plus `GETRANGE start end` for bounded reads.
+- Treat offsets as byte offsets because Redis strings are byte sequences.
+- Return a UTF-8 text preview only when valid; otherwise return a safe base64 or hexadecimal representation and label it binary.
+- **Show more** advances the byte range. **Show full** still obeys a hard maximum and must warn when the value exceeds it.
+- Attempt JSON detection only on complete, valid UTF-8 text within the JSON-size limit.
+
+#### Hash
+
+- Use `HSCAN key cursor COUNT n`.
+- Return field/value pairs and the next cursor as a string.
+- Preserve duplicate-looking display values and exact field names.
+- Apply per-field and per-value byte preview limits.
+- Pretty-print JSON-looking values independently without changing originals.
+
+#### Set
+
+- Use `SSCAN key cursor COUNT n`.
+- Return members and next cursor.
+- Do not imply stable ordering.
+
+#### Sorted set
+
+- Use `ZRANGE key start stop WITHSCORES`.
+- Return member and score text so precision is not accidentally changed by JavaScript.
+- Use offset pagination and explain that concurrent updates may move members between pages.
+
+#### List
+
+- Use `LLEN` plus `LRANGE key start stop`.
+- Return absolute indices with each value.
+- Use offset pagination; list mutations can shift later pages.
+
+#### Stream
+
+- Use `XRANGE` with an exclusive continuation ID and `COUNT`.
+- Return entry ID plus ordered field/value pairs.
+- Preserve IDs as strings.
+- Continue after the last returned ID without duplicating it.
+
+Do not use `HGETALL`, `SMEMBERS`, an unbounded `LRANGE`, or an unbounded `XRANGE`. Response byte caps apply even when the entry count is below its cap.
+
+### 3.7 Build value viewers
+
+Use a shared frame for key name, type, TTL, memory, refresh, loading, expired, and error states. Render the body by type:
+
+- string: text/binary preview with range progress and optional JSON tree;
+- hash: virtualized field/value table with scan progress;
+- set: virtualized member list;
+- zset: member/score table with offset range;
+- list: index/value table;
+- stream: entry timeline/table with expandable fields.
+
+For JSON detection:
+
+- parse only valid complete UTF-8 strings under the size threshold;
+- accept object, array, and scalar JSON, but use tree view primarily for object/array;
+- fall back silently to text when parsing fails;
+- retain a raw view and copy the original bytes/text, not reformatted JSON;
+- cap rendering depth and collapsed node count.
+
+Distinguish an empty collection from a missing/expired key.
+
+### 3.8 Add the `INFO` dashboard
+
+Fetch `INFO` once when the Redis workspace opens and on manual refresh. Parse only known fields; keep unknown fields out of the primary UI rather than binding presentation to one Redis version.
+
+Useful v0.1 cards:
+
+- Redis version and mode;
+- uptime;
+- connected clients;
+- used memory and max memory;
+- keyspace hits and misses with a guarded hit-rate calculation;
+- total commands processed;
+- instantaneous operations per second;
+- role and connected replicas when available;
+- database key and expiry counts from keyspace sections.
+
+Treat unavailable sections and permission errors as partial data. Do not fail key browsing because `INFO` is restricted. Do not add polling/live charts in this milestone.
+
+### 3.9 Implement raw command parsing and execution
+
+The API accepts an argument array, never a shell-like command string:
+
+```json
+{
+  "args": ["GET", "user:42"],
+  "allowDangerous": false,
+  "confirmation": null
+}
+```
+
+The console UI may provide a command-line input, but its tokenizer must support quoted arguments, escapes, spaces inside values, and empty arguments. Show the parsed argument list before execution when quoting is ambiguous. There is no shell interpolation, environment expansion, or command substitution.
+
+Server behavior:
+
+- Require at least one non-empty command token.
+- Normalize the command and relevant subcommand to uppercase only for policy checks; preserve original argument bytes for Redis.
+- Execute through `Do(ctx, args...)` with a timeout.
+- Normalize RESP results into bounded JSON supporting null, integer, string/binary, error, array, and nested map/set-like replies as returned by the client.
+- Limit nesting depth, elements, and total bytes. Return truncation metadata rather than consuming unbounded memory.
+- Record duration and safe command name. Do not log full arguments.
+
+Console history in the browser must avoid persistent storage for v0.1 because arguments can contain secrets. Keep it in memory for the current session only.
+
+### 3.10 Enforce the dangerous-command guard
+
+Block these commands by default, including relevant subcommand forms:
+
+- `FLUSHALL`
+- `FLUSHDB`
+- `KEYS`
+- `SHUTDOWN`
+- `DEBUG`
+- `CONFIG SET`
+- `MONITOR`
+- `SWAPDB`
+
+The check is server-side and cannot be bypassed by whitespace, casing, or splitting `CONFIG` and `SET` across fields. Extend the list when a command can block the server, expose sensitive configuration, or destroy broad data.
+
+Override behavior:
+
+- The frontend exposes a temporary **Allow dangerous command** toggle only after a warning.
+- The toggle resets after one execution and is never saved.
+- The request includes explicit acknowledgement; the server still validates the command.
+- On `prod`, require typed confirmation containing the connection name plus command name.
+- On `read_only`, dangerous commands remain blocked regardless of override.
+
+For read-only connections, use a conservative allowlist for the raw console rather than attempting to enumerate every write command. Include common introspection/read operations needed by the tool and reject unknown commands with `command_not_allowed_read_only`. The dedicated browser endpoints remain the preferred safe path.
+
+Database ACLs are the final control. The UI guard reduces accidents but does not replace Redis ACL configuration.
+
+## Failure handling
+
+Model normal Redis races and partial capability explicitly:
+
+| Condition | Behavior |
+|---|---|
+| Empty SCAN batch, cursor nonzero | Continue within budget or return cursor for Load more |
+| Key expired after scan | Mark missing and keep the rest of the page |
+| Key type changed | Ask the viewer to reload for the new type |
+| `MEMORY USAGE` denied | Show memory as unavailable; keep browsing |
+| `INFO` denied | Show dashboard warning; keep key/value tools usable |
+| Operation timeout | Stop work and return a timeout error |
+| Response limit reached | Return bounded data with `truncated: true` |
+| Dangerous command | Block with reason and required acknowledgement path |
+
+Never include Redis passwords or complete secret-bearing command arguments in errors.
+
+## Testing
+
+### Unit tests
+
+- Cursor string parsing above JavaScript's safe-integer range
+- SCAN loop with empty batches, duplicates, completion, iteration budget, and timeout
+- Pipelined metadata alignment and expired-key races
+- TTL sentinel mapping
+- Per-type request validation and continuation calculation
+- Binary versus UTF-8 string representation
+- JSON detection size/depth limits
+- Console tokenizer with quoting, escapes, and empty arguments
+- Dangerous-command normalization, subcommands, override, production, and read-only policy
+- RESP normalization depth/size limits
+- `INFO` parsing with missing and unknown fields
+
+### Integration tests
+
+Run against a disposable Redis server containing:
+
+- enough mixed-type keys to require multiple scans;
+- expiring and non-expiring keys;
+- large strings and collections;
+- binary strings;
+- JSON and non-JSON text;
+- a changing key during scan/read;
+- restricted ACL user lacking `INFO` or `MEMORY USAGE`;
+- read-only ACL user;
+- large/nested command replies.
+
+Assert that browser code never issues `KEYS`, `HGETALL`, `SMEMBERS`, or unbounded range reads. Where practical, inspect a command log in the disposable server/test client.
+
+### Frontend tests
+
+- scan pagination through empty intermediate pages;
+- pattern/type reset behavior and deduplication;
+- prefix grouping without hidden network scans;
+- key expiry and type-change states;
+- each value viewer's continuation behavior;
+- raw/JSON and text/binary switching;
+- guarded command confirmation, single-use override, production confirmation, and read-only block;
+- partial `INFO` dashboard.
+
+### Manual acceptance scenario
+
+1. Open a real Redis connection with mixed key types.
+2. Browse with a restrictive pattern that produces empty intermediate SCAN batches; confirm browsing continues until keys or completion.
+3. Filter by type and inspect pipelined type, TTL, and memory metadata.
+4. Open a large string, hash, set, zset, list, and stream; confirm every viewer pages without loading the entire value.
+5. Inspect JSON and binary strings; confirm both are represented safely.
+6. Let a selected key expire and confirm the UI handles it without a workspace-level failure.
+7. Run harmless commands such as `PING` and a bounded `GET`.
+8. Try `KEYS *` and `FLUSHDB`; confirm both are blocked by default.
+9. On a disposable non-production database, exercise the explicit dangerous override and confirm it resets after one command.
+10. On a read-only connection, confirm write/unknown console commands remain blocked server-side.
+
+## Completion checklist
+
+- [ ] Key browsing exclusively uses bounded `SCAN`.
+- [ ] Empty SCAN batches do not end traversal prematurely.
+- [ ] Metadata commands are pipelined and tolerate expired keys/partial permissions.
+- [ ] Prefix grouping uses only already-scanned keys.
+- [ ] All six supported value types use bounded paging/ranges.
+- [ ] Binary and JSON-looking strings are represented safely.
+- [ ] The `INFO` dashboard degrades gracefully when fields or permissions are missing.
+- [ ] Raw command parsing preserves structured arguments and bounds replies.
+- [ ] Dangerous and read-only command policies are enforced on the server.
+- [ ] Production dangerous commands require typed confirmation and a one-shot override.
+
+## Exit criterion
+
+Use the application instead of `redis-cli` to diagnose a real cache issue without issuing a blocking browse command or loading an unbounded value.
