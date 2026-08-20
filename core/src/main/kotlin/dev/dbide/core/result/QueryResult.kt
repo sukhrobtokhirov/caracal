@@ -25,10 +25,19 @@ sealed interface CellValue {
     data class Unmapped(val rendered: String) : CellValue
 }
 
-/** A completed read. [truncated] is true when [rowLimit] cut the result short. */
+/**
+ * A completed statement. [truncated] is true when the row limit cut the result
+ * short.
+ *
+ * [rowsAffected] is set only for a statement that returned no rows, and is the
+ * closest thing to PostgreSQL's command tag that JDBC exposes: pgjdbc surfaces the
+ * count but not the tag itself, and inventing `"UPDATE 3"` from the count and the
+ * first keyword would be reporting a server value that was never received.
+ */
 data class QueryResult(
     val columns: List<Column>,
     val rows: List<List<CellValue>>,
     val duration: Duration,
     val truncated: Boolean = false,
+    val rowsAffected: Long? = null,
 )

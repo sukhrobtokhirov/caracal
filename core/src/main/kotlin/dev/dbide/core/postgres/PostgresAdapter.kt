@@ -25,8 +25,15 @@ import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
 
 /**
- * The M0 PostgreSQL adapter: one fixed query, but the shape M2 grows into —
- * pooled connection, bounded result, classified error, real cancellation.
+ * Runs one statement at a time against a pooled connection: bounded result,
+ * classified error, real cancellation.
+ *
+ * Nothing here decides whether a statement is allowed to write. The pool opens
+ * every connection read-only ([PostgresDataSources]), so the server refuses a
+ * write with SQLSTATE 25006 whether it arrived as an `UPDATE`, inside a CTE, or
+ * inside a function body compiled last year. `StatementClassifier` warns the user
+ * beforehand; it is not consulted here, because a keyword scan that could veto a
+ * statement would only add ways to refuse a legitimate read.
  */
 class PostgresAdapter(
     private val dataSource: DataSource,
@@ -42,8 +49,12 @@ class PostgresAdapter(
      * Runs [sql] and reads the whole (bounded) result. Throws [DbException] for a
      * database failure and `CancellationException` when the caller's scope is
      * cancelled — the running statement is cancelled server-side either way.
+     *
+     * One statement. Splitting a script is [dev.dbide.core.sql.StatementSplitter]'s
+     * job, and doing it here would mean guessing at a boundary while holding a
+     * connection.
      */
-    internal suspend fun execute(sql: String): QueryResult = withContext(Dispatchers.IO) {
+    suspend fun execute(sql: String): QueryResult = withContext(Dispatchers.IO) {
         val started = TimeSource.Monotonic.markNow()
         try {
             dataSource.connection.use { connection ->
@@ -53,9 +64,7 @@ class PostgresAdapter(
                 try {
                     connection.prepareStatement(sql).use { statement ->
                         statement.configure()
-                        statement.cancelledWithScope {
-                            statement.executeQuery().use { rows -> rows.read(started.elapsedNow()) }
-                        }
+                        statement.cancelledWithScope { statement.readResult(started) }
                     }
                 } finally {
                     connection.endTransaction()
@@ -72,6 +81,27 @@ class PostgresAdapter(
             log.debug("query failed: {} ({})", error.code, redaction.scrub(failure.message))
             throw DbException(error, failure)
         }
+    }
+
+    /**
+     * Executes and reads whichever kind of result came back.
+     *
+     * `INSERT`, `DDL`, and friends produce no result set at all, and asking for one
+     * throws. A writable connection is allowed to run them, so the count is what
+     * comes back instead of columns.
+     */
+    private fun PreparedStatement.readResult(started: TimeSource.Monotonic.ValueTimeMark): QueryResult {
+        val hasRows = execute()
+        val elapsed = started.elapsedNow()
+        if (!hasRows) {
+            return QueryResult(
+                columns = emptyList(),
+                rows = emptyList(),
+                duration = elapsed,
+                rowsAffected = updateCount.takeIf { it >= 0 }?.toLong(),
+            )
+        }
+        return resultSet.use { rows -> rows.read(elapsed) }
     }
 
     private fun PreparedStatement.configure() {
