@@ -23,10 +23,11 @@ enum class StatementKind {
     /**
      * Transaction, session, or cursor state — `BEGIN`, `SET`, `DISCARD`, `LOCK`.
      *
-     * Harmless-looking and the one case worth refusing outright on a read-only
-     * connection. Connections are pooled, so `SET SESSION CHARACTERISTICS AS
-     * TRANSACTION READ WRITE` outlives the transaction it was run in and would
-     * quietly disarm the read-only guarantee for whoever gets that connection next.
+     * Its own case because these succeed and then do nothing. Every statement runs
+     * in its own transaction that is rolled back, and PostgreSQL's GUC changes are
+     * transactional, so a `SET search_path` reports success and is gone before the
+     * next statement runs. Telling the user that is more use than refusing it,
+     * which is why the editor needs to tell these apart from reads.
      */
     SESSION,
 

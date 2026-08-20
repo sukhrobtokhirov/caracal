@@ -6,6 +6,7 @@ import dev.dbide.core.result.DbError
 import dev.dbide.core.result.DbException
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
+import kotlin.test.assertNotEquals
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.runBlocking
@@ -111,6 +112,27 @@ class PostgresReadOnlyIntegrationTest {
 
             assertTrue(result.columns.isEmpty())
             assertTrue(result.rows.isEmpty())
+        }
+    }
+
+    @Test
+    fun `a session setting does not survive the statement that set it`() = runBlocking {
+        // Each statement gets its own transaction and that transaction is rolled
+        // back, so a SET succeeds and is gone. Worth asserting rather than assuming:
+        // it is why the editor warns about session statements instead of running
+        // them hopefully.
+        session().use { session ->
+            session.adapter.execute("SET search_path TO pg_catalog")
+
+            val after = session.adapter.execute("SHOW search_path").rows.single().single()
+
+            // Asserting what it is not, rather than the exact default, which differs
+            // between server versions and is not the point.
+            assertNotEquals(
+                CellValue.Text("pg_catalog"),
+                after,
+                "the search_path set by the previous statement outlived its transaction",
+            )
         }
     }
 
