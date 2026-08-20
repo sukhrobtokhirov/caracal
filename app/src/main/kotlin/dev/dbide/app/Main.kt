@@ -7,6 +7,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.FrameWindowScope
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
@@ -16,11 +17,14 @@ import dev.dbide.app.ui.WorkspaceScreen
 import dev.dbide.core.appdata.AppPaths
 import dev.dbide.core.connections.ConnectionService
 import dev.dbide.core.connections.DefaultConnectionService
+import dev.dbide.core.export.CsvExport
 import dev.dbide.core.registry.ConnectionRegistry
 import dev.dbide.core.store.ConfigStore
 import dev.dbide.core.vault.Vault
 import java.awt.Dimension
+import java.awt.FileDialog
 import java.lang.management.ManagementFactory
+import java.nio.file.Path
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
@@ -81,10 +85,12 @@ fun main() = application {
  * locking and unlocking again does not lose the list or leak a scope.
  */
 @Composable
-private fun Workspace(service: ConnectionService, scope: CoroutineScope) {
+private fun FrameWindowScope.Workspace(service: ConnectionService, scope: CoroutineScope) {
     val connections = remember(service) { ConnectionsViewModel(service, scope) }
     val tree = remember(service) { SchemaTreeViewModel(service, scope) }
     val editor = remember(service) { EditorViewModel(service, scope) }
+    val chooser = rememberCsvFileChooser()
+    val export = remember(service, chooser) { ExportViewModel(service, scope, chooser) }
     val vault = remember(service) {
         VaultViewModel(service, scope, onUnlocked = { connections.refresh() })
     }
@@ -99,6 +105,7 @@ private fun Workspace(service: ConnectionService, scope: CoroutineScope) {
             viewModel = connections,
             tree = tree,
             editor = editor,
+            export = export,
             onLock = {
                 connections.clear()
                 // Locking closes every client, so the tree is describing a server this
@@ -106,11 +113,53 @@ private fun Workspace(service: ConnectionService, scope: CoroutineScope) {
                 // statement — including one that is running right now.
                 tree.clear()
                 editor.clear()
+                // A running export holds a live pool connection, and locking has just
+                // closed every one of them. Stopping it here is what turns that into a
+                // deleted partial file rather than a failure the user has to read.
+                export.clear()
                 vault.lock()
             },
         )
     }
 }
+
+/**
+ * The save dialog an export writes into: the platform's own, parented to the window.
+ *
+ * AWT's `FileDialog` rather than Swing's `JFileChooser` because it is the real
+ * thing — Finder on macOS, Explorer on Windows — which is also what makes the
+ * overwrite warning, the sidebar, and the network volumes the user's rather than
+ * this application's reimplementation of them.
+ *
+ * The suggested name arrives already sanitized by [CsvExport.fileName]. The name
+ * that comes *back* is the user's and is taken as typed, with one exception: a name
+ * naming no extension at all gets `.csv`, because a file called `invoices` opens in
+ * nothing. Renaming their `notes.txt` to `notes.csv` would be correcting a choice
+ * rather than completing one.
+ *
+ * It suspends on the main dispatcher, which under Compose Desktop is the AWT event
+ * thread — where a modal dialog must be shown, and where it pumps its own events
+ * while it blocks.
+ */
+@Composable
+private fun FrameWindowScope.rememberCsvFileChooser(): FileChooser {
+    val owner = window
+    return remember(owner) {
+        { suggestion ->
+            withContext(Dispatchers.Main) {
+                val dialog = FileDialog(owner, "Export CSV", FileDialog.SAVE)
+                dialog.file = suggestion
+                dialog.isVisible = true
+                val directory = dialog.directory
+                val chosen = dialog.file
+                if (directory == null || chosen == null) null else Path.of(directory, chosen.withCsv())
+            }
+        }
+    }
+}
+
+/** [this] as typed, unless it names no extension at all. */
+private fun String.withCsv(): String = if (contains('.')) this else "$this.csv"
 
 /**
  * Cold start is a number this project has to keep an eye on — the JVM is the price of

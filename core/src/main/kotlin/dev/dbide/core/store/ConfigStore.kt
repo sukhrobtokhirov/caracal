@@ -13,6 +13,9 @@ import dev.dbide.core.connections.ConnectionRecord
 import dev.dbide.core.connections.Engine
 import dev.dbide.core.connections.Environment
 import dev.dbide.core.connections.TlsMode
+import dev.dbide.core.history.DEFAULT_HISTORY_RETENTION
+import dev.dbide.core.history.ExecutionOutcome
+import dev.dbide.core.history.ExecutionRecord
 import dev.dbide.core.vault.MetadataStore
 import java.nio.file.Files
 import java.nio.file.Path
@@ -21,7 +24,9 @@ import java.sql.Connection
 import java.sql.PreparedStatement
 import java.sql.ResultSet
 import java.sql.SQLException
+import java.sql.Types
 import java.time.Instant
+import kotlin.time.Duration.Companion.milliseconds
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
@@ -41,6 +46,7 @@ class ConfigStore private constructor(
     private val connection: Connection,
     val path: Path,
     private val dispatcher: CoroutineDispatcher,
+    private val historyRetention: Int,
 ) : MetadataStore, AutoCloseable {
 
     private val mutex = Mutex()
@@ -135,6 +141,131 @@ class ConfigStore private constructor(
         Unit
     }
 
+    // --- Query history -------------------------------------------------------
+
+    /**
+     * Records one attempted execution, and drops whatever falls off the end.
+     *
+     * The insert and the prune are one statement each against the same serialized
+     * connection, so a caller never observes the intermediate state where a
+     * connection holds one row more than its retention allows.
+     *
+     * Nothing here logs [ExecutionRecord.statement]. §2.11 is explicit that history
+     * is sensitive local data, and a query text that reaches a log file has left the
+     * owner-only database that was protecting it.
+     */
+    suspend fun record(entry: ExecutionRecord): Unit = query { db ->
+        db.prepareStatement(
+            """
+            INSERT INTO query_history
+                (connection_id, statement, duration_ms, row_count, status, error, executed_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """.trimIndent(),
+        ).use { statement ->
+            statement.setString(1, entry.connectionId.value)
+            statement.setString(2, entry.statement)
+            statement.setLongOrNull(3, entry.duration?.inWholeMilliseconds)
+            statement.setLongOrNull(4, entry.rowCount)
+            statement.setString(5, entry.outcome.stored)
+            statement.setString(6, entry.error)
+            statement.setString(7, entry.executedAt.toString())
+            statement.executeUpdate()
+        }
+        db.prune(entry.connectionId)
+    }
+
+    /**
+     * The most recent [limit] executions on one connection, newest first.
+     *
+     * The `id` tiebreak matters more than it looks: two statements run in the same
+     * millisecond are ordered by insertion and not arbitrarily, so a history panel
+     * paging through this cannot show a row twice or skip one.
+     *
+     * This is what M4's history panel reads. It exists now because a record that
+     * nothing can read back is a record nothing has tested.
+     */
+    suspend fun history(id: ConnectionId, limit: Int = DEFAULT_HISTORY_RETENTION): List<ExecutionRecord> =
+        query { db ->
+            db.prepareStatement(
+                """
+                SELECT id, connection_id, statement, duration_ms, row_count, status, error, executed_at
+                FROM query_history WHERE connection_id = ?
+                ORDER BY executed_at DESC, id DESC LIMIT ?
+                """.trimIndent(),
+            ).use { statement ->
+                statement.setString(1, id.value)
+                statement.setInt(2, limit)
+                statement.executeQuery().use { rows ->
+                    buildList { while (rows.next()) add(rows.toExecutionRecord()) }
+                }
+            }
+        }
+
+    /** Forgets one connection's history without touching the connection itself. */
+    suspend fun clearHistory(id: ConnectionId): Int = query { db ->
+        db.prepareStatement("DELETE FROM query_history WHERE connection_id = ?").use { statement ->
+            statement.setString(1, id.value)
+            statement.executeUpdate()
+        }
+    }
+
+    /**
+     * Keeps the newest [historyRetention] rows for one connection and deletes the rest.
+     *
+     * Scoped to the connection that was just written to: a prune that ranged over
+     * the whole table would make an afternoon in staging quietly evict last week's
+     * production queries.
+     */
+    private fun Connection.prune(id: ConnectionId) {
+        prepareStatement(
+            """
+            DELETE FROM query_history
+            WHERE connection_id = ? AND id NOT IN (
+                SELECT id FROM query_history WHERE connection_id = ?
+                ORDER BY executed_at DESC, id DESC LIMIT ?
+            )
+            """.trimIndent(),
+        ).use { statement ->
+            statement.setString(1, id.value)
+            statement.setString(2, id.value)
+            statement.setInt(3, historyRetention)
+            statement.executeUpdate()
+        }
+    }
+
+    /** Binds [value], or SQL NULL where there is no number to record. */
+    private fun PreparedStatement.setLongOrNull(index: Int, value: Long?) {
+        if (value == null) setNull(index, Types.INTEGER) else setLong(index, value)
+    }
+
+    /**
+     * One history row.
+     *
+     * A status this build does not recognise is a read failure rather than a
+     * silently dropped row: it means a newer version wrote the file, and pretending
+     * the execution never happened is the worse of the two answers.
+     */
+    private fun ResultSet.toExecutionRecord(): ExecutionRecord {
+        val stored = getString("status")
+        val outcome = ExecutionOutcome.of(stored)
+            ?: throw StoreReadException("A history entry records an outcome this build does not know.")
+        val executedAt = runCatching { Instant.parse(getString("executed_at")) }.getOrElse {
+            throw StoreReadException("A history entry has an unreadable execution time.")
+        }
+        return ExecutionRecord(
+            id = getLong("id"),
+            connectionId = ConnectionId(getString("connection_id")),
+            statement = getString("statement"),
+            outcome = outcome,
+            executedAt = executedAt,
+            // getLong returns 0 for SQL NULL, so wasNull is the only way to tell a
+            // query that took no measurable time from one that was never timed.
+            duration = getLong("duration_ms").takeUnless { wasNull() }?.milliseconds,
+            rowCount = getLong("row_count").takeUnless { wasNull() },
+            error = getString("error"),
+        )
+    }
+
     /** The applied migration version. Reported in the About view from M5. */
     suspend fun schemaVersion(): Int =
         getMetadata(META_SCHEMA_VERSION)?.let { String(it, Charsets.US_ASCII).trim().toIntOrNull() } ?: 0
@@ -224,6 +355,7 @@ class ConfigStore private constructor(
         suspend fun open(
             path: Path,
             dispatcher: CoroutineDispatcher = Dispatchers.IO,
+            historyRetention: Int = DEFAULT_HISTORY_RETENTION,
         ): ConfigStore = withContext(dispatcher) {
             path.parent?.let { directory ->
                 runCatching { Files.createDirectories(directory) }.getOrElse { failure ->
@@ -251,7 +383,7 @@ class ConfigStore private constructor(
                 runCatching { connection.close() }
                 throw failure
             }
-            ConfigStore(connection, path, dispatcher)
+            ConfigStore(connection, path, dispatcher, historyRetention)
         }
 
         /**

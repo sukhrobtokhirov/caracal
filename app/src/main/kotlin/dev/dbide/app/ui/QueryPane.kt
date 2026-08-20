@@ -18,7 +18,9 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
@@ -30,9 +32,14 @@ import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.dbide.app.EditorRun
 import dev.dbide.app.EditorViewModel
+import dev.dbide.app.ExportRun
+import dev.dbide.app.ExportText
+import dev.dbide.app.ExportViewModel
+import dev.dbide.core.export.ExportEligibility
 import java.awt.Cursor
 
 /**
@@ -48,10 +55,17 @@ import java.awt.Cursor
 @Composable
 fun QueryPane(
     model: EditorViewModel,
+    export: ExportViewModel,
     onCopy: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var fraction by remember { mutableFloatStateOf(DEFAULT_SPLIT) }
+
+    // A report naming a file written from a different query is a sentence about
+    // something that is no longer on screen. An export still streaming is left to
+    // finish: running a new query is not a request to abandon it.
+    val grid = (model.run as? EditorRun.Done)?.grid
+    LaunchedEffect(grid) { export.forget() }
 
     BoxWithConstraints(modifier = modifier.fillMaxSize()) {
         val height = constraints.maxHeight.toFloat()
@@ -62,7 +76,7 @@ fun QueryPane(
                     if (height > 0) fraction = (fraction + delta / height).coerceIn(MIN_SPLIT, MAX_SPLIT)
                 },
             )
-            Box(modifier = Modifier.weight(1f - fraction)) { ResultArea(model, onCopy) }
+            Box(modifier = Modifier.weight(1f - fraction)) { ResultArea(model, export, onCopy) }
         }
     }
 
@@ -80,13 +94,21 @@ fun QueryPane(
 
 /** What the last run left behind, in whichever of its five states it ended. */
 @Composable
-private fun ResultArea(model: EditorViewModel, onCopy: (String) -> Unit) {
+private fun ResultArea(model: EditorViewModel, export: ExportViewModel, onCopy: (String) -> Unit) {
     when (val run = model.run) {
         EditorRun.Idle -> Note("Run a statement to see its result.", "query-idle")
 
         is EditorRun.Running -> Running(model)
 
-        is EditorRun.Done -> ResultGrid(run.grid, onCopy = onCopy)
+        is EditorRun.Done -> Column(modifier = Modifier.fillMaxSize()) {
+            Box(modifier = Modifier.weight(1f)) { ResultGrid(run.grid, onCopy = onCopy) }
+            // A statement that returned no columns has nothing to write to a file,
+            // and offering to export one would be offering an empty document.
+            if (run.grid.result.columns.isNotEmpty()) {
+                HorizontalDivider()
+                ExportStrip(model, export, run)
+            }
+        }
 
         // Cancelled is not a failure and is not drawn as one: the user asked for the
         // statement to stop, and it stopped.
@@ -162,6 +184,70 @@ private fun Splitter(onDrag: (Float) -> Unit) {
         contentAlignment = Alignment.Center,
     ) {
         HorizontalDivider()
+    }
+}
+
+/**
+ * The export control, and the one sentence §2.10 requires next to it.
+ *
+ * The sentence is always there rather than hidden behind a tooltip, because what it
+ * says is the thing a user would otherwise get wrong: this does not save the grid,
+ * it runs the statement again. A result that has been sitting on screen for ten
+ * minutes can export as something visibly different, and finding that out from the
+ * file is finding it out too late.
+ *
+ * When the statement does not qualify — a script of several, a write, an unfinished
+ * quote — the same line carries `:core`'s refusal instead. A disabled button with no
+ * explanation beside it is a bug report waiting to be filed.
+ */
+@Composable
+private fun ExportStrip(model: EditorViewModel, export: ExportViewModel, run: EditorRun.Done) {
+    val connection = model.connection ?: return
+    val sql = run.target.sql
+    val refusal = (remember(sql) { export.eligibility(sql) } as? ExportEligibility.Refused)?.refusal
+
+    val state = export.run
+    val failed = state is ExportRun.Failed
+    val message = when (state) {
+        ExportRun.Idle -> refusal?.message ?: ExportText.RERUN
+        is ExportRun.Running -> ExportText.running(state.path)
+        is ExportRun.Done -> ExportText.done(state.path, state.report)
+        ExportRun.Cancelled -> "Export cancelled. No file was written."
+        is ExportRun.Failed -> state.failure.message
+    }
+
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(start = 4.dp, end = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        TextButton(
+            onClick = { export.start(connection.id, sql, connection.name) },
+            enabled = refusal == null && !export.running,
+            modifier = Modifier.semantics { contentDescription = "export-start" },
+        ) {
+            Text("Export CSV…", style = MaterialTheme.typography.labelSmall)
+        }
+        if (export.running) {
+            CircularProgressIndicator(modifier = Modifier.size(12.dp), strokeWidth = 2.dp)
+            TextButton(
+                onClick = export::cancel,
+                modifier = Modifier.semantics { contentDescription = "export-stop" },
+            ) {
+                Text("Stop", style = MaterialTheme.typography.labelSmall)
+            }
+        }
+        Text(
+            text = message,
+            style = MaterialTheme.typography.labelSmall,
+            color = if (failed) {
+                MaterialTheme.colorScheme.error
+            } else {
+                MaterialTheme.colorScheme.onSurfaceVariant
+            },
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f).semantics { contentDescription = "export-status" },
+        )
     }
 }
 

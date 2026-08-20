@@ -14,10 +14,12 @@ no JDK to install: the installer bundles its own trimmed runtime.
 > tag; the plan's [§10](db-ide-mvp-plan.md#10-stack-move-record--2026-08-20)
 > records exactly what the move simplified and what it made harder.
 >
-> Kotlin **M0 and M1 are done**: a packaged window opens an encrypted connection
-> manager, where PostgreSQL and Redis connections are saved under a master
-> password, survive a restart, and reconnect on unlock. M2 — the PostgreSQL read
-> path — is next. See [`docs/mvp-steps/`](docs/mvp-steps/README.md).
+> Kotlin **M0, M1, and M2 are done**: a packaged window opens an encrypted
+> connection manager, where PostgreSQL and Redis connections are saved under a
+> master password, survive a restart, and reconnect on unlock — and a PostgreSQL
+> connection then opens a schema browser, a SQL editor, a virtualized result grid,
+> and CSV export. M3, the Redis read path, is next. See
+> [`docs/mvp-steps/`](docs/mvp-steps/README.md).
 
 ## The shape of the product
 
@@ -128,6 +130,11 @@ mattered — this process holds live database credentials.
 - The database user's own grants remain the real boundary. A read-only role is
   still the right way to browse production.
 - Production-tagged connections are visibly and behaviorally distinct.
+- Every execution is recorded in query history — the statement as submitted, how it
+  ended, and a message that has already been redacted. It is kept in the same
+  owner-only database as the sealed credentials, and never written to a log: a
+  `WHERE email = '…'` is a record of a person as much as of a query. History is
+  capped per connection and goes with the connection when it is deleted.
 
 ### Stored credentials
 
@@ -162,15 +169,17 @@ core/src/main/kotlin/dev/dbide/core/
   sql/           statement splitter, editor execution rule, highlighting    [M2]
   policy/        what a statement may do, and what must be agreed to first  [M2]
   export/        CSV writing, export eligibility, bounded streaming         [M2]
+  history/       what was executed, how it ended, and how much is kept      [M2]
 
 app/src/main/kotlin/dev/dbide/app/
   ui/            connection screens [M1]; schema tree, SQL editor, result grid [M2]
   Main.kt        window, application lifecycle
 ```
 
-Directories marked with an unshipped milestone are placeholders. `sql/`,
-`catalog/`, `policy/`, and `export/` are the exceptions: they are the parts of M2
-that have landed. The Redis key browser is not in `ui/` yet.
+The Redis key browser is not in `ui/` yet — `redis/` carries M1's connection
+handling and waits for M3. Query history is written from M2 and read from M4:
+the panel that shows it is not built, so the only way to see it today is the
+`query_history` table in the configuration database.
 
 Configuration lives in the platform application data directory
 (`~/Library/Application Support/dbide` on macOS, `%AppData%\dbide` on Windows,

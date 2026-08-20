@@ -108,6 +108,35 @@ The cancel route must be idempotent:
 
 Scope the lookup to both route connection ID and query ID so an identifier from another connection cannot be cancelled or exported accidentally.
 
+> **Deviation, 2026-08-21 — there is no execution registry, and no query IDs.**
+> This section describes a registry because the original design put the editor and
+> the database in different processes: a browser that had started a query held only
+> a string, so it needed an identifier to name that query in a later `POST /cancel`
+> or `GET /export` request, and the server needed a table mapping identifiers back
+> to cancel functions with an expiry to stop it growing.
+>
+> The UI now calls suspend functions in the same process. What the editor holds while
+> a query runs is the `Job` that is running it, so cancelling is `job.cancel()` and
+> `PostgresAdapter` turns that into `Statement.cancel()` from another thread. There is
+> nothing to look up, nothing to expire, and no window in which an identifier is valid
+> — which also disposes of this section's cross-connection concern, since a `Job` is
+> not a name that another connection could guess.
+>
+> The properties the registry existed to provide are kept, and are tested:
+>
+> - **Cancellation covers the pool wait**, because the job is cancelled before
+>   `dataSource.connection` is reached and the coroutine never enters it.
+> - **Idempotence** is `EditorViewModel.cancel()` returning early when nothing is
+>   running, rather than a route answering `202` or the terminal state.
+> - **Nothing outlives its owner**: closing the editor cancels its query and no other,
+>   which is scope rather than bookkeeping.
+> - **Export is scoped to its connection** because it is called with one, not looked
+>   up by an identifier that might belong to another.
+>
+> What is genuinely lost is the ability to cancel a query from somewhere other than
+> the editor that started it. There is nowhere else to cancel it from in a single
+> window, and M4's tabs each own their own editor.
+
 ### 2.2 Implement the PostgreSQL statement splitter
 
 Do not split on semicolons. Build a small deterministic lexer that recognizes enough PostgreSQL syntax to identify statement boundaries without trying to parse SQL semantics.
@@ -378,6 +407,42 @@ CSV requirements:
 
 If the original statement cannot be guaranteed read-only, disable export and explain why.
 
+> **Note, 2026-08-21 — the route became a function, and the header became a dialog.**
+> There is no `GET /export?queryId=`, for the reason [§2.1](#21-define-query-execution-state)
+> records: the identifier existed to name a query across a process boundary that is
+> no longer there. `ConnectionService.exportCsv` takes the statement and the file to
+> write, and the "completed, unexpired query ID" this section asks the route to
+> validate is replaced by `ExportEligibility`, which asks the only question that
+> actually mattered — may this statement be run *again*?
+>
+> Everything else in the list survives, and is where you would expect:
+>
+> - `CsvWriter` is the RFC 4180 quoting, and it streams: one record at a time into a
+>   `Writer`, never a document assembled in memory. `encoding/csv` was Go's; this is
+>   the same rules written out, including the `\.` a `COPY` stream would read as a
+>   terminator.
+> - **NULL is the word `NULL`**, written unquoted, with any value that happens to
+>   equal it written quoted — so `NULL` and `"NULL"` are different things in the file.
+>   An empty field is ambiguous against the empty string, which is the distinction the
+>   grid goes to trouble to draw.
+> - **UTF-8 with a header row and CRLF**, and no byte-order mark: it is not part of
+>   UTF-8, and it arrives as three stray characters in front of the first column name
+>   in everything that does not special-case it.
+> - `Content-Type` and `Content-Disposition` have no meaning without HTTP. The user
+>   picks the file in the platform's own save dialog, so the sanitizing in
+>   `CsvExport.fileName` applies to the name this application *suggests* — a
+>   connection called `staging/eu` cannot propose a directory — and the name that
+>   comes back is theirs.
+> - **A partial file is deleted, not left.** `CsvExport.writeToFile` removes a file it
+>   did not finish, cancellation included, because a CSV that simply stops is a
+>   complete-looking document with no way for a reader to know the rows ran out. That
+>   is the local equivalent of "stop database work immediately if the client
+>   disconnects".
+> - **The re-run is said out loud.** The export strip under the grid carries the
+>   sentence permanently rather than behind a tooltip: this does not save what is on
+>   screen, it runs the statement again, and a result that has been sitting there for
+>   ten minutes can export as something visibly different.
+
 ### 2.11 Record query history
 
 Insert one `query_history` row after every attempted execution, including error and cancellation:
@@ -391,6 +456,31 @@ Insert one `query_history` row after every attempted execution, including error 
 - execution timestamp.
 
 Do not store parameter values separately or log the statement. History is sensitive local data; its viewing/deletion UI is part of M4. Consider a configurable retention cap, but do not add complex policy UI in this milestone.
+
+> **Note, 2026-08-21 — where history is written, and what it costs.**
+> `DefaultConnectionService.execute` writes the row, because it is the one place that
+> holds the connection, the statement, and the outcome at once. It writes under
+> `NonCancellable`, since the cancelled execution is precisely the one that must still
+> be recorded — a coroutine already cancelled would otherwise be cancelled again at
+> the store's first suspension.
+>
+> The stored error is `Throwable.toFailure().message`, which is the same redaction the
+> banner renders through. A history panel must not be the place a host name finally
+> shows up.
+>
+> A store failure is swallowed to a debug line that names neither the statement nor
+> the connection. History is a convenience, and a full disk must not turn a successful
+> query into a failed one.
+>
+> **Retention is per connection**, capped at `DEFAULT_HISTORY_RETENTION` and pruned on
+> insert. Per connection rather than in total, because the alternative is that an
+> afternoon in a staging database quietly evicts the production queries from last
+> week. It is a constructor parameter on `ConfigStore` and not a setting, which is
+> what this section asks for.
+>
+> **Export is not recorded.** It re-runs a statement that is already in history from
+> the run that filled the grid, and a second identical row would say the user ran
+> something twice when what they did was save it once.
 
 ## Testing
 
@@ -444,17 +534,23 @@ Run against supported PostgreSQL versions in CI where practical. Create fixtures
 
 ## Completion checklist
 
-- [ ] Schemas, objects, and columns load lazily from `pg_catalog`.
-- [ ] CodeMirror supports highlighted SQL and deterministic statement execution.
-- [ ] The statement splitter handles all PostgreSQL quote/comment forms and is fuzz-tested.
-- [ ] Every execution has a query ID and working cancellation.
-- [ ] Results are bounded by rows and bytes.
-- [ ] Type encoding preserves precision and distinguishes NULL from empty strings.
-- [ ] The result grid is virtualized and never interprets values as HTML.
+- [x] Schemas, objects, and columns load lazily from `pg_catalog`.
+- [x] The editor highlights SQL and executes one deterministically chosen statement — through `BasicTextField`, per [§2.3](#23-define-editor-execution-semantics)'s deviation.
+- [x] The statement splitter handles all PostgreSQL quote/comment forms and is fuzz-tested.
+- [x] Every execution can be cancelled, and the cancellation reaches the server. There is no query ID; [§2.1](#21-define-query-execution-state)'s deviation says what replaced it.
+- [x] Results are bounded by rows and bytes.
+- [x] Type encoding preserves precision and distinguishes NULL from empty strings.
+- [x] The result grid is virtualized and never interprets values as HTML.
 - [x] Read-only and production safety policies are enforced server-side.
-- [ ] Eligible results stream to valid CSV with bounded resource use.
-- [ ] Every execution records history without leaking query text into normal logs.
+- [x] Eligible results stream to valid CSV with bounded resource use.
+- [x] Every execution records history without leaking query text into normal logs.
 
 ## Exit criterion
 
 Use the application instead of `psql` for a real work query, including schema discovery, execution, inspection, cancellation, and export, without losing type fidelity or reaching for another tool.
+
+> **2026-08-21 — every work package has landed.** The checklist above is a list of
+> things that are built and tested; the exit criterion is not, because it is not a
+> thing that can be built. It is a day spent using this instead of `psql`, and what
+> it produces is the list of reasons you switched back — which, per the source plan's
+> §7, is the v0.2 backlog written by the only user who matters right now.

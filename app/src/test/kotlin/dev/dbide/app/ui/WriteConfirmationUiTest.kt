@@ -14,6 +14,7 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.v2.runDesktopComposeUiTest
 import dev.dbide.app.EditorViewModel
+import dev.dbide.app.ExportViewModel
 import dev.dbide.app.FakeConnectionService
 import dev.dbide.core.connections.ConnectionConfig
 import dev.dbide.core.connections.ConnectionId
@@ -48,7 +49,8 @@ class WriteConfirmationUiTest {
         setContent {
             val scope = rememberCoroutineScope()
             model = remember { EditorViewModel(service, scope).also { it.show(connection) } }
-            MaterialTheme { QueryPane(model, onCopy = {}) }
+            val export = remember { ExportViewModel(service, scope) { null } }
+            MaterialTheme { QueryPane(model, export, onCopy = {}) }
         }
         waitForIdle()
         return model

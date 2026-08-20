@@ -20,6 +20,9 @@ import dev.dbide.core.connections.SecretUpdate
 import dev.dbide.core.connections.TestResult
 import dev.dbide.core.connections.TlsMode
 import dev.dbide.core.connections.ValidationException
+import dev.dbide.core.export.CsvExportReport
+import dev.dbide.core.export.CsvOptions
+import dev.dbide.core.export.ExportLimits
 import dev.dbide.core.result.CellValue
 import dev.dbide.core.result.Column
 import dev.dbide.core.result.ColumnFormat
@@ -30,7 +33,9 @@ import dev.dbide.core.store.ConnectionNotFoundException
 import dev.dbide.core.vault.VaultLockedException
 import dev.dbide.core.vault.VaultState
 import dev.dbide.core.vault.WrongPasswordException
+import java.nio.file.Path
 import java.time.Instant
+import kotlin.io.path.writeText
 import kotlin.time.Duration.Companion.milliseconds
 import kotlinx.coroutines.CompletableDeferred
 
@@ -233,6 +238,40 @@ open class FakeConnectionService(
         await()
         requireUnlocked()
         return queryResult
+    }
+
+    /** Every export the editor asked for: the statement, and where it was written. */
+    val exports = mutableListOf<Pair<String, Path>>()
+
+    /** What every export reports, unless [nextFailure] is set first. */
+    var exportReport = CsvExportReport(rows = 3, bytes = 64, duration = 5.milliseconds)
+
+    /** What a completed export leaves in the file. */
+    var exportContent: String = "one\r\n1\r\n"
+
+    /**
+     * Records the export and, on success, writes [exportContent].
+     *
+     * Deliberately *not* routed through `CsvExport.writeToFile`. That function opens
+     * its writer on `Dispatchers.IO`, which a `TestScope` cannot advance past, and
+     * what it guarantees — that a failed or cancelled export deletes its partial file
+     * — is `:core`'s and is asserted against the real thing in `CsvExportTest` and
+     * `PostgresCsvExportIntegrationTest`. A double that reimplemented it here would
+     * only be a test of the double.
+     */
+    override suspend fun exportCsv(
+        id: ConnectionId,
+        sql: String,
+        destination: Path,
+        options: CsvOptions,
+        limits: ExportLimits,
+    ): CsvExportReport {
+        calls += "exportCsv"
+        exports += sql to destination
+        await()
+        requireUnlocked()
+        destination.writeText(exportContent)
+        return exportReport
     }
 
     private fun refuse(schema: String) {

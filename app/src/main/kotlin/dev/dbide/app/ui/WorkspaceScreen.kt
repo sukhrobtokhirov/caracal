@@ -34,6 +34,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import dev.dbide.app.ConnectionsViewModel
 import dev.dbide.app.EditorViewModel
+import dev.dbide.app.ExportViewModel
 import dev.dbide.app.Pane
 import dev.dbide.app.SchemaTreeViewModel
 import dev.dbide.core.connections.ConnectionView
@@ -58,6 +59,7 @@ fun WorkspaceScreen(
     viewModel: ConnectionsViewModel,
     tree: SchemaTreeViewModel,
     editor: EditorViewModel,
+    export: ExportViewModel,
     onLock: () -> Unit,
 ) {
     LaunchedEffect(Unit) { viewModel.refresh() }
@@ -158,7 +160,7 @@ fun WorkspaceScreen(
                                 WorkspaceTabs(selected = tab, onSelect = { tab = it })
                                 HorizontalDivider()
                                 when (tab) {
-                                    WorkspaceTab.QUERY -> QueryPane(editor, onCopy = copy)
+                                    WorkspaceTab.QUERY -> QueryPane(editor, export, onCopy = copy)
                                     WorkspaceTab.CONNECTION -> detail()
                                 }
                             }

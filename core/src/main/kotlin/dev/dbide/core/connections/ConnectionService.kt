@@ -5,20 +5,33 @@ import dev.dbide.core.catalog.ColumnInfo
 import dev.dbide.core.catalog.Listing
 import dev.dbide.core.catalog.ObjectKind
 import dev.dbide.core.catalog.SchemaInfo
+import dev.dbide.core.export.CsvExport
+import dev.dbide.core.export.CsvExportReport
+import dev.dbide.core.export.CsvOptions
+import dev.dbide.core.export.ExportLimits
+import dev.dbide.core.history.ExecutionOutcome
+import dev.dbide.core.history.ExecutionRecord
 import dev.dbide.core.postgres.PostgresCatalog
 import dev.dbide.core.postgres.PostgresConnectionConfig
 import dev.dbide.core.postgres.PostgresProbe
 import dev.dbide.core.redis.RedisSession
 import dev.dbide.core.registry.ConnectionRegistry
 import dev.dbide.core.result.QueryResult
+import dev.dbide.core.result.toFailure
 import dev.dbide.core.store.ConfigStore
 import dev.dbide.core.vault.SecretIdentity
 import dev.dbide.core.vault.Vault
 import dev.dbide.core.vault.VaultException
 import dev.dbide.core.vault.VaultLockedException
 import dev.dbide.core.vault.VaultState
+import java.nio.file.Path
 import java.time.Instant
 import java.util.UUID
+import kotlin.time.TimeSource
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
+import org.slf4j.LoggerFactory
 
 /**
  * Everything the UI can do to connections, as the source plan's §4 defines it.
@@ -88,8 +101,39 @@ interface ConnectionService {
      * [dev.dbide.core.sql.EditorExecution]'s job and happens before anything is sent.
      * Cancelling the calling coroutine cancels the statement on the server, so
      * closing the editor that started it stops the work rather than orphaning it.
+     *
+     * Every attempt is recorded in query history — succeeded, failed, or cancelled
+     * — because the query worth finding again later is rarely the one that worked.
+     * The panel that reads it back is M4's.
      */
     suspend fun execute(id: ConnectionId, sql: String): QueryResult
+
+    /**
+     * Runs [sql] **again** and streams its whole result to [destination] as CSV.
+     *
+     * Again is the word a caller has to pass on to the user: this is a second
+     * execution against the live server, so a table that has changed since the grid
+     * was drawn exports as it is now. The alternative — holding every completed
+     * result in case someone exports it — is how an IDE ends up carrying a gigabyte
+     * per tab.
+     *
+     * Refused before a connection is taken when
+     * [dev.dbide.core.export.ExportEligibility] says the statement does not qualify.
+     * A returned [CsvExportReport] that is not `complete` means a limit ended the
+     * file early and the caller must say so; cancellation and failure throw instead,
+     * and leave no file behind.
+     *
+     * Not recorded in query history. The statement is already there from the run
+     * that filled the grid, and a second identical row would say that the user ran
+     * something twice when what they did was save it once.
+     */
+    suspend fun exportCsv(
+        id: ConnectionId,
+        sql: String,
+        destination: Path,
+        options: CsvOptions = CsvOptions(),
+        limits: ExportLimits = ExportLimits(),
+    ): CsvExportReport
 
     /** Releases every client. Called during application shutdown. */
     suspend fun shutdown()
@@ -109,6 +153,8 @@ class DefaultConnectionService(
     private val clock: () -> Instant = Instant::now,
     private val newId: () -> ConnectionId = { ConnectionId(UUID.randomUUID().toString()) },
 ) : ConnectionService {
+
+    private val log = LoggerFactory.getLogger(DefaultConnectionService::class.java)
 
     // --- Vault lifecycle -----------------------------------------------------
 
@@ -274,13 +320,90 @@ class DefaultConnectionService(
      */
     override suspend fun execute(id: ConnectionId, sql: String): QueryResult {
         requireUnlocked()
-        return registry.postgres(id).adapter.execute(sql)
+        val adapter = registry.postgres(id).adapter
+        val executedAt = clock()
+        val started = TimeSource.Monotonic.markNow()
+        try {
+            val result = adapter.execute(sql)
+            // Rows returned, or rows affected for a statement that produced no result
+            // set. `rowsAffected` is null for a result-producing statement, so the two
+            // never both apply.
+            record(id, sql, ExecutionOutcome.OK, executedAt, started, result.rowsAffected ?: result.rows.size.toLong())
+            return result
+        } catch (cancellation: CancellationException) {
+            record(id, sql, ExecutionOutcome.CANCELLED, executedAt, started)
+            throw cancellation
+        } catch (problem: Throwable) {
+            // toFailure() is the redaction boundary the UI already renders through, so
+            // the sentence stored here is exactly the one the user was shown — and it
+            // carries no host, user name, or driver text, whatever was thrown.
+            record(id, sql, ExecutionOutcome.ERROR, executedAt, started, error = problem.toFailure().message)
+            throw problem
+        }
+    }
+
+    /**
+     * Re-runs [sql] and streams it to [destination] as CSV.
+     *
+     * The file is the unit of failure, not the row: [CsvExport.writeToFile] deletes
+     * a partial file rather than leaving one behind, because a CSV that simply stops
+     * is not a partial document — it is a complete-looking one with no way for
+     * anything reading it to know the rows ran out.
+     */
+    override suspend fun exportCsv(
+        id: ConnectionId,
+        sql: String,
+        destination: Path,
+        options: CsvOptions,
+        limits: ExportLimits,
+    ): CsvExportReport {
+        requireUnlocked()
+        val adapter = registry.postgres(id).adapter
+        return CsvExport.writeToFile(destination) { out -> adapter.exportCsv(sql, out, options, limits) }
     }
 
     /** Releases every client. Called during application shutdown. */
     override suspend fun shutdown() = registry.closeAll()
 
     // --- Internals -----------------------------------------------------------
+
+    /**
+     * Writes one history row, and never lets doing so change what execute() did.
+     *
+     * [NonCancellable], because the cancellation path is precisely the one that must
+     * still be recorded: a user who stops a query at 2am is exactly the user who
+     * comes back looking for it. A coroutine that has already been cancelled would
+     * otherwise be cancelled again at the first suspension inside the store.
+     *
+     * A store failure is swallowed to a debug line. History is a convenience; a full
+     * disk must not turn a successful query into a failed one, and the log line
+     * deliberately names neither the statement nor the connection.
+     */
+    private suspend fun record(
+        id: ConnectionId,
+        sql: String,
+        outcome: ExecutionOutcome,
+        executedAt: Instant,
+        started: TimeSource.Monotonic.ValueTimeMark,
+        rowCount: Long? = null,
+        error: String? = null,
+    ) {
+        val entry = ExecutionRecord(
+            connectionId = id,
+            statement = sql,
+            outcome = outcome,
+            executedAt = executedAt,
+            // Measured around the whole call rather than taken from QueryResult, so
+            // that a failure and a cancellation are timed the same way a success is.
+            duration = started.elapsedNow(),
+            rowCount = rowCount,
+            error = error,
+        )
+        withContext(NonCancellable) {
+            runCatching { store.record(entry) }
+                .onFailure { log.debug("an execution could not be recorded in history") }
+        }
+    }
 
     private suspend fun catalog(id: ConnectionId): PostgresCatalog {
         requireUnlocked()

@@ -170,7 +170,8 @@ object GridText {
         return listOfNotNull(head, duration(result.duration), truncation).joinToString(" · ")
     }
 
-    private fun count(rows: Long): String =
+    /** `1 row`, `1,204 rows` — grouped, so a six-figure count is readable at a glance. */
+    fun count(rows: Long): String =
         String.format(Locale.ROOT, if (rows == 1L) "%,d row" else "%,d rows", rows)
 
     /** A duration at a precision a person can read, and compare between two runs. */

@@ -17,6 +17,7 @@ import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.v2.runDesktopComposeUiTest
 import dev.dbide.app.ConnectionsViewModel
 import dev.dbide.app.EditorViewModel
+import dev.dbide.app.ExportViewModel
 import dev.dbide.app.FakeConnectionService
 import dev.dbide.app.SchemaTreeViewModel
 import dev.dbide.app.VaultUiState
@@ -68,7 +69,8 @@ class ConnectionUiTest {
             model = remember { ConnectionsViewModel(service, scope) }
             val tree = remember { SchemaTreeViewModel(service, scope) }
             val editor = remember { EditorViewModel(service, scope) }
-            MaterialTheme { WorkspaceScreen(model, tree, editor, onLock = {}) }
+            val export = remember { ExportViewModel(service, scope) { null } }
+            MaterialTheme { WorkspaceScreen(model, tree, editor, export, onLock = {}) }
         }
         waitForIdle()
         return model

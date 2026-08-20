@@ -6,15 +6,19 @@ import dev.dbide.core.connections.ConnectionRecord
 import dev.dbide.core.connections.Engine
 import dev.dbide.core.connections.Environment
 import dev.dbide.core.connections.TlsMode
+import dev.dbide.core.history.ExecutionOutcome
+import dev.dbide.core.history.ExecutionRecord
 import java.nio.file.Files
 import java.nio.file.Path
 import java.sql.DriverManager
-import java.sql.SQLException
 import java.time.Instant
 import kotlin.io.path.exists
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.milliseconds
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
@@ -212,7 +216,7 @@ class ConfigStoreTest {
     fun `deleting a connection cascades its query history away`() = runTest {
         withStore { store ->
             store.create(record())
-            insertHistoryRow(ConnectionId("id-1"))
+            store.record(execution())
             assertEquals(1, historyRowCount())
 
             store.delete(ConnectionId("id-1"))
@@ -223,8 +227,143 @@ class ConfigStoreTest {
 
     @Test
     fun `query history cannot name a connection that does not exist`() = runTest {
-        withStore {
-            assertThrows<SQLException> { insertHistoryRow(ConnectionId("ghost")) }
+        withStore { store ->
+            assertThrows<StoreException> { store.record(execution(id = ConnectionId("ghost"))) }
+        }
+    }
+
+    @Test
+    fun `an execution round trips through history`() = runTest {
+        withStore { store ->
+            store.create(record())
+            store.record(
+                execution(
+                    statement = "SELECT * FROM \"Mixed Case\" WHERE note = 'quoted, comma'",
+                    duration = 1_250.milliseconds,
+                    rowCount = 42,
+                ),
+            )
+
+            val entry = store.history(ConnectionId("id-1")).single()
+
+            assertEquals("SELECT * FROM \"Mixed Case\" WHERE note = 'quoted, comma'", entry.statement)
+            assertEquals(ExecutionOutcome.OK, entry.outcome)
+            assertEquals(1_250.milliseconds, entry.duration)
+            assertEquals(42L, entry.rowCount)
+            assertNull(entry.error)
+            assertEquals(Instant.parse("2026-08-21T09:00:00Z"), entry.executedAt)
+            assertNotNull(entry.id)
+        }
+    }
+
+    @Test
+    fun `a failed execution keeps its message and a cancelled one keeps no numbers`() = runTest {
+        withStore { store ->
+            store.create(record())
+            store.record(
+                execution(
+                    outcome = ExecutionOutcome.ERROR,
+                    at = Instant.parse("2026-08-21T09:00:00Z"),
+                    error = "relation \"invoice\" does not exist",
+                ),
+            )
+            store.record(
+                execution(outcome = ExecutionOutcome.CANCELLED, at = Instant.parse("2026-08-21T09:01:00Z")),
+            )
+
+            val (cancelled, failed) = store.history(ConnectionId("id-1"))
+
+            assertEquals(ExecutionOutcome.CANCELLED, cancelled.outcome)
+            assertNull(cancelled.rowCount)
+            assertNull(cancelled.duration)
+            assertNull(cancelled.error)
+            assertEquals("relation \"invoice\" does not exist", failed.error)
+        }
+    }
+
+    @Test
+    fun `history is newest first, and same-millisecond executions keep their order`() = runTest {
+        withStore { store ->
+            store.create(record())
+            val moment = Instant.parse("2026-08-21T09:00:00Z")
+            store.record(execution(statement = "first", at = moment))
+            store.record(execution(statement = "second", at = moment))
+            store.record(execution(statement = "third", at = moment.plusSeconds(1)))
+
+            assertEquals(
+                listOf("third", "second", "first"),
+                store.history(ConnectionId("id-1")).map { it.statement },
+            )
+        }
+    }
+
+    @Test
+    fun `retention keeps the newest entries, and only for the connection written to`() = runTest {
+        ConfigStore.open(databasePath, historyRetention = 2).use { store ->
+            store.create(record(id = "id-1", name = "Alpha"))
+            store.create(record(id = "id-2", name = "Beta"))
+            val moment = Instant.parse("2026-08-21T09:00:00Z")
+            repeat(3) { index ->
+                store.record(execution(statement = "alpha-$index", at = moment.plusSeconds(index.toLong())))
+            }
+            repeat(2) { index ->
+                store.record(
+                    execution(
+                        id = ConnectionId("id-2"),
+                        statement = "beta-$index",
+                        at = moment.plusSeconds(index.toLong()),
+                    ),
+                )
+            }
+
+            assertContentEquals(
+                listOf("alpha-2", "alpha-1"),
+                store.history(ConnectionId("id-1")).map { it.statement },
+            )
+            // An afternoon in staging must not evict last week's production queries.
+            assertContentEquals(
+                listOf("beta-1", "beta-0"),
+                store.history(ConnectionId("id-2")).map { it.statement },
+            )
+        }
+    }
+
+    @Test
+    fun `history reads back only the connection it was asked for`() = runTest {
+        withStore { store ->
+            store.create(record(id = "id-1", name = "Alpha"))
+            store.create(record(id = "id-2", name = "Beta"))
+            store.record(execution(statement = "alpha"))
+            store.record(execution(id = ConnectionId("id-2"), statement = "beta"))
+
+            assertEquals(listOf("alpha"), store.history(ConnectionId("id-1")).map { it.statement })
+        }
+    }
+
+    @Test
+    fun `clearing history leaves the connection alone`() = runTest {
+        withStore { store ->
+            store.create(record())
+            store.record(execution())
+            store.record(execution())
+
+            assertEquals(2, store.clearHistory(ConnectionId("id-1")))
+
+            assertTrue(store.history(ConnectionId("id-1")).isEmpty())
+            assertEquals("Local", store.get(ConnectionId("id-1")).config.name)
+        }
+    }
+
+    @Test
+    fun `an outcome this build does not know is a read failure, not a skipped row`() = runTest {
+        withStore { store ->
+            store.create(record())
+            // What a newer version writing an outcome this one has never heard of
+            // would leave behind. Silently dropping the row would report a history
+            // that is missing an execution and say nothing about it.
+            insertHistoryRow(ConnectionId("id-1"), status = "rolled_back")
+
+            assertThrows<StoreReadException> { store.history(ConnectionId("id-1")) }
         }
     }
 
@@ -284,20 +423,38 @@ class ConfigStoreTest {
     private fun posixPermissions(path: Path) =
         java.nio.file.attribute.PosixFilePermissions.toString(Files.getPosixFilePermissions(path))
 
+    private fun execution(
+        id: ConnectionId = ConnectionId("id-1"),
+        statement: String = "SELECT 1",
+        outcome: ExecutionOutcome = ExecutionOutcome.OK,
+        at: Instant = Instant.parse("2026-08-21T09:00:00Z"),
+        duration: Duration? = null,
+        rowCount: Long? = null,
+        error: String? = null,
+    ) = ExecutionRecord(
+        connectionId = id,
+        statement = statement,
+        outcome = outcome,
+        executedAt = at,
+        duration = duration,
+        rowCount = rowCount,
+        error = error,
+    )
+
     /**
-     * M2 owns query history, so there is no store API for it yet. These two helpers
-     * reach the table directly to prove the foreign key is real now, rather than
-     * discovering in M4 that it never was.
+     * Writes a history row the store's own API would refuse to write, which is the
+     * only way to model a file written by a version this one does not have.
      */
-    private fun insertHistoryRow(connectionId: ConnectionId) {
+    private fun insertHistoryRow(connectionId: ConnectionId, status: String) {
         connect().use { connection ->
             connection.prepareStatement(
                 """
                 INSERT INTO query_history (connection_id, statement, status, executed_at)
-                VALUES (?, 'SELECT 1', 'ok', '2026-08-20T10:00:00Z')
+                VALUES (?, 'SELECT 1', ?, '2026-08-20T10:00:00Z')
                 """.trimIndent(),
             ).use { statement ->
                 statement.setString(1, connectionId.value)
+                statement.setString(2, status)
                 statement.executeUpdate()
             }
         }

@@ -15,6 +15,7 @@ import androidx.compose.ui.test.performMouseInput
 import androidx.compose.ui.test.v2.runDesktopComposeUiTest
 import dev.dbide.app.ConnectionsViewModel
 import dev.dbide.app.EditorViewModel
+import dev.dbide.app.ExportViewModel
 import dev.dbide.app.FakeConnectionService
 import dev.dbide.app.SchemaTreeViewModel
 import dev.dbide.core.catalog.ColumnInfo
@@ -164,7 +165,8 @@ class SchemaTreeUiTest {
                 val connections = remember { ConnectionsViewModel(service, scope) }
                 val tree = remember { SchemaTreeViewModel(service, scope) }
                 val editor = remember { EditorViewModel(service, scope) }
-                MaterialTheme { WorkspaceScreen(connections, tree, editor, onLock = {}) }
+                val export = remember { ExportViewModel(service, scope) { null } }
+                MaterialTheme { WorkspaceScreen(connections, tree, editor, export, onLock = {}) }
             }
             waitForIdle()
 
@@ -191,7 +193,8 @@ class SchemaTreeUiTest {
                 val connections = remember { ConnectionsViewModel(service, scope) }
                 val tree = remember { SchemaTreeViewModel(service, scope) }
                 val editor = remember { EditorViewModel(service, scope) }
-                MaterialTheme { WorkspaceScreen(connections, tree, editor, onLock = {}) }
+                val export = remember { ExportViewModel(service, scope) { null } }
+                MaterialTheme { WorkspaceScreen(connections, tree, editor, export, onLock = {}) }
             }
             waitForIdle()
 

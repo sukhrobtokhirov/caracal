@@ -32,7 +32,13 @@ sealed interface EditorRun {
     /** [target] is on the server now, and can be cancelled. */
     data class Running(val target: ExecutionTarget) : EditorRun
 
-    data class Done(val grid: ResultGridState) : EditorRun
+    /**
+     * [grid] is what came back, and [target] is the statement that produced it —
+     * kept because export re-runs that statement, and the text in the editor may
+     * have been edited since it was sent. Exporting what is on screen means
+     * exporting what filled it, not whatever the caret is in now.
+     */
+    data class Done(val target: ExecutionTarget, val grid: ResultGridState) : EditorRun
 
     /**
      * It failed, and [errorAt] is where in the document — not in the statement — the
@@ -252,7 +258,7 @@ class EditorViewModel(
                 // A result that arrived after the user cancelled is not shown: they
                 // asked for it to stop, and the grid would be saying otherwise.
                 ensureActive()
-                run = EditorRun.Done(ResultGridState(result))
+                run = EditorRun.Done(target, ResultGridState(result))
             } catch (cancellation: CancellationException) {
                 throw cancellation
             } catch (problem: Throwable) {

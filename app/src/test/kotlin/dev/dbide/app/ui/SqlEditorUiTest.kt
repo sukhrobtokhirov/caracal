@@ -24,6 +24,7 @@ import androidx.compose.ui.test.withKeyDown
 import androidx.compose.ui.text.TextRange
 import dev.dbide.app.ConnectionsViewModel
 import dev.dbide.app.EditorViewModel
+import dev.dbide.app.ExportViewModel
 import dev.dbide.app.FakeConnectionService
 import dev.dbide.app.SchemaTreeViewModel
 import dev.dbide.core.catalog.ColumnInfo
@@ -99,7 +100,8 @@ class SqlEditorUiTest {
         setContent {
             val scope = rememberCoroutineScope()
             model = remember { EditorViewModel(service, scope).also { it.show(connection) } }
-            MaterialTheme { QueryPane(model, onCopy = {}) }
+            val export = remember { ExportViewModel(service, scope) { null } }
+            MaterialTheme { QueryPane(model, export, onCopy = {}) }
         }
         waitForIdle()
         return model
@@ -251,7 +253,8 @@ class SqlEditorUiTest {
                 val connections = remember { ConnectionsViewModel(service, scope) }
                 val tree = remember { SchemaTreeViewModel(service, scope) }
                 editor = remember { EditorViewModel(service, scope) }
-                MaterialTheme { WorkspaceScreen(connections, tree, editor, onLock = {}) }
+                val export = remember { ExportViewModel(service, scope) { null } }
+                MaterialTheme { WorkspaceScreen(connections, tree, editor, export, onLock = {}) }
             }
             waitForIdle()
 
@@ -281,7 +284,8 @@ class SqlEditorUiTest {
                 val connections = remember { ConnectionsViewModel(service, scope) }
                 val tree = remember { SchemaTreeViewModel(service, scope) }
                 val editor = remember { EditorViewModel(service, scope) }
-                MaterialTheme { WorkspaceScreen(connections, tree, editor, onLock = {}) }
+                val export = remember { ExportViewModel(service, scope) { null } }
+                MaterialTheme { WorkspaceScreen(connections, tree, editor, export, onLock = {}) }
             }
             waitForIdle()
 
