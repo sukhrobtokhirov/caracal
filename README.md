@@ -158,7 +158,8 @@ app/src/main/kotlin/dev/dbide/app/
   Main.kt        window, application lifecycle
 ```
 
-Directories marked with a later milestone do not exist yet.
+Directories marked with an unshipped milestone are placeholders. `sql/` is the
+exception: it is the first piece of M2 to land.
 
 Configuration lives in the platform application data directory
 (`~/Library/Application Support/dbide` on macOS, `%AppData%\dbide` on Windows,
