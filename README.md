@@ -145,21 +145,22 @@ against someone who already controls the running process.
 core/src/main/kotlin/dev/dbide/core/
   postgres/      pgjdbc adapter, pooling, error classification, redaction   [M0]
   result/        QueryResult, CellValue, DbError                            [M0]
+  catalog/       schemas, objects, and columns, as the browser sees them    [M2]
   connections/   connection domain types, validation, ConnectionService     [M1]
   vault/         Argon2id derivation, AES-GCM sealing                       [M1]
   store/         SQLite configuration database and migrations               [M1]
   registry/      live HikariCP pools and Lettuce clients                    [M1]
   redis/         Lettuce adapter; SCAN and paged value reads arrive in M3  [M1]
   appdata/       platform configuration directory                           [M1]
-  sql/           statement splitter                                         [M2]
+  sql/           statement splitter, identifier quoting                      [M2]
 
 app/src/main/kotlin/dev/dbide/app/
   ui/            Compose screens, grid, editor, key browser
   Main.kt        window, application lifecycle
 ```
 
-Directories marked with an unshipped milestone are placeholders. `sql/` is the
-exception: it is the first piece of M2 to land.
+Directories marked with an unshipped milestone are placeholders. `sql/` and
+`catalog/` are the exceptions: they are the parts of M2 that have landed.
 
 Configuration lives in the platform application data directory
 (`~/Library/Application Support/dbide` on macOS, `%AppData%\dbide` on Windows,

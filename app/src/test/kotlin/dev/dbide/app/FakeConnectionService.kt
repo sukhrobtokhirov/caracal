@@ -1,5 +1,10 @@
 package dev.dbide.app
 
+import dev.dbide.core.catalog.CatalogObject
+import dev.dbide.core.catalog.ColumnInfo
+import dev.dbide.core.catalog.Listing
+import dev.dbide.core.catalog.ObjectKind
+import dev.dbide.core.catalog.SchemaInfo
 import dev.dbide.core.connections.ConnectionConfig
 import dev.dbide.core.connections.ConnectionDraft
 import dev.dbide.core.connections.ConnectionId
@@ -15,6 +20,8 @@ import dev.dbide.core.connections.SecretUpdate
 import dev.dbide.core.connections.TestResult
 import dev.dbide.core.connections.TlsMode
 import dev.dbide.core.connections.ValidationException
+import dev.dbide.core.result.DbError
+import dev.dbide.core.result.DbException
 import dev.dbide.core.store.ConnectionNotFoundException
 import dev.dbide.core.vault.VaultLockedException
 import dev.dbide.core.vault.VaultState
@@ -143,6 +150,70 @@ open class FakeConnectionService(
         requireUnlocked()
         val existing = stored.getValue(id)
         return existing.copy(runtime = RuntimeState.CLOSED).also { stored[id] = it }
+    }
+
+    // --- Catalog -------------------------------------------------------------
+
+    /** What the catalog answers with. Tests set the parts they care about. */
+    var schemas: Listing<SchemaInfo> = Listing(listOf(SchemaInfo("public", owner = "dbide")))
+
+    val objects = mutableMapOf<Pair<String, ObjectKind>, Listing<CatalogObject>>()
+
+    val columns = mutableMapOf<Pair<String, String>, List<ColumnInfo>>()
+
+    /** Set to fail one node's read without failing every other node's. */
+    var failingSchema: String? = null
+
+    override suspend fun schemas(id: ConnectionId, includeSystem: Boolean): Listing<SchemaInfo> {
+        calls += "schemas(system=$includeSystem)"
+        await()
+        requireUnlocked()
+        return if (includeSystem) schemas else Listing(schemas.items.filterNot { it.system })
+    }
+
+    override suspend fun objects(
+        id: ConnectionId,
+        schema: String,
+        kind: ObjectKind,
+    ): Listing<CatalogObject> {
+        calls += "objects($schema, $kind)"
+        await()
+        requireUnlocked()
+        refuse(schema)
+        return objects[schema to kind] ?: Listing(emptyList())
+    }
+
+    override suspend fun columns(
+        id: ConnectionId,
+        schema: String,
+        relation: String,
+    ): List<ColumnInfo> {
+        calls += "columns($schema, $relation)"
+        await()
+        requireUnlocked()
+        refuse(schema)
+        return columns[schema to relation].orEmpty()
+    }
+
+    /** Seeds one schema's objects and, for a relation, its columns. */
+    fun seedObject(
+        schema: String,
+        name: String,
+        kind: ObjectKind = ObjectKind.TABLE,
+        columns: List<ColumnInfo> = emptyList(),
+        signature: String? = null,
+    ) {
+        val key = schema to kind
+        objects[key] = Listing(
+            objects[key]?.items.orEmpty() + CatalogObject(schema, name, kind, signature = signature),
+        )
+        if (columns.isNotEmpty()) this.columns[schema to name] = columns
+    }
+
+    private fun refuse(schema: String) {
+        if (schema == failingSchema) {
+            throw DbException(DbError.QueryFailed("permission denied for schema $schema"))
+        }
     }
 
     override suspend fun shutdown() {

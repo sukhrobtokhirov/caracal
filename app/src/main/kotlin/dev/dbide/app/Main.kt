@@ -83,6 +83,7 @@ fun main() = application {
 @Composable
 private fun Workspace(service: ConnectionService, scope: CoroutineScope) {
     val connections = remember(service) { ConnectionsViewModel(service, scope) }
+    val tree = remember(service) { SchemaTreeViewModel(service, scope) }
     val vault = remember(service) {
         VaultViewModel(service, scope, onUnlocked = { connections.refresh() })
     }
@@ -95,8 +96,12 @@ private fun Workspace(service: ConnectionService, scope: CoroutineScope) {
         VaultUiState.Setup, VaultUiState.Locked -> VaultScreen(vault)
         VaultUiState.Unlocked -> WorkspaceScreen(
             viewModel = connections,
+            tree = tree,
             onLock = {
                 connections.clear()
+                // Locking closes every client, so the tree is describing a server this
+                // process can no longer reach.
+                tree.clear()
                 vault.lock()
             },
         )

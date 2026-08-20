@@ -11,8 +11,12 @@ import kotlinx.coroutines.withContext
  */
 class PostgresSession(config: PostgresConnectionConfig) : AutoCloseable {
     private val dataSource = PostgresDataSources.create(config)
+    private val redaction = Redaction(config.secrets())
 
-    val adapter: PostgresAdapter = PostgresAdapter(dataSource, Redaction(config.secrets()))
+    val adapter: PostgresAdapter = PostgresAdapter(dataSource, redaction)
+
+    /** The object browser's view of this server. Shares the pool with [adapter]. */
+    val catalog: PostgresCatalog = PostgresCatalog(dataSource, redaction)
 
     /** Live pool statistics. Tests assert on these instead of trusting the code. */
     val activeConnections: Int get() = dataSource.hikariPoolMXBean?.activeConnections ?: 0

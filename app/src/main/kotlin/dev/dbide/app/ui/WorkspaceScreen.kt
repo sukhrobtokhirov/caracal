@@ -18,26 +18,47 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.ClipEntry
+import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import dev.dbide.app.ConnectionsViewModel
 import dev.dbide.app.Pane
+import dev.dbide.app.SchemaTreeViewModel
 import dev.dbide.core.connections.ConnectionView
+import dev.dbide.core.connections.Engine
 import dev.dbide.core.connections.Environment
+import java.awt.datatransfer.StringSelection
+import kotlinx.coroutines.launch
 
 /**
- * The unlocked application: connections on the left, the selected one on the right.
+ * The unlocked application: connections on the left, the object browser beside them
+ * once one is open, and the selected connection on the right.
  *
  * The shell across the top carries the selected connection's environment, so the
  * production warning is visible no matter how far the user has scrolled — which is
  * the point M2 will depend on, when there is a query editor under it.
  */
 @Composable
-fun WorkspaceScreen(viewModel: ConnectionsViewModel, onLock: () -> Unit) {
+fun WorkspaceScreen(
+    viewModel: ConnectionsViewModel,
+    tree: SchemaTreeViewModel,
+    onLock: () -> Unit,
+) {
     LaunchedEffect(Unit) { viewModel.refresh() }
+
+    // Only an open PostgreSQL connection has a catalog to read. A closed one is not
+    // reopened to fill a panel: the user closed it.
+    val browsing = viewModel.selected
+        ?.takeIf { it.config.engine == Engine.POSTGRES && it.runtime.isOpen }
+    LaunchedEffect(browsing?.id) { tree.show(browsing?.id) }
+    val clipboard = LocalClipboard.current
+    val scope = rememberCoroutineScope()
 
     Surface(modifier = Modifier.fillMaxSize()) {
         Column(modifier = Modifier.fillMaxSize()) {
@@ -54,6 +75,20 @@ fun WorkspaceScreen(viewModel: ConnectionsViewModel, onLock: () -> Unit) {
                     modifier = Modifier.width(280.dp),
                 )
                 VerticalDivider(modifier = Modifier.fillMaxHeight())
+
+                if (browsing != null) {
+                    SchemaTree(
+                        model = tree,
+                        // The editor that will take this text arrives with the query
+                        // pane; until then the clipboard is where a quoted name is
+                        // still worth having.
+                        onInsertIdentifier = { identifier ->
+                            scope.launch { clipboard.setClipEntry(clipEntryOf(identifier)) }
+                        },
+                        modifier = Modifier.width(300.dp),
+                    )
+                    VerticalDivider(modifier = Modifier.fillMaxHeight())
+                }
 
                 Column(modifier = Modifier.fillMaxSize()) {
                     viewModel.failure?.let { failure ->
@@ -105,6 +140,17 @@ fun WorkspaceScreen(viewModel: ConnectionsViewModel, onLock: () -> Unit) {
         )
     }
 }
+
+/**
+ * [text] as something the system clipboard will take.
+ *
+ * `ClipEntry` wraps an AWT `Transferable` here and is marked experimental. The
+ * alternative, `LocalClipboardManager`, is deprecated in favour of precisely this
+ * — so between an API that may still change shape and one that is already on its
+ * way out, this is the one that will still be here.
+ */
+@OptIn(ExperimentalComposeUiApi::class)
+private fun clipEntryOf(text: String) = ClipEntry(StringSelection(text))
 
 /**
  * The application shell. When the selected connection is production, the whole bar

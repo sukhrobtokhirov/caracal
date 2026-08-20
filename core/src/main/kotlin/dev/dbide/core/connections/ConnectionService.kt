@@ -1,5 +1,11 @@
 package dev.dbide.core.connections
 
+import dev.dbide.core.catalog.CatalogObject
+import dev.dbide.core.catalog.ColumnInfo
+import dev.dbide.core.catalog.Listing
+import dev.dbide.core.catalog.ObjectKind
+import dev.dbide.core.catalog.SchemaInfo
+import dev.dbide.core.postgres.PostgresCatalog
 import dev.dbide.core.postgres.PostgresConnectionConfig
 import dev.dbide.core.postgres.PostgresProbe
 import dev.dbide.core.redis.RedisSession
@@ -56,6 +62,22 @@ interface ConnectionService {
 
     /** Releases a connection's client. Idempotent. */
     suspend fun close(id: ConnectionId): ConnectionView
+
+    /**
+     * The schemas of an open PostgreSQL connection, system schemas included only if
+     * asked for.
+     *
+     * The three catalog reads are PostgreSQL's: a Redis connection is refused rather
+     * than answered with an empty list, because an empty list is a claim about a
+     * server and this one was never asked.
+     */
+    suspend fun schemas(id: ConnectionId, includeSystem: Boolean = false): Listing<SchemaInfo>
+
+    /** The objects of one kind in one schema of an open PostgreSQL connection. */
+    suspend fun objects(id: ConnectionId, schema: String, kind: ObjectKind): Listing<CatalogObject>
+
+    /** The columns of one relation of an open PostgreSQL connection. */
+    suspend fun columns(id: ConnectionId, schema: String, relation: String): List<ColumnInfo>
 
     /** Releases every client. Called during application shutdown. */
     suspend fun shutdown()
@@ -203,10 +225,42 @@ class DefaultConnectionService(
         return view(record)
     }
 
+    // --- Catalog -------------------------------------------------------------
+
+    /**
+     * The schemas of an open PostgreSQL connection.
+     *
+     * Browsing needs no decrypted password: the pool is already authenticated, so
+     * these three go straight to the live session. A connection that is not open
+     * throws rather than being opened implicitly — the user closed it, and a click on
+     * a stale tree is not permission to dial production again.
+     */
+    override suspend fun schemas(id: ConnectionId, includeSystem: Boolean): Listing<SchemaInfo> =
+        catalog(id).schemas(includeSystem)
+
+    /** The objects of one kind in one schema of an open PostgreSQL connection. */
+    override suspend fun objects(
+        id: ConnectionId,
+        schema: String,
+        kind: ObjectKind,
+    ): Listing<CatalogObject> = catalog(id).objects(schema, kind)
+
+    /** The columns of one relation of an open PostgreSQL connection. */
+    override suspend fun columns(
+        id: ConnectionId,
+        schema: String,
+        relation: String,
+    ): List<ColumnInfo> = catalog(id).columns(schema, relation)
+
     /** Releases every client. Called during application shutdown. */
     override suspend fun shutdown() = registry.closeAll()
 
     // --- Internals -----------------------------------------------------------
+
+    private suspend fun catalog(id: ConnectionId): PostgresCatalog {
+        requireUnlocked()
+        return registry.postgres(id).catalog
+    }
 
     private fun requireUnlocked() {
         if (!vault.isUnlocked) throw VaultLockedException()
