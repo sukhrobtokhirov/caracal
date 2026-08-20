@@ -109,32 +109,32 @@ object StatementSplitter {
             val char = script[index]
             when {
                 char == '-' && script.startsWith("--", index) ->
-                    index = endOfLineComment(script, index)
+                    index = SqlLexer.endOfLineComment(script, index)
 
                 char == '/' && script.startsWith("/*", index) ->
-                    index = endOfBlockComment(script, index)
+                    index = SqlLexer.endOfBlockComment(script, index)
                         ?: return SplitScript(statements, LexicalError(SqlConstruct.BLOCK_COMMENT, index))
 
                 char == '\'' -> {
                     hasContent = true
-                    index = endOfQuoted(script, index, escapes = false)
+                    index = SqlLexer.endOfQuoted(script, index, escapes = false)
                         ?: return SplitScript(statements, LexicalError(SqlConstruct.STRING, index))
                 }
 
-                (char == 'e' || char == 'E') && startsEscapeString(script, index) -> {
+                (char == 'e' || char == 'E') && SqlLexer.startsEscapeString(script, index) -> {
                     hasContent = true
-                    index = endOfQuoted(script, index + 1, escapes = true)
+                    index = SqlLexer.endOfQuoted(script, index + 1, escapes = true)
                         ?: return SplitScript(statements, LexicalError(SqlConstruct.ESCAPE_STRING, index))
                 }
 
                 char == '"' -> {
                     hasContent = true
-                    index = endOfQuoted(script, index, escapes = false)
+                    index = SqlLexer.endOfQuoted(script, index, escapes = false)
                         ?: return SplitScript(statements, LexicalError(SqlConstruct.QUOTED_IDENTIFIER, index))
                 }
 
                 char == '$' -> {
-                    val tag = dollarTagAt(script, index)
+                    val tag = SqlLexer.dollarTagAt(script, index)
                     if (tag == null) {
                         // A lone `$` — a parameter placeholder like `$1`, or an operator.
                         hasContent = true
@@ -180,105 +180,4 @@ object StatementSplitter {
         while (end > start && script[end - 1].isWhitespace()) end--
         return Statement(script.substring(start, end), start, end)
     }
-
-    /** The index after a `--` comment: the newline that ends it, or end of input. */
-    private fun endOfLineComment(script: String, open: Int): Int {
-        val newline = script.indexOf('\n', startIndex = open)
-        return if (newline < 0) script.length else newline
-    }
-
-    /**
-     * The index after a block comment, or `null` if it never closes.
-     *
-     * PostgreSQL nests these, unlike C: a comment opened twice has to be closed
-     * twice, and stopping at the first closing delimiter would leave the tail of
-     * the comment to be parsed as live SQL.
-     */
-    private fun endOfBlockComment(script: String, open: Int): Int? {
-        var depth = 0
-        var index = open
-        while (index < script.length) {
-            when {
-                script.startsWith("/*", index) -> {
-                    depth++
-                    index += 2
-                }
-
-                script.startsWith("*/", index) -> {
-                    depth--
-                    index += 2
-                    if (depth == 0) return index
-                }
-
-                else -> index++
-            }
-        }
-        return null
-    }
-
-    /**
-     * The index after a string or quoted identifier opening at [open], or `null` if
-     * it never closes.
-     *
-     * A doubled quote (`''` or `""`) is an escaped quote rather than a close, in
-     * both flavors. [escapes] additionally makes a backslash consume the next
-     * character, which is true of `E'...'` and — since `standard_conforming_strings`
-     * became the default — of nothing else. Ordinary `'\'` is a complete string
-     * containing a backslash, and reading it as an escape would swallow the rest of
-     * the script.
-     */
-    private fun endOfQuoted(script: String, open: Int, escapes: Boolean): Int? {
-        val quote = script[open]
-        var index = open + 1
-        while (index < script.length) {
-            val char = script[index]
-            when {
-                escapes && char == '\\' -> index += 2
-                char != quote -> index++
-                script.getOrNull(index + 1) == quote -> index += 2
-                else -> return index + 1
-            }
-        }
-        return null
-    }
-
-    /**
-     * Whether an `E` at [index] introduces an escape string rather than being the
-     * tail of a name. `E'x'` is one; the `e` of `value e'x'` is one; the `E` of
-     * `sizeE'x'` is not — that is the identifier `sizeE` followed by a plain string,
-     * where a backslash is just a backslash.
-     *
-     * `B'..'`, `X'..'`, and `U&'..'` need no such test: none of them give the
-     * backslash a meaning, so the plain-string scan already handles them.
-     */
-    private fun startsEscapeString(script: String, index: Int): Boolean {
-        if (script.getOrNull(index + 1) != '\'') return false
-        val before = script.getOrNull(index - 1) ?: return true
-        return !before.isLetterOrDigit() && before != '_' && before != '$'
-    }
-
-    /**
-     * The delimiter of the dollar quote opening at [index] (`"$$"`, `"$body$"`), or
-     * `null` if this `$` opens nothing.
-     *
-     * The `null` case is the one that matters: `$1` is a parameter placeholder, and
-     * a splitter that read it as an opening delimiter would treat everything up to
-     * the next `$` as quoted and lose every statement boundary in between.
-     */
-    private fun dollarTagAt(script: String, index: Int): String? {
-        var cursor = index + 1
-        while (cursor < script.length) {
-            val char = script[cursor]
-            when {
-                char == '$' -> return script.substring(index, cursor + 1)
-                isTagChar(char, first = cursor == index + 1) -> cursor++
-                else -> return null
-            }
-        }
-        return null
-    }
-
-    /** PostgreSQL's tag alphabet: letters, underscore, non-ASCII, and digits after the first. */
-    private fun isTagChar(char: Char, first: Boolean): Boolean =
-        char.isLetter() || char == '_' || char.code >= 0x80 || (!first && char.isDigit())
 }
