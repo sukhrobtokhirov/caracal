@@ -95,11 +95,16 @@ window can never quietly become a requirement. Domain types, the vault, the
 store, the connection registry, and both engine adapters are plain JVM code that
 tests headlessly. If a test needs a window to run, it belongs in `:app`.
 
-Integration tests use Testcontainers and are opt-in:
+Integration tests use Testcontainers and are opt-in, because they need Docker:
 
 ```sh
 DBIDE_INTEGRATION=1 ./gradlew :core:test
 ```
+
+Opt-in locally, mandatory in CI. `.github/workflows/ci.yml` runs `check` on Linux,
+macOS, and Windows, and sets `DBIDE_INTEGRATION=1` on the Linux runner — the only
+one of the three with a Docker daemon. Installers are built by the same workflow
+on all three, for a `v*` tag or on request.
 
 ## Security model
 

@@ -132,18 +132,26 @@ class Vault(
 
     /** Seals a connection password under the master key. */
     suspend fun seal(identity: SecretIdentity, secret: Secret): ByteArray =
-        Seal.seal(borrowKey(), identity, secret)
+        withKey { key -> Seal.seal(key, identity, secret) }
 
     /** Opens a sealed connection password. */
     suspend fun open(identity: SecretIdentity, envelope: ByteArray): Secret =
-        Seal.open(borrowKey(), identity, envelope)
+        withKey { key -> Seal.open(key, identity, envelope) }
 
     /**
-     * The live key. Callers must not retain or modify it — it is wiped in place when
-     * the vault locks.
+     * Runs [body] with the live key, holding the lock for as long as it is in use.
+     *
+     * The lock is what keeps [replaceKey] from wiping the array mid-cipher. Handing
+     * the key out and releasing the lock — the shorter thing to write — let a
+     * concurrent [lock] zero it while AES was reading it, and the envelope that came
+     * back was sealed under a key of zeroes: unopenable afterwards, and decryptable
+     * by anyone holding the configuration file. `VaultTest` has the regression.
+     *
+     * [body] is deliberately not `suspend`: nothing may park here with the key
+     * exposed and the mutex held.
      */
-    private suspend fun borrowKey(): ByteArray =
-        mutex.withLock { key ?: throw VaultLockedException() }
+    private suspend fun <T> withKey(body: (ByteArray) -> T): T =
+        mutex.withLock { body(key ?: throw VaultLockedException()) }
 
     private fun replaceKey(replacement: ByteArray?) {
         key?.wipe()

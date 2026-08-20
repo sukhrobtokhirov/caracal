@@ -4,9 +4,13 @@ import dev.dbide.core.connections.Secret
 import java.time.Instant
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
@@ -139,6 +143,51 @@ class VaultTest {
         assertThrows<VaultLockedException> { locked.open(identity, envelope) }
     }
 
+    /**
+     * A regression, and the only test here that needs real threads.
+     *
+     * `seal` used to take the key out of the mutex and run AES outside it, so a
+     * concurrent `lock` wiped the array mid-cipher. The seal still returned an
+     * envelope, but one encrypted under a key of zeroes: the saved credential was
+     * lost, and what remained on disk was readable by anyone with the file. Revert
+     * the lock in `withKey` and this fails on roughly every attempt.
+     *
+     * Whichever operation wins, only two outcomes are permitted: the seal was
+     * refused because the vault locked first, or it produced an envelope that the
+     * same master password still opens.
+     */
+    @Test
+    fun `a seal racing a lock is refused or produces an openable envelope`() =
+        runBlocking(Dispatchers.Default) {
+            val vault = vault()
+            vault.setUp(password)
+            val identity = SecretIdentity("id-1", "postgres")
+
+            repeat(RACE_ATTEMPTS) { attempt ->
+                if (!vault.isUnlocked) vault.unlock(password)
+
+                val sealing = async { runCatching { vault.seal(identity, Secret("hunter2")) } }
+                val locking = async { vault.lock() }
+                locking.await()
+
+                sealing.await()
+                    .onSuccess { envelope ->
+                        vault.unlock(password)
+                        assertEquals(
+                            "hunter2",
+                            vault.open(identity, envelope).expose(),
+                            "attempt $attempt sealed an envelope its own master password cannot open",
+                        )
+                    }
+                    .onFailure { failure ->
+                        assertIs<VaultLockedException>(
+                            failure,
+                            "attempt $attempt failed for a reason other than the lock",
+                        )
+                    }
+            }
+        }
+
     @Test
     fun `locking discards the key and the vault will not seal again`() = runTest {
         val vault = vault()
@@ -230,5 +279,13 @@ class VaultTest {
         assertEquals(VaultState.SETUP_REQUIRED, vault().state())
         assertNotNull(store.values[Vault.META_SALT])
         assertNull(store.values[Vault.META_VERIFIER])
+    }
+
+    companion object {
+        /**
+         * Enough attempts that the two coroutines actually overlap. The wiped-key bug
+         * showed up in well over nine tenths of them, so this is generous.
+         */
+        private const val RACE_ATTEMPTS = 100
     }
 }

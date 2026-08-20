@@ -52,7 +52,14 @@ tasks.named("check") { dependsOn(assertNoComposeDependency) }
 
 tasks.withType<Test>().configureEach {
     // Integration tests are opt-in; the flag has to survive the jump into the test JVM.
-    environment("DBIDE_INTEGRATION", providers.environmentVariable("DBIDE_INTEGRATION").getOrElse(""))
+    val integration = providers.environmentVariable("DBIDE_INTEGRATION").getOrElse("")
+    environment("DBIDE_INTEGRATION", integration)
+    // Gradle does not track a task's environment as an input — deliberately, so that
+    // an unrelated PATH change does not invalidate every task. That leaves a trap
+    // here: with the results of a previous run in place, `DBIDE_INTEGRATION=1
+    // ./gradlew :core:test` reports UP-TO-DATE and the Testcontainers suites quietly
+    // do not run. Declaring the flag makes flipping it re-run the tests.
+    inputs.property("dbideIntegration", integration)
     // :core must pass with no display server. Running headless makes that fail here
     // rather than on a CI runner that has no screen.
     systemProperty("java.awt.headless", "true")
