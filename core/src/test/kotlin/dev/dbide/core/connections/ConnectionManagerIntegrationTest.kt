@@ -128,7 +128,7 @@ class ConnectionManagerIntegrationTest {
     }
 
     @Test
-    fun `both engines are open at once, and neither is confused for the other`() = runBlocking {
+    fun `both engines are open at once, and neither is confused for the other`(): Unit = runBlocking {
         session().use { session ->
             session.service.setUp(Secret(master))
             val pg = session.service.create(postgresDraft())
@@ -245,7 +245,7 @@ class ConnectionManagerIntegrationTest {
     }
 
     @Test
-    fun `an edit that does not touch the password leaves the connection working`() = runBlocking {
+    fun `an edit that does not touch the password leaves the connection working`(): Unit = runBlocking {
         session().use { session ->
             session.service.setUp(Secret(master))
             val view = session.service.create(postgresDraft())
@@ -290,7 +290,7 @@ class ConnectionManagerIntegrationTest {
     }
 
     @Test
-    fun `locking closes the live clients as well as discarding the key`() = runBlocking {
+    fun `locking closes the live clients as well as discarding the key`(): Unit = runBlocking {
         session().use { session ->
             session.service.setUp(Secret(master))
             val view = session.service.create(postgresDraft())
