@@ -27,7 +27,7 @@ no JDK to install: the installer bundles its own trimmed runtime.
 | **Interface** | A desktop window: connection sidebar, editor tabs, result grid, key browser. |
 | **Engines** | PostgreSQL and Redis in the same workspace, not two separate tools. |
 | **Data** | Everything is local. Credentials are encrypted on disk under a master password. |
-| **Scope** | Read-only in v0.1, deliberately. See [`db-ide-mvp-plan.md`](db-ide-mvp-plan.md) §0. |
+| **Scope** | Read-only by default, deliberately. A connection can be marked writable; writes are then gated by a confirmation, typed out on `prod`. See [`db-ide-mvp-plan.md`](db-ide-mvp-plan.md) §0. |
 
 There is no hosted service, no multi-user mode, and no network listener. The UI
 calls suspend functions in the same process as the database code.
@@ -119,7 +119,14 @@ mattered — this process holds live database credentials.
 - JDBC URLs are never assembled with a password in them; credentials are passed
   as `Properties` so they cannot leak into a stack trace.
 - Read-only and production guards are enforced in `:core`. A disabled button is
-  not a security boundary.
+  not a security boundary: a connection marked read only opens its whole pool in a
+  PostgreSQL `READ ONLY` transaction, so a write is refused by the server whether it
+  arrived as an `UPDATE`, inside a CTE, or inside a function body compiled last year.
+- New connections are read only until someone unticks the box, and a writable
+  connection asks before it runs a statement that modifies data — on `prod`, by
+  making you type the connection's name.
+- The database user's own grants remain the real boundary. A read-only role is
+  still the right way to browse production.
 - Production-tagged connections are visibly and behaviorally distinct.
 
 ### Stored credentials
@@ -152,15 +159,18 @@ core/src/main/kotlin/dev/dbide/core/
   registry/      live HikariCP pools and Lettuce clients                    [M1]
   redis/         Lettuce adapter; SCAN and paged value reads arrive in M3  [M1]
   appdata/       platform configuration directory                           [M1]
-  sql/           statement splitter, identifier quoting                      [M2]
+  sql/           statement splitter, editor execution rule, highlighting    [M2]
+  policy/        what a statement may do, and what must be agreed to first  [M2]
+  export/        CSV writing, export eligibility, bounded streaming         [M2]
 
 app/src/main/kotlin/dev/dbide/app/
-  ui/            Compose screens, grid, editor, key browser
+  ui/            connection screens [M1]; schema tree, SQL editor, result grid [M2]
   Main.kt        window, application lifecycle
 ```
 
-Directories marked with an unshipped milestone are placeholders. `sql/` and
-`catalog/` are the exceptions: they are the parts of M2 that have landed.
+Directories marked with an unshipped milestone are placeholders. `sql/`,
+`catalog/`, `policy/`, and `export/` are the exceptions: they are the parts of M2
+that have landed. The Redis key browser is not in `ui/` yet.
 
 Configuration lives in the platform application data directory
 (`~/Library/Application Support/dbide` on macOS, `%AppData%\dbide` on Windows,

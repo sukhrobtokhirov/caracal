@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -18,7 +19,11 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
@@ -28,6 +33,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import dev.dbide.app.ConnectionsViewModel
+import dev.dbide.app.EditorViewModel
 import dev.dbide.app.Pane
 import dev.dbide.app.SchemaTreeViewModel
 import dev.dbide.core.connections.ConnectionView
@@ -36,18 +42,22 @@ import dev.dbide.core.connections.Environment
 import java.awt.datatransfer.StringSelection
 import kotlinx.coroutines.launch
 
+/** Which half of an open connection the right-hand pane is showing. */
+private enum class WorkspaceTab(val label: String) { QUERY("Query"), CONNECTION("Connection") }
+
 /**
  * The unlocked application: connections on the left, the object browser beside them
  * once one is open, and the selected connection on the right.
  *
  * The shell across the top carries the selected connection's environment, so the
  * production warning is visible no matter how far the user has scrolled — which is
- * the point M2 will depend on, when there is a query editor under it.
+ * the point of it now that there is a query editor underneath.
  */
 @Composable
 fun WorkspaceScreen(
     viewModel: ConnectionsViewModel,
     tree: SchemaTreeViewModel,
+    editor: EditorViewModel,
     onLock: () -> Unit,
 ) {
     LaunchedEffect(Unit) { viewModel.refresh() }
@@ -56,9 +66,21 @@ fun WorkspaceScreen(
     // reopened to fill a panel: the user closed it.
     val browsing = viewModel.selected
         ?.takeIf { it.config.engine == Engine.POSTGRES && it.runtime.isOpen }
-    LaunchedEffect(browsing?.id) { tree.show(browsing?.id) }
+    // Keyed on the configuration and not just the identifier: §2.4's policy asks the
+    // connection whether it is read only and which environment it is, so an edit to
+    // either has to reach the editor without the connection being reopened.
+    LaunchedEffect(browsing?.config) {
+        tree.show(browsing?.id)
+        editor.show(browsing?.config)
+    }
     val clipboard = LocalClipboard.current
     val scope = rememberCoroutineScope()
+    val copy: (String) -> Unit = { text -> scope.launch { clipboard.setClipEntry(clipEntryOf(text)) } }
+
+    // Opening a connection lands on its editor; the connection's own details are one
+    // click away and stay there per connection, so switching back and forth does not
+    // keep resetting which half is on screen.
+    var tab: WorkspaceTab by remember(browsing?.id) { mutableStateOf(WorkspaceTab.QUERY) }
 
     Surface(modifier = Modifier.fillMaxSize()) {
         Column(modifier = Modifier.fillMaxSize()) {
@@ -79,11 +101,11 @@ fun WorkspaceScreen(
                 if (browsing != null) {
                     SchemaTree(
                         model = tree,
-                        // The editor that will take this text arrives with the query
-                        // pane; until then the clipboard is where a quoted name is
-                        // still worth having.
+                        // Straight into the script at the caret. The name arrives
+                        // quoted, so a mixed-case table is the table it names.
                         onInsertIdentifier = { identifier ->
-                            scope.launch { clipboard.setClipEntry(clipEntryOf(identifier)) }
+                            tab = WorkspaceTab.QUERY
+                            editor.insert(identifier)
                         },
                         modifier = Modifier.width(300.dp),
                     )
@@ -116,15 +138,30 @@ fun WorkspaceScreen(
 
                         is Pane.Detail -> {
                             val view = viewModel.connections.firstOrNull { it.id == pane.id }
-                            if (view == null) EmptyPane() else ConnectionDetail(
-                                view = view,
-                                activity = viewModel.activity,
-                                onEdit = { viewModel.startEditing(view) },
-                                onTest = { viewModel.test(view.id) },
-                                onOpen = { viewModel.open(view.id) },
-                                onClose = { viewModel.close(view.id) },
-                                onDelete = { viewModel.confirmDelete(view) },
-                            )
+                            val detail: @Composable () -> Unit = {
+                                if (view == null) EmptyPane() else ConnectionDetail(
+                                    view = view,
+                                    activity = viewModel.activity,
+                                    onEdit = { viewModel.startEditing(view) },
+                                    onTest = { viewModel.test(view.id) },
+                                    onOpen = { viewModel.open(view.id) },
+                                    onClose = { viewModel.close(view.id) },
+                                    onDelete = { viewModel.confirmDelete(view) },
+                                )
+                            }
+                            // The editor exists only where there is a server to send a
+                            // statement to. A closed connection has its details and
+                            // nothing else, which is also the screen that reopens it.
+                            if (browsing?.id != pane.id) {
+                                detail()
+                            } else {
+                                WorkspaceTabs(selected = tab, onSelect = { tab = it })
+                                HorizontalDivider()
+                                when (tab) {
+                                    WorkspaceTab.QUERY -> QueryPane(editor, onCopy = copy)
+                                    WorkspaceTab.CONNECTION -> detail()
+                                }
+                            }
                         }
                     }
                 }
@@ -190,6 +227,26 @@ private fun WorkspaceBar(selected: ConnectionView?, onLock: () -> Unit) {
             modifier = Modifier.semantics { contentDescription = "lock-application" },
         ) {
             Text("Lock")
+        }
+    }
+}
+
+/** The two halves of an open connection: the editor, and the connection itself. */
+@Composable
+private fun WorkspaceTabs(selected: WorkspaceTab, onSelect: (WorkspaceTab) -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        WorkspaceTab.entries.forEach { entry ->
+            FilterChip(
+                selected = entry == selected,
+                onClick = { onSelect(entry) },
+                label = { Text(entry.label, style = MaterialTheme.typography.labelMedium) },
+                modifier = Modifier.semantics {
+                    contentDescription = "workspace-tab-${entry.name.lowercase()}"
+                },
+            )
         }
     }
 }

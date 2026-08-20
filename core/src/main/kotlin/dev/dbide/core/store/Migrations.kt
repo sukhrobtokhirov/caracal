@@ -57,6 +57,50 @@ private val MIGRATIONS = listOf(
             "CREATE INDEX idx_history_conn_time ON query_history(connection_id, executed_at DESC)",
         ),
     ),
+    Migration(
+        version = 2,
+        name = "read_only becomes load-bearing",
+        statements = listOf(
+            // Until M2 §2.4 the pool opened every connection read-only whatever this
+            // column said, so an unticked box was not a decision to allow writes — it
+            // was a box that did nothing. Now that it decides how the pool is built,
+            // leaving those rows at 0 would quietly turn every connection saved before
+            // this release into a writable one.
+            //
+            // So every existing row is set to read only, and the user re-enables
+            // writing where they want it. Turning a connection writable is one visible
+            // click; discovering it was already writable is a `DELETE` that ran.
+            "UPDATE connections SET read_only = 1",
+            // New connections start read-only too. The column default is the second
+            // half of that; ConnectionDraft is the first.
+            """
+            CREATE TABLE connections_new (
+                id            TEXT PRIMARY KEY,
+                name          TEXT NOT NULL,
+                engine        TEXT NOT NULL,
+                host          TEXT NOT NULL,
+                port          INTEGER NOT NULL,
+                "database"    TEXT,
+                username      TEXT,
+                secret_sealed BLOB,
+                tls_mode      TEXT,
+                environment   TEXT NOT NULL DEFAULT 'dev',
+                read_only     INTEGER NOT NULL DEFAULT 1,
+                color         TEXT,
+                created_at    TIMESTAMP NOT NULL
+            )
+            """,
+            """
+            INSERT INTO connections_new
+            SELECT id, name, engine, host, port, "database", username, secret_sealed,
+                   tls_mode, environment, read_only, color, created_at
+            FROM connections
+            """,
+            "DROP TABLE connections",
+            "ALTER TABLE connections_new RENAME TO connections",
+            "CREATE UNIQUE INDEX idx_connections_name ON connections(name)",
+        ),
+    ),
 )
 
 /** The schema version this build writes and understands. */

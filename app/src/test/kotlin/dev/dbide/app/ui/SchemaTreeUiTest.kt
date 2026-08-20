@@ -14,6 +14,7 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performMouseInput
 import androidx.compose.ui.test.v2.runDesktopComposeUiTest
 import dev.dbide.app.ConnectionsViewModel
+import dev.dbide.app.EditorViewModel
 import dev.dbide.app.FakeConnectionService
 import dev.dbide.app.SchemaTreeViewModel
 import dev.dbide.core.catalog.ColumnInfo
@@ -133,7 +134,7 @@ class SchemaTreeUiTest {
             waitForIdle()
 
             assertEquals(listOf("\"public\".\"users\""), inserted)
-            onNodeWithText("Copied \"public\".\"users\"").assertIsDisplayed()
+            onNodeWithText("Inserted \"public\".\"users\"").assertIsDisplayed()
         }
 
     @Test
@@ -162,7 +163,8 @@ class SchemaTreeUiTest {
                 val scope = rememberCoroutineScope()
                 val connections = remember { ConnectionsViewModel(service, scope) }
                 val tree = remember { SchemaTreeViewModel(service, scope) }
-                MaterialTheme { WorkspaceScreen(connections, tree, onLock = {}) }
+                val editor = remember { EditorViewModel(service, scope) }
+                MaterialTheme { WorkspaceScreen(connections, tree, editor, onLock = {}) }
             }
             waitForIdle()
 
@@ -188,7 +190,8 @@ class SchemaTreeUiTest {
                 val scope = rememberCoroutineScope()
                 val connections = remember { ConnectionsViewModel(service, scope) }
                 val tree = remember { SchemaTreeViewModel(service, scope) }
-                MaterialTheme { WorkspaceScreen(connections, tree, onLock = {}) }
+                val editor = remember { EditorViewModel(service, scope) }
+                MaterialTheme { WorkspaceScreen(connections, tree, editor, onLock = {}) }
             }
             waitForIdle()
 

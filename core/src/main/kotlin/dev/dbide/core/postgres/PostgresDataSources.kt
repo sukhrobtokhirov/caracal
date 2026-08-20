@@ -38,8 +38,13 @@ object PostgresDataSources {
             // Never fail at construction: an unreachable server must surface as a
             // classified error in the window, not as an exception during startup.
             initializationFailTimeout = -1
-            // v0.1 reads. Enforced here rather than in a disabled button.
-            isReadOnly = true
+            // §2.4's enforcing half, and plan §2's sixth principle: read-only is a
+            // property of the pool, not of a disabled button. Every connection this
+            // pool hands out begins a PostgreSQL `READ ONLY` transaction, so a write
+            // is refused on the server whether it arrived as an `UPDATE`, inside a
+            // CTE, or inside a function body compiled last year — the three cases a
+            // keyword scan cannot tell apart.
+            isReadOnly = config.readOnly
             poolName = "dbide-postgres"
         }
         return HikariDataSource(hikari)

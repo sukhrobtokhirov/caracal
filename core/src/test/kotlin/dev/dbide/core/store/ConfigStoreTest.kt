@@ -14,6 +14,7 @@ import java.time.Instant
 import kotlin.io.path.exists
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
@@ -39,6 +40,7 @@ class ConfigStoreTest {
         environment: Environment = Environment.DEV,
         sealed: ByteArray? = byteArrayOf(1, 2, 3),
         createdAt: Instant = Instant.parse("2026-08-20T10:00:00Z"),
+        readOnly: Boolean = false,
     ) = ConnectionRecord(
         ConnectionConfig(
             id = ConnectionId(id),
@@ -50,7 +52,7 @@ class ConfigStoreTest {
             username = "dbide",
             tlsMode = TlsMode.DISABLE,
             environment = environment,
-            readOnly = false,
+            readOnly = readOnly,
             color = "#4c8dff",
             createdAt = createdAt,
         ),
@@ -313,4 +315,104 @@ class ConfigStoreTest {
     private fun connect() = DriverManager.getConnection("jdbc:sqlite:$databasePath").also { connection ->
         connection.createStatement().use { it.execute("PRAGMA foreign_keys = ON") }
     }
+
+    @Test
+    fun `the read-only migration turns every connection saved before it read only`() = runTest {
+        // The one migration in this project that changes data rather than shape, and
+        // it changes it in the direction that cannot hurt. Until M2 §2.4 the pool
+        // opened every connection read-only whatever this column said, so a row
+        // holding 0 recorded a box that did nothing — not a decision to allow writes.
+        // Leaving those rows alone would have turned every connection saved before
+        // this release into a writable one, silently.
+        writeSchemaVersionOneDatabase()
+
+        val migrated = withStore { store -> store.list().associate { it.config.name to it.config } }
+
+        assertTrue(migrated.getValue("Writable").readOnly, "a pre-migration row stayed writable")
+        assertTrue(migrated.getValue("Restricted").readOnly)
+    }
+
+    @Test
+    fun `a connection saved after the migration can still be writable`() = runTest {
+        // The migration sets a floor for what already exists; it does not weld the
+        // column shut. A connection the user deliberately marks writable stays that way
+        // across a reopen, or the flag would be a one-way door.
+        writeSchemaVersionOneDatabase()
+        withStore { it.create(record(id = "id-3", name = "New", readOnly = false)) }
+
+        val reopened = withStore { store -> store.get(ConnectionId("id-3")).config }
+
+        assertFalse(reopened.readOnly)
+    }
+
+    /**
+     * A database at schema version 1, with two connections in it, one of which has
+     * `read_only = 0`.
+     *
+     * Written with raw SQL rather than through the store, because the store applies
+     * every migration on open — which is the thing under test, and cannot be used to
+     * set up its own starting state.
+     */
+    private fun writeSchemaVersionOneDatabase() {
+        Files.createDirectories(databasePath.parent)
+        DriverManager.getConnection("jdbc:sqlite:$databasePath").use { connection ->
+            connection.createStatement().use { statement ->
+                statement.execute(
+                    """
+                    CREATE TABLE connections (
+                        id            TEXT PRIMARY KEY,
+                        name          TEXT NOT NULL,
+                        engine        TEXT NOT NULL,
+                        host          TEXT NOT NULL,
+                        port          INTEGER NOT NULL,
+                        "database"    TEXT,
+                        username      TEXT,
+                        secret_sealed BLOB,
+                        tls_mode      TEXT,
+                        environment   TEXT NOT NULL DEFAULT 'dev',
+                        read_only     INTEGER NOT NULL DEFAULT 0,
+                        color         TEXT,
+                        created_at    TIMESTAMP NOT NULL
+                    )
+                    """,
+                )
+                statement.execute("CREATE UNIQUE INDEX idx_connections_name ON connections(name)")
+                statement.execute(
+                    """
+                    CREATE TABLE query_history (
+                        id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                        connection_id TEXT NOT NULL REFERENCES connections(id) ON DELETE CASCADE,
+                        statement     TEXT NOT NULL,
+                        duration_ms   INTEGER,
+                        row_count     INTEGER,
+                        status        TEXT NOT NULL,
+                        error         TEXT,
+                        executed_at   TIMESTAMP NOT NULL
+                    )
+                    """,
+                )
+                statement.execute(
+                    "CREATE INDEX idx_history_conn_time ON query_history(connection_id, executed_at DESC)",
+                )
+                statement.execute(
+                    """
+                    CREATE TABLE app_metadata (key TEXT PRIMARY KEY, value BLOB NOT NULL)
+                    """,
+                )
+                statement.execute("INSERT INTO app_metadata (key, value) VALUES ('schema_version', '1')")
+                listOf("id-1" to "Writable", "id-2" to "Restricted").forEachIndexed { index, (id, name) ->
+                    statement.execute(
+                        """
+                        INSERT INTO connections
+                            (id, name, engine, host, port, "database", username, tls_mode,
+                             environment, read_only, created_at)
+                        VALUES ('$id', '$name', 'postgres', 'localhost', 5432, 'dbide', 'dbide',
+                                'disable', 'dev', $index, '2026-08-20T10:00:00Z')
+                        """,
+                    )
+                }
+            }
+        }
+    }
+
 }

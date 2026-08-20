@@ -1,5 +1,6 @@
 package dev.dbide.core.postgres
 
+import kotlin.time.Duration
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -8,12 +9,27 @@ import kotlinx.coroutines.withContext
  * A live PostgreSQL connection, owned by whoever opened it. The pool type stays
  * inside `:core`: the UI gets an adapter and a `close()`, and never learns what a
  * `HikariDataSource` is.
+ *
+ * [statementTimeout] is §2.4's configurable timeout, and this is the seam it is
+ * configured at: the adapter carries a safe default, and whoever opens a session
+ * can raise or lower it for that server without every caller of `execute` knowing
+ * a timeout exists.
  */
-class PostgresSession(config: PostgresConnectionConfig) : AutoCloseable {
+class PostgresSession(
+    config: PostgresConnectionConfig,
+    statementTimeout: Duration = PostgresAdapter.DEFAULT_STATEMENT_TIMEOUT,
+) : AutoCloseable {
     private val dataSource = PostgresDataSources.create(config)
     private val redaction = Redaction(config.secrets())
 
-    val adapter: PostgresAdapter = PostgresAdapter(dataSource, redaction)
+    val adapter: PostgresAdapter = PostgresAdapter(
+        dataSource = dataSource,
+        redaction = redaction,
+        queryTimeout = statementTimeout,
+        // The pool decides whether a write is *permitted*; the adapter needs the same
+        // answer to decide whether a successful statement is committed or rolled back.
+        readOnly = config.readOnly,
+    )
 
     /** The object browser's view of this server. Shares the pool with [adapter]. */
     val catalog: PostgresCatalog = PostgresCatalog(dataSource, redaction)
@@ -32,12 +48,13 @@ class PostgresSession(config: PostgresConnectionConfig) : AutoCloseable {
          */
         suspend fun open(
             config: PostgresConnectionConfig,
+            statementTimeout: Duration = PostgresAdapter.DEFAULT_STATEMENT_TIMEOUT,
             dispatcher: CoroutineDispatcher = Dispatchers.IO,
         ): PostgresSession = withContext(dispatcher) {
             // Building the pool and closing it are both blocking work. Without this
             // switch they run on whichever thread called open, which for the UI is the
             // AWT event thread — the one thing that must never wait on a database.
-            val session = PostgresSession(config)
+            val session = PostgresSession(config, statementTimeout)
             try {
                 session.adapter.selectOne()
             } catch (failure: Throwable) {

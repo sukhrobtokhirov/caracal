@@ -49,7 +49,7 @@ class ConnectionFormState(
     var environment: Environment by mutableStateOf(editing?.config?.environment ?: Environment.DEV)
         private set
 
-    var readOnly: Boolean by mutableStateOf(editing?.config?.readOnly ?: false)
+    var readOnly: Boolean by mutableStateOf(editing?.config?.readOnly ?: true)
         private set
 
     var color: String by mutableStateOf(editing?.config?.color ?: "")

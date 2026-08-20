@@ -20,13 +20,18 @@ import dev.dbide.core.connections.SecretUpdate
 import dev.dbide.core.connections.TestResult
 import dev.dbide.core.connections.TlsMode
 import dev.dbide.core.connections.ValidationException
+import dev.dbide.core.result.CellValue
+import dev.dbide.core.result.Column
+import dev.dbide.core.result.ColumnFormat
 import dev.dbide.core.result.DbError
 import dev.dbide.core.result.DbException
+import dev.dbide.core.result.QueryResult
 import dev.dbide.core.store.ConnectionNotFoundException
 import dev.dbide.core.vault.VaultLockedException
 import dev.dbide.core.vault.VaultState
 import dev.dbide.core.vault.WrongPasswordException
 import java.time.Instant
+import kotlin.time.Duration.Companion.milliseconds
 import kotlinx.coroutines.CompletableDeferred
 
 /**
@@ -208,6 +213,26 @@ open class FakeConnectionService(
             objects[key]?.items.orEmpty() + CatalogObject(schema, name, kind, signature = signature),
         )
         if (columns.isNotEmpty()) this.columns[schema to name] = columns
+    }
+
+    // --- Queries -------------------------------------------------------------
+
+    /** The statements the editor sent, in order. */
+    val executed = mutableListOf<String>()
+
+    /** What every execution returns, unless [nextFailure] is set first. */
+    var queryResult: QueryResult = QueryResult(
+        columns = listOf(Column("one", "int4", ColumnFormat.NUMBER)),
+        rows = listOf(listOf(CellValue.Integer(1))),
+        duration = 3.milliseconds,
+    )
+
+    override suspend fun execute(id: ConnectionId, sql: String): QueryResult {
+        calls += "execute"
+        executed += sql
+        await()
+        requireUnlocked()
+        return queryResult
     }
 
     private fun refuse(schema: String) {

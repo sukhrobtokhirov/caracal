@@ -20,6 +20,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import dev.dbide.core.connections.TestResult
+import dev.dbide.core.result.DbError
 import dev.dbide.core.result.Failure
 
 /**
@@ -28,6 +29,12 @@ import dev.dbide.core.result.Failure
  * The message comes from `:core` already classified and already safe: nothing here
  * formats a driver string or a stack trace. The code is shown in small type because
  * it is what a bug report should quote.
+ *
+ * A server error brings more than a message, and §2.9 is about not throwing the
+ * rest away. The hint in particular is worth the space: PostgreSQL only emits one
+ * when it knows what you probably meant, and "Perhaps you meant to reference the
+ * column \"o.total\"" is frequently the whole answer, sitting one field away from a
+ * message that says only that a column does not exist.
  */
 @Composable
 fun ErrorBanner(failure: Failure, onDismiss: (() -> Unit)? = null, modifier: Modifier = Modifier) {
@@ -39,11 +46,63 @@ fun ErrorBanner(failure: Failure, onDismiss: (() -> Unit)? = null, modifier: Mod
         modifier = modifier,
     ) {
         Text(failure.message, color = MaterialTheme.colorScheme.onErrorContainer)
+        failure.query?.let { QueryErrorDetail(it) }
         Text(
-            failure.code,
+            // The SQLSTATE, when there is one, is more useful to quote than the
+            // application's own code: it is the identifier PostgreSQL's documentation
+            // is indexed by, and it survives a search engine.
+            text = listOfNotNull(
+                failure.code,
+                failure.query?.sqlState,
+                // Only when it is not the ordinary one. A red banner already says
+                // "error"; FATAL and PANIC say the session or the server is gone, and
+                // that is worth a word.
+                failure.query?.severity?.takeUnless { it.equals("ERROR", ignoreCase = true) },
+            ).joinToString(" · "),
             style = MaterialTheme.typography.labelSmall,
             fontFamily = FontFamily.Monospace,
             color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.8f),
+        )
+    }
+}
+
+/**
+ * Everything the server said beyond its first sentence.
+ *
+ * Each part is labelled with PostgreSQL's own word for it — `DETAIL`, `HINT` — so
+ * that what is on screen is recognizably the same report `psql` would have printed,
+ * and someone who has read one can read this.
+ */
+@Composable
+private fun QueryErrorDetail(query: DbError.QueryFailed) {
+    val foreground = MaterialTheme.colorScheme.onErrorContainer
+    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        query.detail?.let { ErrorField("DETAIL", it, foreground) }
+        query.hint?.let { ErrorField("HINT", it, foreground) }
+        query.subject?.describe()?.let { ErrorField("AT", it, foreground) }
+        // Reported, never used to point at anything: it counts into a query the
+        // server generated inside a function body, which is not on screen and may
+        // never have been.
+        query.internalPosition?.let {
+            ErrorField("INTERNAL POSITION", it.toString(), foreground)
+        }
+    }
+}
+
+@Composable
+private fun ErrorField(label: String, value: String, foreground: Color) {
+    Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.Top) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            fontFamily = FontFamily.Monospace,
+            color = foreground.copy(alpha = 0.7f),
+        )
+        Text(
+            text = value,
+            style = MaterialTheme.typography.bodySmall,
+            color = foreground.copy(alpha = 0.9f),
+            modifier = Modifier.semantics { contentDescription = "error-${label.lowercase()}" },
         )
     }
 }

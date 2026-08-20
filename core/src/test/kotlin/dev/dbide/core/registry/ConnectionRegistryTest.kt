@@ -10,6 +10,7 @@ import dev.dbide.core.connections.TlsMode
 import dev.dbide.core.result.DbException
 import java.time.Instant
 import kotlin.test.assertEquals
+import kotlin.test.assertNotEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
@@ -214,11 +215,26 @@ class ConnectionRegistryTest {
 
     @Test
     fun `the fingerprint ignores fields that do not affect dialing`() {
-        val cosmetic = config().copy(name = "Renamed", color = "#ff0000", readOnly = true)
+        val cosmetic = config().copy(name = "Renamed", color = "#ff0000")
 
         assertEquals(
             ConnectionRegistry.fingerprint(config(), Secret("hunter2")),
             ConnectionRegistry.fingerprint(cosmetic, Secret("hunter2")),
+        )
+    }
+
+    @Test
+    fun `the fingerprint changes when the read-only flag does`() {
+        // Not cosmetic, and this is the assertion that says so. `readOnly` decides
+        // whether the pool opens its connections in a PostgreSQL READ ONLY
+        // transaction, so an open pool built under the old answer has to be
+        // invalidated — otherwise ticking Read only leaves a connection that still
+        // accepts writes, which is the direction that matters.
+        val restricted = config().copy(readOnly = true)
+
+        assertNotEquals(
+            ConnectionRegistry.fingerprint(config(), Secret("hunter2")),
+            ConnectionRegistry.fingerprint(restricted, Secret("hunter2")),
         )
     }
 

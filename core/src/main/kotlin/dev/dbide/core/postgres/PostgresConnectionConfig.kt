@@ -18,6 +18,12 @@ data class PostgresConnectionConfig(
     val user: String,
     val password: Secret,
     val tlsMode: TlsMode = TlsMode.DISABLE,
+    /**
+     * Whether every connection in this pool opens in a PostgreSQL `READ ONLY`
+     * transaction. This is §2.4's enforcing half, and it defaults to `true` because
+     * a safety property whose default is off is not a safety property.
+     */
+    val readOnly: Boolean = true,
 ) {
     /** Never carries credentials: the driver receives those as `Properties`. */
     val jdbcUrl: String get() = "jdbc:postgresql://$host:$port/$database"
@@ -37,6 +43,7 @@ data class PostgresConnectionConfig(
             user = config.username,
             password = password,
             tlsMode = config.tlsMode,
+            readOnly = config.readOnly,
         )
     }
 }

@@ -10,6 +10,7 @@ import dev.dbide.core.postgres.PostgresConnectionConfig
 import dev.dbide.core.postgres.PostgresProbe
 import dev.dbide.core.redis.RedisSession
 import dev.dbide.core.registry.ConnectionRegistry
+import dev.dbide.core.result.QueryResult
 import dev.dbide.core.store.ConfigStore
 import dev.dbide.core.vault.SecretIdentity
 import dev.dbide.core.vault.Vault
@@ -78,6 +79,17 @@ interface ConnectionService {
 
     /** The columns of one relation of an open PostgreSQL connection. */
     suspend fun columns(id: ConnectionId, schema: String, relation: String): List<ColumnInfo>
+
+    /**
+     * Runs one statement on an open PostgreSQL connection and returns its bounded
+     * result.
+     *
+     * One statement, already chosen: splitting a script is
+     * [dev.dbide.core.sql.EditorExecution]'s job and happens before anything is sent.
+     * Cancelling the calling coroutine cancels the statement on the server, so
+     * closing the editor that started it stops the work rather than orphaning it.
+     */
+    suspend fun execute(id: ConnectionId, sql: String): QueryResult
 
     /** Releases every client. Called during application shutdown. */
     suspend fun shutdown()
@@ -251,6 +263,19 @@ class DefaultConnectionService(
         schema: String,
         relation: String,
     ): List<ColumnInfo> = catalog(id).columns(schema, relation)
+
+    /**
+     * Runs one statement on an open PostgreSQL connection.
+     *
+     * Like the catalog reads, this needs no decrypted password and refuses a
+     * connection that is not open rather than dialing one. What the statement is
+     * allowed to do is not decided here: the pool's read-only transaction decides it,
+     * on the server, where a write hidden in a function body is still a write.
+     */
+    override suspend fun execute(id: ConnectionId, sql: String): QueryResult {
+        requireUnlocked()
+        return registry.postgres(id).adapter.execute(sql)
+    }
 
     /** Releases every client. Called during application shutdown. */
     override suspend fun shutdown() = registry.closeAll()

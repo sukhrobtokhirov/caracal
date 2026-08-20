@@ -95,7 +95,8 @@ fun SchemaTree(
 
         HorizontalDivider()
         Text(
-            text = inserted?.let { "Copied $it" } ?: "Double-click a name to copy it as quoted SQL.",
+            text = inserted?.let { "Inserted $it" }
+                ?: "Double-click a name to insert it into the editor as quoted SQL.",
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 1,

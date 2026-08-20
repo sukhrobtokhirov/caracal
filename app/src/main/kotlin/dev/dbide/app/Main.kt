@@ -84,6 +84,7 @@ fun main() = application {
 private fun Workspace(service: ConnectionService, scope: CoroutineScope) {
     val connections = remember(service) { ConnectionsViewModel(service, scope) }
     val tree = remember(service) { SchemaTreeViewModel(service, scope) }
+    val editor = remember(service) { EditorViewModel(service, scope) }
     val vault = remember(service) {
         VaultViewModel(service, scope, onUnlocked = { connections.refresh() })
     }
@@ -97,11 +98,14 @@ private fun Workspace(service: ConnectionService, scope: CoroutineScope) {
         VaultUiState.Unlocked -> WorkspaceScreen(
             viewModel = connections,
             tree = tree,
+            editor = editor,
             onLock = {
                 connections.clear()
                 // Locking closes every client, so the tree is describing a server this
-                // process can no longer reach.
+                // process can no longer reach and the editor has nowhere to send a
+                // statement — including one that is running right now.
                 tree.clear()
+                editor.clear()
                 vault.lock()
             },
         )

@@ -12,6 +12,7 @@ import dev.dbide.core.connections.Engine
 import dev.dbide.core.connections.RuntimeState
 import dev.dbide.core.connections.RuntimeStatus
 import dev.dbide.core.connections.Secret
+import dev.dbide.core.postgres.PostgresAdapter
 import dev.dbide.core.postgres.PostgresConnectionConfig
 import dev.dbide.core.postgres.PostgresSession
 import dev.dbide.core.redis.RedisSession
@@ -20,6 +21,7 @@ import dev.dbide.core.result.DbException
 import dev.dbide.core.result.asDbError
 import java.security.MessageDigest
 import java.time.Instant
+import kotlin.time.Duration
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
@@ -54,8 +56,15 @@ class WrongEngineException :
  * Two levels of locking: [stateLock] is held only for fast map reads and writes, so
  * a status read never waits behind a five-second dial, while a per-connection lock
  * serializes the slow operations for that one connection.
+ *
+ * [statementTimeout] is §2.4's configurable statement timeout, and this is the one
+ * place it is set. Every PostgreSQL session opened here is given it, so changing
+ * the limit is changing one value rather than auditing every call site that runs a
+ * statement — and a test that needs a query to time out can inject a short one.
  */
-class ConnectionRegistry {
+class ConnectionRegistry(
+    private val statementTimeout: Duration = PostgresAdapter.DEFAULT_STATEMENT_TIMEOUT,
+) {
     private val stateLock = Mutex()
     private val entries = LinkedHashMap<ConnectionId, Entry>()
 
@@ -99,7 +108,10 @@ class ConnectionRegistry {
             val client = try {
                 when (config.engine) {
                     Engine.POSTGRES -> RuntimeClient.Postgres(
-                        PostgresSession.open(PostgresConnectionConfig.of(config, password)),
+                        PostgresSession.open(
+                            config = PostgresConnectionConfig.of(config, password),
+                            statementTimeout = statementTimeout,
+                        ),
                     )
                     Engine.REDIS -> RuntimeClient.Redis(RedisSession.open(config, password))
                 }
@@ -215,9 +227,15 @@ class ConnectionRegistry {
         private val log = LoggerFactory.getLogger(ConnectionRegistry::class.java)
 
         /**
-         * Summarizes everything that affects how a client dials, including the secret.
-         * Comparing fingerprints detects a configuration change without keeping the
-         * password around to compare against.
+         * Summarizes everything that affects how a client dials or behaves, including
+         * the secret. Comparing fingerprints detects a configuration change without
+         * keeping the password around to compare against.
+         *
+         * `readOnly` is in here because it is not a label on a connection, it is how
+         * the pool is built: turning it off and leaving an already-open pool in place
+         * would leave a connection the user has just marked writable still refusing
+         * writes, and turning it on would leave one still accepting them. The second
+         * is the one that matters.
          */
         fun fingerprint(config: ConnectionConfig, password: Secret): String {
             val digest = MessageDigest.getInstance("SHA-256")
@@ -228,6 +246,7 @@ class ConnectionRegistry {
                 config.database,
                 config.username,
                 config.tlsMode.wire,
+                config.readOnly.toString(),
                 password.expose(),
             ).forEach { part ->
                 digest.update(part.toByteArray(Charsets.UTF_8))

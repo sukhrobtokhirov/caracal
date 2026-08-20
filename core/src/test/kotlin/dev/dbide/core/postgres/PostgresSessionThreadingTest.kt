@@ -46,7 +46,7 @@ class PostgresSessionThreadingTest {
     fun `opening moves onto the dispatcher it was given, rather than running inline`() = runBlocking {
         val dispatcher = RecordingDispatcher(Dispatchers.IO)
 
-        runCatching { PostgresSession.open(unreachable, dispatcher) }
+        runCatching { PostgresSession.open(unreachable, dispatcher = dispatcher) }
 
         // Without the withContext, open runs on the caller and this stays at zero,
         // whether the dial succeeds or fails.

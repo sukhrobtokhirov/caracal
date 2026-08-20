@@ -1,0 +1,595 @@
+package dev.dbide.app.ui
+
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.HorizontalScrollbar
+import androidx.compose.foundation.VerticalScrollbar
+import androidx.compose.foundation.background
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.focusable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.rememberScrollbarAdapter
+import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.VerticalDivider
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.isCtrlPressed
+import androidx.compose.ui.input.key.isMetaPressed
+import androidx.compose.ui.input.key.isShiftPressed
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.PointerIcon
+import androidx.compose.ui.input.pointer.PointerKeyboardModifiers
+// Aliased: the same three names exist for a key event, and both kinds are read here.
+import androidx.compose.ui.input.pointer.isCtrlPressed as pointerCtrlPressed
+import androidx.compose.ui.input.pointer.isMetaPressed as pointerMetaPressed
+import androidx.compose.ui.input.pointer.isPrimaryPressed
+import androidx.compose.ui.input.pointer.isShiftPressed as pointerShiftPressed
+import androidx.compose.ui.input.pointer.pointerHoverIcon
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontStyle
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
+import dev.dbide.app.ColumnWindow
+import dev.dbide.app.GridText
+import dev.dbide.app.JsonFormat
+import dev.dbide.app.ResultGridState
+import dev.dbide.app.SelectionGesture
+import dev.dbide.app.columnWindow
+import dev.dbide.app.rightAligned
+import dev.dbide.core.result.CellValue
+import dev.dbide.core.result.Column as ResultColumn
+import dev.dbide.core.result.ColumnFormat
+import java.awt.Cursor
+
+private val ROW_HEIGHT = 26.dp
+private val HEADER_HEIGHT = 40.dp
+private val SCROLLBAR_WIDTH = 12.dp
+private val CELL_PADDING = 6.dp
+
+/**
+ * The result grid.
+ *
+ * Compose has no data grid, so this is the one in plan §5.9, built where `LazyColumn`
+ * stops. It virtualizes both ways: rows through `LazyColumn`, and columns through
+ * [columnWindow], which composes only the columns the viewport intersects and leaves
+ * spacers where the rest would be. A fifty-column result therefore costs the eight
+ * columns on screen, not fifty, per visible row.
+ *
+ * The header and every row share one [ResultGridState.horizontal] scroll state, which
+ * is what keeps them aligned; the row-number gutter sits outside that scroll, so it
+ * stays put while the columns move under it.
+ *
+ * Every value is drawn as text and never as anything a database could make executable.
+ * The grid is read-only in v0.1, deliberately: nothing here writes.
+ */
+@Composable
+fun ResultGrid(
+    state: ResultGridState,
+    onCopy: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val result = state.result
+    val focus = remember { FocusRequester() }
+
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            // Focusable, so that the copy chord has somewhere to land before the user
+            // has clicked anything.
+            .focusRequester(focus)
+            .focusable()
+            // Preview, so the chord is the grid's before it is a cell's. Meta is the
+            // macOS chord and Ctrl is everywhere else's; both are accepted on both.
+            .onPreviewKeyEvent { event ->
+                val copying = event.type == KeyEventType.KeyDown &&
+                    event.key == Key.C &&
+                    (event.isCtrlPressed || event.isMetaPressed)
+                if (!copying) return@onPreviewKeyEvent false
+                state.copyText()?.let(onCopy)
+                true
+            }
+            .semantics { contentDescription = "result-grid" },
+    ) {
+        if (result.columns.isEmpty()) {
+            CommandResult(modifier = Modifier.weight(1f))
+        } else {
+            Box(modifier = Modifier.weight(1f)) { Table(state, focus) }
+            if (state.panelOpen) {
+                HorizontalDivider()
+                ValuePanel(state, onCopy)
+            }
+        }
+        HorizontalDivider()
+        StatusBar(state, onCopy)
+    }
+}
+
+/** The header, the rows, and the two scrollbars that say where in them you are. */
+@Composable
+private fun Table(state: ResultGridState, focus: FocusRequester) {
+    val density = LocalDensity.current
+    val cellStyle = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace)
+    val measurer = rememberTextMeasurer()
+
+    // Column widths are sampled in characters, which is a property of the data; only
+    // here is there a measured font to turn characters into dp.
+    val advance = remember(cellStyle, density) {
+        with(density) { measurer.measure("0", cellStyle).size.width.toDp().value }
+    }
+    LaunchedEffect(state, advance) { state.fitColumns(advance) }
+
+    // Wide enough for the largest row number this result can show, and no wider.
+    val gutter = remember(state, advance) {
+        ((state.result.rows.size.toString().length + 1) * advance + 12).dp
+    }
+
+    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+        // Known before the children compose, so the first frame already draws the right
+        // columns rather than all of them.
+        val viewport = (maxWidth - gutter - SCROLLBAR_WIDTH).value
+        val window by remember(state, viewport, density) {
+            derivedStateOf {
+                val scrolled = with(density) { state.horizontal.value.toDp().value }
+                columnWindow(state.widths.toList(), scrolled, viewport)
+            }
+        }
+
+        Column(modifier = Modifier.fillMaxSize()) {
+            HeaderRow(state, window, gutter)
+            HorizontalDivider()
+
+            Box(modifier = Modifier.weight(1f)) {
+                LazyColumn(state = state.vertical, modifier = Modifier.fillMaxSize()) {
+                    itemsIndexed(state.result.rows, key = { index, _ -> index }) { index, cells ->
+                        GridRow(state, index, cells, window, gutter, cellStyle, focus)
+                    }
+                }
+                if (state.result.rows.isEmpty()) {
+                    Text(
+                        text = "No rows.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier
+                            .align(Alignment.Center)
+                            .semantics { contentDescription = "grid-empty" },
+                    )
+                }
+                VerticalScrollbar(
+                    adapter = rememberScrollbarAdapter(state.vertical),
+                    modifier = Modifier.align(Alignment.CenterEnd).fillMaxHeight(),
+                )
+            }
+
+            HorizontalScrollbar(
+                adapter = rememberScrollbarAdapter(state.horizontal),
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+    }
+}
+
+/**
+ * The sticky header: sticky because it is outside the `LazyColumn` entirely, and
+ * horizontally scrolled by the same state as the rows below it.
+ */
+@Composable
+private fun HeaderRow(state: ResultGridState, window: ColumnWindow, gutter: Dp) {
+    Row(
+        modifier = Modifier
+            .height(HEADER_HEIGHT)
+            .fillMaxWidth()
+            .background(MaterialTheme.colorScheme.surfaceVariant),
+    ) {
+        Box(modifier = Modifier.width(gutter).fillMaxHeight())
+        VerticalDivider()
+        Row(modifier = Modifier.weight(1f).horizontalScroll(state.horizontal)) {
+            Spacer(modifier = Modifier.width(window.leading.dp))
+            for (index in window.range) {
+                HeaderCell(state, index, state.result.columns[index])
+            }
+            Spacer(modifier = Modifier.width(window.trailing.dp))
+        }
+    }
+}
+
+/** One column's name over its PostgreSQL type, with a divider that can be dragged. */
+@Composable
+private fun HeaderCell(state: ResultGridState, index: Int, column: ResultColumn) {
+    Box(modifier = Modifier.width(state.widths[index].dp).fillMaxHeight()) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = CELL_PADDING, vertical = 4.dp)
+                .semantics(mergeDescendants = true) { contentDescription = "grid-header-$index" },
+            verticalArrangement = Arrangement.Center,
+        ) {
+            Text(
+                text = column.name,
+                style = MaterialTheme.typography.labelMedium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                // PostgreSQL's own name for the type, not the JDBC approximation of it.
+                text = column.typeName,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        Box(
+            modifier = Modifier
+                .align(Alignment.CenterEnd)
+                .width(7.dp)
+                .fillMaxHeight()
+                .pointerHoverIcon(PointerIcon(Cursor(Cursor.E_RESIZE_CURSOR)))
+                .pointerInput(index) {
+                    detectHorizontalDragGestures { change, amount ->
+                        change.consume()
+                        state.resize(index, amount.toDp().value)
+                    }
+                }
+                .semantics { contentDescription = "grid-resize-$index" },
+        ) {
+            VerticalDivider(modifier = Modifier.align(Alignment.CenterEnd))
+        }
+    }
+}
+
+/** One row: its number in the frozen gutter, its cells in the scrolling region. */
+@Composable
+private fun GridRow(
+    state: ResultGridState,
+    index: Int,
+    cells: List<CellValue>,
+    window: ColumnWindow,
+    gutter: Dp,
+    cellStyle: TextStyle,
+    focus: FocusRequester,
+) {
+    val selected = index in state.selectedRows
+    val background =
+        if (selected) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent
+
+    Row(modifier = Modifier.height(ROW_HEIGHT).fillMaxWidth().background(background)) {
+        RowNumber(state, index, gutter, selected, focus)
+        VerticalDivider()
+        Row(modifier = Modifier.weight(1f).horizontalScroll(state.horizontal)) {
+            Spacer(modifier = Modifier.width(window.leading.dp))
+            for (column in window.range) {
+                GridCell(
+                    state = state,
+                    row = index,
+                    column = column,
+                    value = cells.getOrElse(column) { CellValue.Null },
+                    style = cellStyle,
+                    focus = focus,
+                )
+            }
+            Spacer(modifier = Modifier.width(window.trailing.dp))
+        }
+    }
+}
+
+/**
+ * The row number, which is not one of the returned columns.
+ *
+ * Clicking it selects the row — plain, with Ctrl/Cmd to add one, with Shift to extend
+ * — because a copy of whole rows is a different thing from a copy of one cell, and the
+ * two need different gestures to ask for.
+ */
+@Composable
+private fun RowNumber(
+    state: ResultGridState,
+    index: Int,
+    gutter: Dp,
+    selected: Boolean,
+    focus: FocusRequester,
+) {
+    Box(
+        modifier = Modifier
+            .width(gutter)
+            .fillMaxHeight()
+            // A raw pointer handler rather than a click, because which selection a
+            // click means is carried by the keyboard modifiers a click does not report.
+            .pointerInput(index) {
+                awaitPointerEventScope {
+                    while (true) {
+                        val event = awaitPointerEvent()
+                        if (event.type == PointerEventType.Press && event.buttons.isPrimaryPressed) {
+                            state.selectRow(index, event.keyboardModifiers.gesture())
+                            focus.grab()
+                        }
+                    }
+                }
+            }
+            .padding(horizontal = CELL_PADDING)
+            .semantics { contentDescription = "grid-row-$index" },
+        contentAlignment = Alignment.CenterEnd,
+    ) {
+        Text(
+            text = (index + 1).toString(),
+            style = MaterialTheme.typography.labelSmall,
+            color = if (selected) {
+                MaterialTheme.colorScheme.onSecondaryContainer
+            } else {
+                MaterialTheme.colorScheme.onSurfaceVariant
+            },
+            maxLines = 1,
+        )
+    }
+}
+
+/**
+ * Takes the keyboard, so the copy chord lands on the grid from here on.
+ *
+ * Only ever in response to a click. A result arriving must not take focus on its own:
+ * the user was typing in the editor that produced it, and a caret that jumps out of
+ * the script on every run makes the editor unusable.
+ */
+private fun FocusRequester.grab() {
+    runCatching { requestFocus() }
+}
+
+/** Shift extends the selection, Ctrl or Cmd adds to it, and a bare click replaces it. */
+private fun PointerKeyboardModifiers.gesture(): SelectionGesture = when {
+    pointerShiftPressed -> SelectionGesture.EXTEND
+    pointerCtrlPressed || pointerMetaPressed -> SelectionGesture.TOGGLE
+    else -> SelectionGesture.REPLACE
+}
+
+/**
+ * One cell: a bounded single line of text, and never anything else.
+ *
+ * `NULL` and the empty string are the two values a blank cell could mean, so both are
+ * drawn as dimmed italic placeholders that differ from each other and from any value
+ * that renders those characters itself.
+ */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun GridCell(
+    state: ResultGridState,
+    row: Int,
+    column: Int,
+    value: CellValue,
+    style: TextStyle,
+    focus: FocusRequester,
+) {
+    val focused = state.focused?.row == row && state.focused?.column == column
+    val format = state.result.columns[column].format
+    val placeholder = GridText.isPlaceholder(value)
+
+    Box(
+        modifier = Modifier
+            .width(state.widths[column].dp)
+            .fillMaxHeight()
+            .background(
+                if (focused) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
+            )
+            .combinedClickable(
+                onClick = {
+                    state.focus(row, column)
+                    focus.grab()
+                },
+                onDoubleClick = {
+                    state.focus(row, column)
+                    focus.grab()
+                    state.openPanel()
+                },
+            )
+            .padding(horizontal = CELL_PADDING)
+            .semantics { contentDescription = "grid-cell-$row-$column" },
+        contentAlignment = if (format.rightAligned) Alignment.CenterEnd else Alignment.CenterStart,
+    ) {
+        Text(
+            text = GridText.preview(value),
+            style = style,
+            fontStyle = if (placeholder) FontStyle.Italic else FontStyle.Normal,
+            color = if (placeholder) {
+                MaterialTheme.colorScheme.onSurfaceVariant
+            } else {
+                MaterialTheme.colorScheme.onSurface
+            },
+            textAlign = if (format.rightAligned) TextAlign.End else TextAlign.Start,
+            maxLines = 1,
+            softWrap = false,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+/**
+ * The whole of the focused value, which the one-line cell could only preview.
+ *
+ * A JSON column can be reformatted here for reading. The reformatting is a view: what
+ * a copy takes is the value as the server sent it, indentation and all.
+ */
+@Composable
+private fun ValuePanel(state: ResultGridState, onCopy: (String) -> Unit) {
+    val column = state.focusedColumn()
+    val value = state.focusedValue()
+    if (column == null || value == null) return
+
+    val raw = GridText.copy(value)
+    val pretty = column.format == ColumnFormat.JSON && state.prettyJson
+    val shown = if (pretty) JsonFormat.pretty(raw) ?: raw else raw
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 96.dp, max = 240.dp)
+            .semantics { contentDescription = "grid-detail" },
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(start = 12.dp, end = 4.dp, top = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = "${column.name} · ${column.typeName}",
+                style = MaterialTheme.typography.labelMedium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
+            if (column.format == ColumnFormat.JSON) {
+                TextButton(
+                    onClick = state::togglePrettyJson,
+                    modifier = Modifier.semantics { contentDescription = "grid-detail-json" },
+                ) {
+                    Text(if (pretty) "Raw" else "Pretty", style = MaterialTheme.typography.labelSmall)
+                }
+            }
+            TextButton(
+                onClick = { onCopy(raw) },
+                modifier = Modifier.semantics { contentDescription = "grid-detail-copy" },
+            ) {
+                Text("Copy value", style = MaterialTheme.typography.labelSmall)
+            }
+            TextButton(
+                onClick = state::closePanel,
+                modifier = Modifier.semantics { contentDescription = "grid-detail-close" },
+            ) {
+                Text("Close", style = MaterialTheme.typography.labelSmall)
+            }
+        }
+
+        SelectionContainer(modifier = Modifier.weight(1f)) {
+            Text(
+                text = shown,
+                style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 12.dp, vertical = 4.dp)
+                    .semantics { contentDescription = "grid-detail-value" },
+            )
+        }
+
+        // What is on screen is what was retained. A value the server cut short must not
+        // look complete just because a panel is big enough to hold it.
+        remnant(value)?.let { note ->
+            Text(
+                text = note,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier
+                    .padding(horizontal = 12.dp, vertical = 4.dp)
+                    .semantics { contentDescription = "grid-detail-truncated" },
+            )
+        }
+    }
+}
+
+/** What a truncated value is not showing, said plainly. `null` when nothing is missing. */
+private fun remnant(value: CellValue): String? = when {
+    value is CellValue.Text && value.truncated ->
+        "Truncated for display; the rest of the value stayed on the server."
+
+    value is CellValue.Binary && value.truncated ->
+        "Preview of ${value.byteCount} bytes; the rest of the value stayed on the server."
+
+    else -> null
+}
+
+/** Duration, row counts, truncation, and the copy the keyboard would also perform. */
+@Composable
+private fun StatusBar(state: ResultGridState, onCopy: (String) -> Unit) {
+    val copyable = state.copyText()
+
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(start = 12.dp, end = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = GridText.status(state.result),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f).semantics { contentDescription = "grid-status" },
+        )
+        if (state.result.columns.isNotEmpty()) {
+            TextButton(
+                onClick = { if (state.panelOpen) state.closePanel() else state.openPanel() },
+                enabled = state.focused != null,
+                modifier = Modifier.semantics { contentDescription = "grid-toggle-panel" },
+            ) {
+                Text(
+                    if (state.panelOpen) "Hide value" else "Show value",
+                    style = MaterialTheme.typography.labelSmall,
+                )
+            }
+        }
+        TextButton(
+            onClick = { copyable?.let(onCopy) },
+            enabled = copyable != null,
+            modifier = Modifier.semantics { contentDescription = "grid-copy" },
+        ) {
+            Text(state.copyLabel(), style = MaterialTheme.typography.labelSmall)
+        }
+    }
+}
+
+/**
+ * A statement that returned no columns.
+ *
+ * pgjdbc surfaces the affected count but not PostgreSQL's command tag, so this says
+ * what was actually received rather than inventing `UPDATE 3` from a keyword.
+ */
+@Composable
+private fun CommandResult(modifier: Modifier = Modifier) {
+    Box(
+        modifier = modifier.fillMaxWidth(),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = "Statement completed.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.semantics { contentDescription = "grid-command" },
+        )
+    }
+}

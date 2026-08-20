@@ -16,6 +16,7 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.v2.runDesktopComposeUiTest
 import dev.dbide.app.ConnectionsViewModel
+import dev.dbide.app.EditorViewModel
 import dev.dbide.app.FakeConnectionService
 import dev.dbide.app.SchemaTreeViewModel
 import dev.dbide.app.VaultUiState
@@ -66,7 +67,8 @@ class ConnectionUiTest {
             val scope = rememberCoroutineScope()
             model = remember { ConnectionsViewModel(service, scope) }
             val tree = remember { SchemaTreeViewModel(service, scope) }
-            MaterialTheme { WorkspaceScreen(model, tree, onLock = {}) }
+            val editor = remember { EditorViewModel(service, scope) }
+            MaterialTheme { WorkspaceScreen(model, tree, editor, onLock = {}) }
         }
         waitForIdle()
         return model
@@ -319,6 +321,11 @@ class ConnectionUiTest {
         onNodeWithContentDescription("connection-Local").performClick()
         onNodeWithContentDescription("open-connection").performClick()
         waitUntil { model.connections.single().runtime.status == RuntimeStatus.OPEN }
+        waitForIdle()
+
+        // An open connection lands on its editor, and its details are one tab away.
+        onNodeWithContentDescription("sql-editor").assertIsDisplayed()
+        onNodeWithContentDescription("workspace-tab-connection").performClick()
         waitForIdle()
 
         onNodeWithContentDescription("close-connection").assertIsDisplayed()

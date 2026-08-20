@@ -36,7 +36,13 @@ data class ConnectionDraft(
     val username: String = "",
     val tlsMode: TlsMode? = null,
     val environment: Environment = Environment.DEFAULT,
-    val readOnly: Boolean = false,
+    /**
+     * Defaults to read only, because §2.4 makes this flag decide whether the pool
+     * opens its connections in a PostgreSQL `READ ONLY` transaction — and a new
+     * connection should not be able to write before anyone has thought about whether
+     * it should. Turning it off is one visible click.
+     */
+    val readOnly: Boolean = true,
     val color: String? = null,
     val secret: SecretUpdate = SecretUpdate.Unchanged,
 ) {
