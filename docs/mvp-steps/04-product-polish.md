@@ -132,7 +132,7 @@ Behavioral rules:
 - Tabs use horizontal overflow or a menu rather than shrinking titles to unusability.
 - Duplicate a tab by copying text and connection, without copying a running query ID.
 
-Keep tab contents in process/browser memory for v0.1. Do not persist SQL drafts to `localStorage` without a deliberate security decision because query text can contain sensitive values. Warn before application shutdown or page unload when dirty tabs exist where the platform permits it.
+Keep tab contents in process memory for v0.1. Do not persist SQL drafts to `localStorage` without a deliberate security decision because query text can contain sensitive values. Warn before application shutdown or page unload when dirty tabs exist where the platform permits it.
 
 ### 4.4 Implement keyboard shortcuts
 
@@ -152,6 +152,8 @@ Recommended low-risk additions:
 | Cancel active query | `Cmd+.` | `Ctrl+.` |
 | Focus schema/key search | `Cmd+Shift+F` | `Ctrl+Shift+F` |
 | Show shortcuts | `Cmd+/` | `Ctrl+/` |
+
+The `Cmd/Ctrl+T` and `Cmd/Ctrl+W` caveats exist only because this milestone still runs in a browser tab. [M5](05-desktop-shell.md) removes the browser and revisits both, along with the native menu accelerators — so treat them as provisional here and do not ship the caveat wording in user-facing help text.
 
 Do not intercept shortcuts while a confirmation dialog, dropdown, or text field needs the same keys, except for an explicit global Escape behavior. Respect CodeMirror's own undo, redo, search, and selection keymaps.
 

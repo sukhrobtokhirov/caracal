@@ -25,7 +25,7 @@ This milestone establishes the application's core trust contract. Values shown i
 - PostgreSQL-aware statement splitter
 - Execute and cancel lifecycle with unique query IDs
 - Bounded query results and explicit truncation
-- Type-safe server-to-browser result encoding
+- Type-safe server-to-frontend result encoding
 - Virtualized, read-only result grid
 - CSV export for successful tabular queries
 - Production/write confirmations and server-side read-only enforcement
@@ -84,7 +84,7 @@ Suggested successful response:
 }
 ```
 
-The `limit` is a requested value capped by the server's configured maximum. Never let the browser raise the hard safety limit.
+The `limit` is a requested value capped by the server's configured maximum. Never let the frontend raise the hard safety limit.
 
 ## Work packages
 
@@ -285,7 +285,7 @@ CSV requirements:
 - Choose and document a NULL representation; an empty field is ambiguous, so default to `NULL` or expose a future option.
 - Preserve exact textual values from the type encoder.
 - Set `Content-Type` and a sanitized `Content-Disposition` filename.
-- Stop database work immediately if the browser disconnects.
+- Stop database work immediately if the client disconnects.
 - Do not buffer the entire file before writing.
 
 If the original statement cannot be guaranteed read-only, disable export and explain why.

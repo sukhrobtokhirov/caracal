@@ -1,10 +1,12 @@
-# M5 — Release
+# M6 — Release
 
 ## Outcome
 
 Publish v0.1.0 as trustworthy prebuilt executables for macOS, Linux, and Windows on AMD64 and ARM64. A stranger should understand the product, download the right artifact, launch it, and connect to PostgreSQL or Redis in under two minutes.
 
 Release work is part of the product: clean builds, safe defaults, accurate documentation, checksums, licensing, and a reproducible tag-based process.
+
+This milestone assumes [M5](05-desktop-shell.md) shipped: what you are packaging is a desktop application, so the artifacts, the first-launch instructions, and the demo GIF must all show a window, not a browser tab.
 
 ## Scope
 
@@ -30,7 +32,7 @@ Release work is part of the product: clean builds, safe defaults, accurate docum
 - Telemetry or crash-reporting service
 - Hosted application or cloud sync
 
-Unsigned binaries can trigger operating-system warnings. Document this honestly; do not weaken application security or ask users to disable protections globally.
+Unsigned desktop applications trigger Gatekeeper and SmartScreen warnings, and they are more prominent for a windowed application than for a CLI. Document the exact first-launch steps honestly; do not weaken application security or ask users to disable protections globally.
 
 ## Release deliverables
 
@@ -57,7 +59,7 @@ Before publishing:
 - Choose a short, pronounceable, searchable name.
 - Search the name on GitHub, major package registries, general search, and relevant trademark databases before committing.
 - Confirm a matching or acceptable repository name.
-- Use the positioning sentence consistently: **Postgres and Redis in one free tool.**
+- Use the positioning sentence consistently: **A free desktop IDE for Postgres and Redis.** Name the category in the first line; "tool" and "web UI" both cost you the reader.
 - State that v0.1 is a local single-user tool and list supported engines/features precisely.
 - Keep deferred features in a public roadmap or issue list without implying they ship in v0.1.
 
@@ -111,9 +113,9 @@ Contributing
 License
 ```
 
-Instructions must not require Go or Node.js for users downloading a release. Give platform-specific executable commands and explain the local URL/token behavior. Mention where encrypted application data is stored and how to back up or reset it without claiming that deleting it is reversible.
+Instructions must not require Go or Node.js for users downloading a release. Give platform-specific launch steps for each OS — including the unsigned-application first-launch dance on macOS and Windows — and describe the master-password prompt as the first thing the window shows. Do not document a URL or token in user-facing instructions; that is a development detail after M5. Mention where encrypted application data is stored and how to back up or reset it without claiming that deleting it is reversible.
 
-The GIF must use fake/local data, hostnames, connection names, and credentials. Review every frame for query text, usernames, browser history, notifications, and other private information. Optimize it so the README remains fast.
+The GIF must show the application window, with its own chrome and no browser UI anywhere in frame. Use fake/local data, hostnames, connection names, and credentials. Review every frame for query text, usernames, desktop and notification content, and other private information. Optimize it so the README remains fast.
 
 ### 5.4 Embed build and version information
 
@@ -129,7 +131,7 @@ Include the version in `GET /api/health` and an **About** view, but do not expos
 
 Build requirements:
 
-- `CGO_ENABLED=0` for the intended pure-Go cross-compilation path;
+- `CGO_ENABLED` set per the desktop shell's requirement, not assumed to be `0` — the M5 webview binding is a platform SDK, so the Go core stays pure but the shipped application does not cross-compile from one host;
 - trimmed paths (`-trimpath`) to avoid leaking machine paths and improve reproducibility;
 - optimized production frontend assets built before Go compilation;
 - deterministic dependency installation using locked Go modules and frontend lockfile;
@@ -142,7 +144,8 @@ Create `.goreleaser.yaml` with:
 - one main package under `cmd/...`;
 - binary name fixed to the project name;
 - target matrix `darwin/linux/windows × amd64/arm64`;
-- `CGO_ENABLED=0`;
+- **each platform built on its own runner** — macOS on `macos-*`, Windows on `windows-*`, Linux on `ubuntu-*` — because the webview links against a platform SDK. Confirm early whether GoReleaser's own packaging or the Wails build command produces the bundle, and let one of them own it rather than both;
+- macOS output as a `.app` bundle inside the archive, not a bare executable;
 - linker flags for version, commit, and date;
 - `-trimpath` and appropriate build tags if any;
 - `.tar.gz` for Unix-like targets and `.zip` for Windows;
@@ -151,7 +154,7 @@ Create `.goreleaser.yaml` with:
 - SHA-256 checksum file;
 - changelog generation or explicit release-note input.
 
-Run `goreleaser release --snapshot --clean` locally or in CI before the first tag. Inspect every archive, not just the host-platform build. Confirm the embedded `index.html` exists by launching at least one artifact and by adding a build-time/test assertion around the embedded filesystem.
+Run `goreleaser release --snapshot --clean` in CI before the first tag; a single developer machine can no longer produce every target. Inspect every archive, not just the host-platform build. Confirm the embedded `index.html` exists by launching at least one artifact and by adding a build-time/test assertion around the embedded filesystem.
 
 GoReleaser's frontend pre-hook must use the lockfile (`npm ci` or the selected package manager's frozen install) and production build. Avoid a configuration where six target builds each perform a separate mutable frontend dependency resolution.
 
@@ -215,23 +218,25 @@ Cross-compilation success does not prove runtime success. Test the actual artifa
 
 #### macOS Intel and Apple Silicon
 
-- executable starts and opens/prints the local URL;
+- the `.app` launches from Finder and the Dock and shows a window with no browser chrome;
 - Gatekeeper behavior for the unsigned archive is accurately documented;
 - application data path and file permissions are correct;
-- browser opener works or fails gracefully;
+- window size/position restore, native menus, and Cmd+Q shutdown work;
+- external links open in the user's default browser, not inside the window;
 - PostgreSQL/Redis TLS connection works.
 
 #### Linux AMD64 and ARM64
 
-- executable runs on the documented minimum libc/kernel environment, noting that a pure-Go binary reduces but does not erase OS assumptions;
-- headless `--no-open` works;
+- executable runs on the documented minimum libc/kernel and WebKitGTK environment, noting that the webview adds OS assumptions a pure-Go binary does not have;
+- the missing-webview failure mode prints an actionable message naming the required package;
 - application data directory follows platform conventions;
-- port selection and signal shutdown work under a terminal and container-like environment.
+- window management works under at least one X11 and one Wayland session;
+- signal shutdown closes live pools cleanly from a terminal launch.
 
 #### Windows AMD64 and ARM64
 
-- `.exe` launches from PowerShell and Explorer;
-- browser opening and URL quoting work;
+- `.exe` launches from PowerShell and Explorer without a console window flashing;
+- WebView2 runtime presence is detected and its absence produces an actionable message;
 - application data uses the correct user directory;
 - SQLite file locking and shutdown/restart work;
 - Windows Defender/SmartScreen behavior is documented honestly;
@@ -284,7 +289,7 @@ Use a written, repeatable sequence:
 7. Download artifacts from the published/draft release, not from local `dist`.
 8. Verify checksums and run final first-launch tests.
 9. Publish the release.
-10. Open a clean browser session and follow the README exactly as a new user.
+10. On a clean machine, follow the README exactly as a new user, from download to first successful query.
 
 Do not call the milestone complete until the uploaded artifacts, rather than only local builds, pass verification.
 

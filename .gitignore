@@ -1,20 +1,17 @@
-# Build output
-/bin/
-internal/webassets/dist/*
-!internal/webassets/dist/.gitkeep
+# Gradle and Kotlin build output
+build/
+.gradle/
+.kotlin/
 
-# Frontend
-web/node_modules/
+# Packaging output, when it is redirected out of the build directory
+/dist/
 
 # Local environment — never commit a working connection string
 .env
 .env.local
 
-# Screenshots produced by browser-driven verification
-/*.png
-/.playwright-mcp/
-
 # Editors and OS
 .DS_Store
 .idea/
 .vscode/
+*.iml

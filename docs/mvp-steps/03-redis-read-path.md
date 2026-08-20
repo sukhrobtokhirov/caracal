@@ -287,7 +287,7 @@ Server behavior:
 - Limit nesting depth, elements, and total bytes. Return truncation metadata rather than consuming unbounded memory.
 - Record duration and safe command name. Do not log full arguments.
 
-Console history in the browser must avoid persistent storage for v0.1 because arguments can contain secrets. Keep it in memory for the current session only.
+Console history in the frontend must avoid persistent storage for v0.1 because arguments can contain secrets. Keep it in memory for the current session only.
 
 ### 3.10 Enforce the dangerous-command guard
 
@@ -363,7 +363,7 @@ Run against a disposable Redis server containing:
 - read-only ACL user;
 - large/nested command replies.
 
-Assert that browser code never issues `KEYS`, `HGETALL`, `SMEMBERS`, or unbounded range reads. Where practical, inspect a command log in the disposable server/test client.
+Assert that key-browser code never issues `KEYS`, `HGETALL`, `SMEMBERS`, or unbounded range reads. Where practical, inspect a command log in the disposable server/test client.
 
 ### Frontend tests
 
