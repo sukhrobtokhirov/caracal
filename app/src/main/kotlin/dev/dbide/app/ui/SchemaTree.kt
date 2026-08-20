@@ -2,6 +2,7 @@ package dev.dbide.app.ui
 
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -13,7 +14,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.CircularProgressIndicator
@@ -26,6 +26,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
@@ -160,16 +161,14 @@ private fun TreeNode(
                 .handCursor()
                 .padding(start = indent, end = Space.md)
                 .semantics { contentDescription = row.key.describe() },
-            horizontalArrangement = Arrangement.spacedBy(Space.md),
+            horizontalArrangement = Arrangement.spacedBy(Space.sm),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(
-                text = if (!row.expandable) " " else if (row.expanded) "▾" else "▸",
-                style = MaterialTheme.typography.labelSmall,
-                // Dimmer than the name beside it: the triangle is a control, and the
-                // name is the thing the user is actually scanning for.
-                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                modifier = Modifier.width(10.dp),
+            Disclosure(
+                expandable = row.expandable,
+                expanded = row.expanded,
+                description = "${row.key.describe()}-toggle",
+                onToggle = onToggle,
             )
             Text(
                 text = row.label,
@@ -232,6 +231,54 @@ private fun TreeNode(
                     .semantics { contentDescription = "node-note" },
             )
         }
+    }
+}
+
+/**
+ * The triangle that opens a node.
+ *
+ * A target rather than a glyph. The arrow was 10dp of text with nothing clickable
+ * around it, which made the row the only real way to open a schema — and the row is
+ * also what a double-click inserts from, so the two gestures were competing for the
+ * same pixels. Given its own square, the arrow can be aimed at: it lights up under
+ * the pointer, it swallows the click, and the row underneath keeps its double-click.
+ *
+ * A leaf still occupies the square. Columns would otherwise sit a few pixels left of
+ * the tables above them, and a tree whose indentation depends on what a row happens
+ * to be is a tree that looks bent.
+ */
+@Composable
+private fun Disclosure(
+    expandable: Boolean,
+    expanded: Boolean,
+    description: String,
+    onToggle: () -> Unit,
+) {
+    Box(
+        modifier = Modifier
+            .size(Sizes.disclosure)
+            .then(
+                if (!expandable) {
+                    Modifier
+                } else {
+                    Modifier
+                        .clip(MaterialTheme.shapes.extraSmall)
+                        .hoverHighlight(MaterialTheme.shapes.extraSmall)
+                        .clickable(onClick = onToggle)
+                        .handCursor()
+                        .semantics { contentDescription = description }
+                },
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (!expandable) return@Box
+        Text(
+            text = if (expanded) "▾" else "▸",
+            style = MaterialTheme.typography.bodyMedium,
+            // Dimmer than the name beside it: the triangle is a control, and the
+            // name is the thing the user is actually scanning for.
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 

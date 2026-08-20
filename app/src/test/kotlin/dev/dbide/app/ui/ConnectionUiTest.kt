@@ -9,10 +9,13 @@ import androidx.compose.ui.test.ComposeUiTest
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.doubleClick
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performMouseInput
 import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.test.rightClick
 import androidx.compose.ui.test.v2.runDesktopComposeUiTest
 import dev.dbide.app.ConnectionsViewModel
 import dev.dbide.app.EditorViewModel
@@ -169,6 +172,87 @@ class ConnectionUiTest {
             onNodeWithContentDescription("shell-prod").assertExists()
             assertEquals(saved.id, model.selected?.id)
         }
+
+    @Test
+    fun `hiding the sidebar takes the list off screen, and the shell brings it back`() =
+        runDesktopComposeUiTest(width = 1400, height = 1600) {
+            val service = FakeConnectionService(VaultState.UNLOCKED)
+            service.seed(name = "Local")
+            val model = workspace(service)
+            waitUntil { model.connections.isNotEmpty() }
+
+            onNodeWithContentDescription("collapse-sidebar").performClick()
+            waitForIdle()
+
+            onNodeWithContentDescription("connection-Local").assertDoesNotExist()
+
+            // The pane is gone; the way back to it is not.
+            onNodeWithContentDescription("toggle-sidebar").performClick()
+            waitForIdle()
+
+            onNodeWithContentDescription("connection-Local").assertIsDisplayed()
+        }
+
+    @Test
+    fun `double-clicking a connection opens it`() = runDesktopComposeUiTest(width = 1400, height = 1600) {
+        val service = FakeConnectionService(VaultState.UNLOCKED)
+        val saved = service.seed(name = "Local")
+        val model = workspace(service)
+        waitUntil { model.connections.isNotEmpty() }
+
+        onNodeWithContentDescription("connection-Local").performMouseInput { doubleClick() }
+        waitUntil { model.connections.single().runtime.status == RuntimeStatus.OPEN }
+        waitForIdle()
+
+        // Opened, and selected: the shell has to be naming the server that was opened.
+        assertEquals(saved.id, model.selected?.id)
+        onNodeWithContentDescription("sql-editor").assertIsDisplayed()
+    }
+
+    @Test
+    fun `right-clicking a connection offers its actions and acts on that row`() =
+        runDesktopComposeUiTest(width = 1400, height = 1600) {
+            val service = FakeConnectionService(VaultState.UNLOCKED)
+            val saved = service.seed(name = "Local")
+            val model = workspace(service)
+            waitUntil { model.connections.isNotEmpty() }
+
+            onNodeWithContentDescription("connection-Local").performMouseInput { rightClick() }
+            waitForIdle()
+
+            // Right-clicking selects, so the menu and the rest of the window agree
+            // about which connection is being acted on.
+            assertEquals(saved.id, model.selected?.id)
+            onNodeWithContentDescription("menu-test").assertIsDisplayed()
+            onNodeWithContentDescription("menu-delete").assertIsDisplayed()
+
+            onNodeWithContentDescription("menu-open").performClick()
+            waitUntil { model.connections.single().runtime.status == RuntimeStatus.OPEN }
+            waitForIdle()
+
+            // The menu closes behind the action, and now offers the other half of it.
+            onNodeWithContentDescription("menu-open").assertDoesNotExist()
+            onNodeWithContentDescription("connection-Local").performMouseInput { rightClick() }
+            waitForIdle()
+
+            onNodeWithContentDescription("menu-close").assertIsDisplayed()
+        }
+
+    @Test
+    fun `deleting from the context menu still asks first`() = runDesktopComposeUiTest(width = 1400, height = 1600) {
+        val service = FakeConnectionService(VaultState.UNLOCKED)
+        service.seed(name = "prod-db", environment = Environment.PROD)
+        val model = workspace(service)
+        waitUntil { model.connections.isNotEmpty() }
+
+        onNodeWithContentDescription("connection-prod-db").performMouseInput { rightClick() }
+        onNodeWithContentDescription("menu-delete").performClick()
+        waitForIdle()
+
+        assertFalse(service.calls.contains("delete"))
+        onNodeWithContentDescription("delete-confirmation").assertExists()
+        onNodeWithText("This is a PROD connection.").assertIsDisplayed()
+    }
 
     // --- Creating ------------------------------------------------------------
 

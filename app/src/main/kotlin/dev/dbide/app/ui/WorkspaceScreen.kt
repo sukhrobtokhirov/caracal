@@ -92,23 +92,53 @@ fun WorkspaceScreen(
     // keep resetting which half is on screen.
     var tab: WorkspaceTab by remember(browsing?.id) { mutableStateOf(WorkspaceTab.QUERY) }
 
+    // The sidebar is a pane, not a fixture. On a laptop beside a terminal the list of
+    // connections is read once an hour and the grid is read all day, and 264dp is
+    // three more columns of it.
+    var sidebar: Boolean by remember { mutableStateOf(true) }
+
+    // What a row can do to itself. Opening also selects, so double-clicking one row
+    // while another is selected does not leave the shell naming the wrong server.
+    val actions = ConnectionActions(
+        activate = { view ->
+            viewModel.select(view.id)
+            // Already open is not an error and not a reconnect: the editor is what
+            // the user was asking for, and it is already there.
+            if (!view.runtime.isOpen) viewModel.open(view.id) else tab = WorkspaceTab.QUERY
+        },
+        close = { view -> viewModel.close(view.id) },
+        test = { view -> viewModel.test(view.id) },
+        edit = viewModel::startEditing,
+        delete = viewModel::confirmDelete,
+    )
+
     Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surface) {
         Column(modifier = Modifier.fillMaxSize()) {
-            WorkspaceBar(selected = viewModel.selected, theme = theme, onLock = onLock)
+            WorkspaceBar(
+                selected = viewModel.selected,
+                theme = theme,
+                sidebar = sidebar,
+                onToggleSidebar = { sidebar = !sidebar },
+                onLock = onLock,
+            )
             Hairline()
 
             Row(modifier = Modifier.fillMaxSize()) {
-                ConnectionList(
-                    connections = viewModel.connections,
-                    selectedId = viewModel.selected?.id,
-                    enabled = !viewModel.busy,
-                    onSelect = viewModel::select,
-                    onCreate = viewModel::startCreating,
-                    modifier = Modifier
-                        .width(Sizes.sidebar)
-                        .background(MaterialTheme.colorScheme.background),
-                )
-                VerticalHairline()
+                if (sidebar) {
+                    ConnectionList(
+                        connections = viewModel.connections,
+                        selectedId = viewModel.selected?.id,
+                        enabled = !viewModel.busy,
+                        onSelect = viewModel::select,
+                        onCreate = viewModel::startCreating,
+                        actions = actions,
+                        onCollapse = { sidebar = false },
+                        modifier = Modifier
+                            .width(Sizes.sidebar)
+                            .background(MaterialTheme.colorScheme.background),
+                    )
+                    VerticalHairline()
+                }
 
                 if (browsing != null) {
                     SchemaTree(
@@ -216,7 +246,13 @@ private fun clipEntryOf(text: String) = ClipEntry(StringSelection(text))
  * rest, so it is drawn to be looked past.
  */
 @Composable
-private fun WorkspaceBar(selected: ConnectionView?, theme: ThemeViewModel, onLock: () -> Unit) {
+private fun WorkspaceBar(
+    selected: ConnectionView?,
+    theme: ThemeViewModel,
+    sidebar: Boolean,
+    onToggleSidebar: () -> Unit,
+    onLock: () -> Unit,
+) {
     val production = selected?.config?.environment == Environment.PROD
     val background = if (production) MaterialTheme.colorScheme.errorContainer else Dbide.colors.chrome
     val foreground =
@@ -237,6 +273,14 @@ private fun WorkspaceBar(selected: ConnectionView?, theme: ThemeViewModel, onLoc
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.weight(1f),
         ) {
+            // Leftmost, where a sidebar toggle is on every other desktop application,
+            // and lit while the pane is showing — it is a state the window is in.
+            ToolButton(
+                text = "Sidebar",
+                onClick = onToggleSidebar,
+                description = "toggle-sidebar",
+                emphasis = if (sidebar) ToolEmphasis.PRIMARY else ToolEmphasis.NORMAL,
+            )
             Text(
                 "Database IDE",
                 style = MaterialTheme.typography.titleSmall,

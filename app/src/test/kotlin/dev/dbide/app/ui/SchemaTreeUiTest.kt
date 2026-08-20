@@ -107,6 +107,33 @@ class SchemaTreeUiTest {
         }
 
     @Test
+    fun `the triangle opens a node on its own`() =
+        runDesktopComposeUiTest(width = 500, height = 900) {
+            tree(service())
+
+            // The arrow is a control the pointer can actually land on, rather than
+            // ten device-independent pixels of text with a row behind it.
+            clickNode("node-schema-public-toggle")
+
+            onNodeWithContentDescription("node-folder-public-table").assertIsDisplayed()
+
+            clickNode("node-schema-public-toggle")
+
+            onNodeWithContentDescription("node-folder-public-table").assertDoesNotExist()
+        }
+
+    @Test
+    fun `a leaf has no triangle to press`() = runDesktopComposeUiTest(width = 500, height = 900) {
+        tree(service())
+        clickNode("node-schema-public")
+        clickNode("node-folder-public-table")
+        clickNode("node-object-public-users")
+
+        onNodeWithContentDescription("node-column-public-users-1").assertIsDisplayed()
+        onNodeWithContentDescription("node-column-public-users-1-toggle").assertDoesNotExist()
+    }
+
+    @Test
     fun `a schema that cannot be read says so on its own line`() =
         runDesktopComposeUiTest(width = 500, height = 900) {
             val service = service()

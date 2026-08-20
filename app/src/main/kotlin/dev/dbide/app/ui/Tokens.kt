@@ -49,7 +49,16 @@ object Sizes {
     val paneHeader = 32.dp
 
     /** One line in the schema tree or the connection list. */
-    val treeRow = 24.dp
+    val treeRow = 26.dp
+
+    /**
+     * The triangle that opens a node, and the square it can be hit anywhere inside.
+     *
+     * Sized as a target rather than as a glyph. A 10dp arrow is a legible arrow and
+     * an unhittable button, and the button is the half of it that gets used a
+     * hundred times an hour.
+     */
+    val disclosure = 20.dp
 
     /** One result row. Tighter than a tree row: there are ten thousand of them. */
     val gridRow = 24.dp
