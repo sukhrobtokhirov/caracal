@@ -1,14 +1,14 @@
 package dev.dbide.core.postgres
 
 import dev.dbide.core.result.CellValue
-import dev.dbide.core.result.Column
 import dev.dbide.core.result.DbException
 import dev.dbide.core.result.QueryResult
+import dev.dbide.core.result.ResultLimits
+import dev.dbide.core.result.Truncation
 import java.sql.Connection
 import java.sql.PreparedStatement
 import java.sql.ResultSet
 import java.sql.SQLException
-import java.sql.Types
 import javax.sql.DataSource
 import kotlin.coroutines.coroutineContext
 import kotlin.time.Duration
@@ -39,7 +39,7 @@ class PostgresAdapter(
     private val dataSource: DataSource,
     private val redaction: Redaction = Redaction.NONE,
     private val queryTimeout: Duration = 30.seconds,
-    private val rowLimit: Int = 1_000,
+    private val limits: ResultLimits = ResultLimits(),
 ) {
     private val log = LoggerFactory.getLogger(PostgresAdapter::class.java)
 
@@ -108,7 +108,7 @@ class PostgresAdapter(
         queryTimeout = this@PostgresAdapter.queryTimeout.inWholeSeconds.toInt()
         // One row past the limit, so a truncated result is detectable rather than
         // silently complete-looking.
-        maxRows = rowLimit + 1
+        maxRows = limits.rows + 1
         fetchSize = FETCH_SIZE
     }
 
@@ -147,34 +147,42 @@ class PostgresAdapter(
         runCatching { rollback() }.onFailure { log.debug("rollback on return to pool failed") }
     }
 
+    /**
+     * Reads the result, stopping at whichever bound is reached first.
+     *
+     * The row limit is the obvious one. The character budget is the one that
+     * matters in practice: a thousand rows of `jsonb` documents is a thousand rows
+     * and also several gigabytes, and a limit that only counts rows would let the
+     * window die holding a result nobody could have read.
+     */
     private fun ResultSet.read(elapsed: Duration): QueryResult {
-        val columns = (1..metaData.columnCount).map { index ->
-            Column(name = metaData.getColumnLabel(index), typeName = metaData.getColumnTypeName(index))
-        }
+        val columns = (1..metaData.columnCount).map { index -> PostgresValues.column(metaData, index) }
         val rows = ArrayList<List<CellValue>>()
-        var truncated = false
+        var truncation = Truncation.NONE
+        var spent = 0L
         while (next()) {
-            if (rows.size == rowLimit) {
-                truncated = true
+            if (rows.size == limits.rows) {
+                truncation = Truncation.ROW_LIMIT
                 break
             }
-            rows += (1..columns.size).map { index -> cell(index) }
+            val row = columns.mapIndexed { position, column ->
+                PostgresValues.read(this, position + 1, column, limits)
+            }
+            rows += row
+            spent += row.sumOf { it.weight() }
+            if (spent > limits.totalCharacters) {
+                truncation = Truncation.SIZE_LIMIT
+                break
+            }
         }
-        return QueryResult(columns = columns, rows = rows, duration = elapsed, truncated = truncated)
+        return QueryResult(columns = columns, rows = rows, duration = elapsed, truncation = truncation)
     }
 
-    private fun ResultSet.cell(index: Int): CellValue {
-        val type = metaData.getColumnType(index)
-        val value: CellValue = when (type) {
-            Types.SMALLINT, Types.INTEGER, Types.BIGINT -> CellValue.Integer(getLong(index))
-            Types.NUMERIC, Types.DECIMAL -> getBigDecimal(index)?.let(CellValue::Decimal) ?: CellValue.Null
-            Types.BOOLEAN, Types.BIT -> CellValue.Bool(getBoolean(index))
-            Types.CHAR, Types.VARCHAR, Types.LONGVARCHAR -> CellValue.Text(getString(index).orEmpty())
-            else -> CellValue.Unmapped(getString(index).orEmpty())
-        }
-        // getLong and getBoolean return 0 and false for SQL NULL, so the null check has
-        // to happen after the read, not before it.
-        return if (wasNull()) CellValue.Null else value
+    /** Roughly what holding this cell costs, in characters. Small values need no accounting. */
+    private fun CellValue.weight(): Long = when (this) {
+        is CellValue.Text -> value.length.toLong()
+        is CellValue.Binary -> preview.length.toLong()
+        else -> 8
     }
 
     companion object {
