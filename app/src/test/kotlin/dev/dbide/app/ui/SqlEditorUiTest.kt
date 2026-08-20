@@ -1,6 +1,5 @@
 package dev.dbide.app.ui
 
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.input.key.Key
@@ -27,6 +26,7 @@ import dev.dbide.app.EditorViewModel
 import dev.dbide.app.ExportViewModel
 import dev.dbide.app.FakeConnectionService
 import dev.dbide.app.SchemaTreeViewModel
+import dev.dbide.app.ThemeViewModel
 import dev.dbide.core.catalog.ColumnInfo
 import dev.dbide.core.connections.ConnectionConfig
 import dev.dbide.core.connections.ConnectionId
@@ -101,7 +101,7 @@ class SqlEditorUiTest {
             val scope = rememberCoroutineScope()
             model = remember { EditorViewModel(service, scope).also { it.show(connection) } }
             val export = remember { ExportViewModel(service, scope) { null } }
-            MaterialTheme { QueryPane(model, export, onCopy = {}) }
+            DbideTheme { QueryPane(model, export, onCopy = {}) }
         }
         waitForIdle()
         return model
@@ -254,7 +254,8 @@ class SqlEditorUiTest {
                 val tree = remember { SchemaTreeViewModel(service, scope) }
                 editor = remember { EditorViewModel(service, scope) }
                 val export = remember { ExportViewModel(service, scope) { null } }
-                MaterialTheme { WorkspaceScreen(connections, tree, editor, export, onLock = {}) }
+                val theme = remember { ThemeViewModel(null, scope) }
+                DbideTheme { WorkspaceScreen(connections, tree, editor, export, theme, onLock = {}) }
             }
             waitForIdle()
 
@@ -285,7 +286,8 @@ class SqlEditorUiTest {
                 val tree = remember { SchemaTreeViewModel(service, scope) }
                 val editor = remember { EditorViewModel(service, scope) }
                 val export = remember { ExportViewModel(service, scope) { null } }
-                MaterialTheme { WorkspaceScreen(connections, tree, editor, export, onLock = {}) }
+                val theme = remember { ThemeViewModel(null, scope) }
+                DbideTheme { WorkspaceScreen(connections, tree, editor, export, theme, onLock = {}) }
             }
             waitForIdle()
 

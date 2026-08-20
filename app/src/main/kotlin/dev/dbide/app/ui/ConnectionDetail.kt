@@ -9,8 +9,10 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.background
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -19,6 +21,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
@@ -47,11 +50,11 @@ fun ConnectionDetail(
         modifier = modifier
             .fillMaxWidth()
             .verticalScroll(rememberScrollState())
-            .padding(20.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
+            .padding(Space.xl),
+        verticalArrangement = Arrangement.spacedBy(Space.xl),
     ) {
         Row(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            horizontalArrangement = Arrangement.spacedBy(Space.md),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             ColorSwatch(config.color)
@@ -59,7 +62,7 @@ fun ConnectionDetail(
         }
 
         Row(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            horizontalArrangement = Arrangement.spacedBy(Space.md),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             EngineBadge(config.engine)
@@ -78,7 +81,17 @@ fun ConnectionDetail(
             )
         }
 
-        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        // The facts, boxed off from the actions under them. A row of buttons directly
+        // beneath a row of values reads as one list, and one of those lists deletes
+        // things.
+        Column(
+            verticalArrangement = Arrangement.spacedBy(Space.md),
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(MaterialTheme.shapes.medium)
+                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                .padding(Space.lg),
+        ) {
             DetailRow("Host", "${config.host}:${config.port}")
             DetailRow(
                 if (config.engine == Engine.REDIS) "Database index" else "Database",
@@ -91,10 +104,11 @@ fun ConnectionDetail(
         }
 
         Row(
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            horizontalArrangement = Arrangement.spacedBy(Space.md),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Button(
+                shape = MaterialTheme.shapes.small,
                 onClick = onTest,
                 enabled = !busy,
                 modifier = Modifier.semantics { contentDescription = "test-connection" },
@@ -103,6 +117,7 @@ fun ConnectionDetail(
             }
             if (view.runtime.isOpen) {
                 OutlinedButton(
+                    shape = MaterialTheme.shapes.small,
                     onClick = onClose,
                     enabled = !busy,
                     modifier = Modifier.semantics { contentDescription = "close-connection" },
@@ -111,6 +126,7 @@ fun ConnectionDetail(
                 }
             } else {
                 OutlinedButton(
+                    shape = MaterialTheme.shapes.small,
                     onClick = onOpen,
                     enabled = !busy,
                     modifier = Modifier.semantics { contentDescription = "open-connection" },
@@ -119,6 +135,7 @@ fun ConnectionDetail(
                 }
             }
             OutlinedButton(
+                shape = MaterialTheme.shapes.small,
                 onClick = onEdit,
                 enabled = !busy,
                 modifier = Modifier.semantics { contentDescription = "edit-connection" },
@@ -126,15 +143,23 @@ fun ConnectionDetail(
                 Text("Edit")
             }
             OutlinedButton(
+                shape = MaterialTheme.shapes.small,
                 onClick = onDelete,
                 enabled = !busy,
+                colors = ButtonDefaults.outlinedButtonColors(
+                    // Red before the dialog, not only inside it. A destructive action
+                    // that looks like its four neighbours is one the pointer reaches
+                    // by accident.
+                    contentColor = MaterialTheme.colorScheme.error,
+                ),
                 modifier = Modifier.semantics { contentDescription = "delete-connection" },
             ) {
                 Text("Delete")
             }
             if (busy) {
                 CircularProgressIndicator(
-                    modifier = Modifier.size(20.dp).semantics {
+                    strokeWidth = 2.dp,
+                    modifier = Modifier.size(16.dp).semantics {
                         contentDescription = "busy-${activity.name.lowercase()}"
                     },
                 )
@@ -153,7 +178,7 @@ fun DeleteConfirmation(view: ConnectionView, onConfirm: () -> Unit, onCancel: ()
         onDismissRequest = onCancel,
         title = { Text("Delete \"${view.config.name}\"?") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(Space.md)) {
                 Text(
                     "This removes the connection and its saved password. It cannot be undone.",
                 )
@@ -188,13 +213,20 @@ fun DeleteConfirmation(view: ConnectionView, onConfirm: () -> Unit, onCancel: ()
 
 @Composable
 private fun DetailRow(label: String, value: String) {
-    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+    Row(horizontalArrangement = Arrangement.spacedBy(Space.lg)) {
         Text(
             label,
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.width(120.dp),
+            modifier = Modifier.width(112.dp),
         )
-        Text(value, style = MaterialTheme.typography.bodyMedium, fontFamily = FontFamily.Monospace)
+        // Monospace, because every one of these is something someone will compare
+        // character by character against a configuration file.
+        Text(
+            value,
+            style = MaterialTheme.typography.bodySmall,
+            fontFamily = FontFamily.Monospace,
+            color = MaterialTheme.colorScheme.onSurface,
+        )
     }
 }

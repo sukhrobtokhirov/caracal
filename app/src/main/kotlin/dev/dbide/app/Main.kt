@@ -1,6 +1,5 @@
 package dev.dbide.app
 
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
@@ -11,6 +10,7 @@ import androidx.compose.ui.window.FrameWindowScope
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
+import dev.dbide.app.ui.DbideTheme
 import dev.dbide.app.ui.VaultScreen
 import dev.dbide.app.ui.VaultUnavailableScreen
 import dev.dbide.app.ui.WorkspaceScreen
@@ -20,6 +20,7 @@ import dev.dbide.core.connections.DefaultConnectionService
 import dev.dbide.core.export.CsvExport
 import dev.dbide.core.registry.ConnectionRegistry
 import dev.dbide.core.store.ConfigStore
+import dev.dbide.core.vault.MetadataStore
 import dev.dbide.core.vault.Vault
 import java.awt.Dimension
 import java.awt.FileDialog
@@ -41,6 +42,14 @@ private class Application(
     private val store: ConfigStore,
     val service: ConnectionService,
 ) : AutoCloseable {
+    /**
+     * The unencrypted corner of the configuration database.
+     *
+     * Only settings that are not secrets go here, and only ones the application has
+     * to know before anyone has unlocked anything — which today means the theme.
+     */
+    val preferences: MetadataStore get() = store
+
     override fun close() {
         // Clients first: a pool closed after its configuration database is a pool
         // that can no longer report what it was.
@@ -69,12 +78,21 @@ fun main() = application {
     ) {
         window.minimumSize = Dimension(760, 480)
         ReportColdStart()
-        MaterialTheme {
+
+        // The theme is bound to the store as soon as there is one. Before that — the
+        // first frame, and the frame that says the store could not be opened — it is
+        // the default, which is why the default is the one that does not flash.
+        val theme = remember(startup) {
+            ThemeViewModel((startup as? Startup.Ready)?.value?.preferences, scope)
+        }
+        LaunchedEffect(theme) { theme.load() }
+
+        DbideTheme(theme.mode) {
             when (val state = startup) {
                 // The first frame, before the configuration database has been opened.
                 Startup.Opening -> Unit
                 is Startup.Failed -> VaultUnavailableScreen(VaultUiState.Unavailable(state.failure))
-                is Startup.Ready -> Workspace(state.value.service, scope)
+                is Startup.Ready -> Workspace(state.value.service, theme, scope)
             }
         }
     }
@@ -85,7 +103,11 @@ fun main() = application {
  * locking and unlocking again does not lose the list or leak a scope.
  */
 @Composable
-private fun FrameWindowScope.Workspace(service: ConnectionService, scope: CoroutineScope) {
+private fun FrameWindowScope.Workspace(
+    service: ConnectionService,
+    theme: ThemeViewModel,
+    scope: CoroutineScope,
+) {
     val connections = remember(service) { ConnectionsViewModel(service, scope) }
     val tree = remember(service) { SchemaTreeViewModel(service, scope) }
     val editor = remember(service) { EditorViewModel(service, scope) }
@@ -100,12 +122,13 @@ private fun FrameWindowScope.Workspace(service: ConnectionService, scope: Corout
     when (val screen = vault.screen) {
         is VaultUiState.Unavailable -> VaultUnavailableScreen(screen)
         VaultUiState.Loading -> Unit
-        VaultUiState.Setup, VaultUiState.Locked -> VaultScreen(vault)
+        VaultUiState.Setup, VaultUiState.Locked -> VaultScreen(vault, theme)
         VaultUiState.Unlocked -> WorkspaceScreen(
             viewModel = connections,
             tree = tree,
             editor = editor,
             export = export,
+            theme = theme,
             onLock = {
                 connections.clear()
                 // Locking closes every client, so the tree is describing a server this

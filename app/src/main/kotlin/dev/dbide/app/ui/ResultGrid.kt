@@ -4,6 +4,7 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.HorizontalScrollbar
 import androidx.compose.foundation.VerticalScrollbar
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
@@ -27,11 +28,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.rememberScrollbarAdapter
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
@@ -83,10 +81,10 @@ import dev.dbide.core.result.Column as ResultColumn
 import dev.dbide.core.result.ColumnFormat
 import java.awt.Cursor
 
-private val ROW_HEIGHT = 26.dp
-private val HEADER_HEIGHT = 40.dp
+private val ROW_HEIGHT = Sizes.gridRow
+private val HEADER_HEIGHT = Sizes.gridHeader
 private val SCROLLBAR_WIDTH = 12.dp
-private val CELL_PADDING = 6.dp
+private val CELL_PADDING = Space.md
 
 /**
  * The result grid.
@@ -137,11 +135,11 @@ fun ResultGrid(
         } else {
             Box(modifier = Modifier.weight(1f)) { Table(state, focus) }
             if (state.panelOpen) {
-                HorizontalDivider()
+                Hairline()
                 ValuePanel(state, onCopy)
             }
         }
-        HorizontalDivider()
+        Hairline()
         StatusBar(state, onCopy)
     }
 }
@@ -178,7 +176,7 @@ private fun Table(state: ResultGridState, focus: FocusRequester) {
 
         Column(modifier = Modifier.fillMaxSize()) {
             HeaderRow(state, window, gutter)
-            HorizontalDivider()
+            Hairline()
 
             Box(modifier = Modifier.weight(1f)) {
                 LazyColumn(state = state.vertical, modifier = Modifier.fillMaxSize()) {
@@ -187,13 +185,13 @@ private fun Table(state: ResultGridState, focus: FocusRequester) {
                     }
                 }
                 if (state.result.rows.isEmpty()) {
-                    Text(
-                        text = "No rows.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier
-                            .align(Alignment.Center)
-                            .semantics { contentDescription = "grid-empty" },
+                    // The columns are still overhead, and they are the useful half of
+                    // this answer: the query was right, the table has nothing in it.
+                    EmptyState(
+                        title = "No rows.",
+                        detail = "The statement ran and matched nothing.",
+                        description = "grid-empty",
+                        modifier = Modifier.align(Alignment.Center),
                     )
                 }
                 VerticalScrollbar(
@@ -220,10 +218,10 @@ private fun HeaderRow(state: ResultGridState, window: ColumnWindow, gutter: Dp) 
         modifier = Modifier
             .height(HEADER_HEIGHT)
             .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.surfaceVariant),
+            .background(Dbide.colors.paneHeader),
     ) {
         Box(modifier = Modifier.width(gutter).fillMaxHeight())
-        VerticalDivider()
+        VerticalHairline()
         Row(modifier = Modifier.weight(1f).horizontalScroll(state.horizontal)) {
             Spacer(modifier = Modifier.width(window.leading.dp))
             for (index in window.range) {
@@ -248,6 +246,7 @@ private fun HeaderCell(state: ResultGridState, index: Int, column: ResultColumn)
             Text(
                 text = column.name,
                 style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurface,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -274,7 +273,7 @@ private fun HeaderCell(state: ResultGridState, index: Int, column: ResultColumn)
                 }
                 .semantics { contentDescription = "grid-resize-$index" },
         ) {
-            VerticalDivider(modifier = Modifier.align(Alignment.CenterEnd))
+            VerticalHairline(modifier = Modifier.align(Alignment.CenterEnd))
         }
     }
 }
@@ -291,12 +290,23 @@ private fun GridRow(
     focus: FocusRequester,
 ) {
     val selected = index in state.selectedRows
-    val background =
-        if (selected) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent
+    // Alternating rows, because forty columns of monospace at 24dp is exactly the
+    // shape in which the eye loses which row it was on halfway across.
+    val background = when {
+        selected -> MaterialTheme.colorScheme.secondaryContainer
+        index % 2 == 1 -> Dbide.colors.stripe
+        else -> Color.Transparent
+    }
 
-    Row(modifier = Modifier.height(ROW_HEIGHT).fillMaxWidth().background(background)) {
+    Row(
+        modifier = Modifier
+            .height(ROW_HEIGHT)
+            .fillMaxWidth()
+            .background(background)
+            .hoverHighlight(),
+    ) {
         RowNumber(state, index, gutter, selected, focus)
-        VerticalDivider()
+        VerticalHairline()
         Row(modifier = Modifier.weight(1f).horizontalScroll(state.horizontal)) {
             Spacer(modifier = Modifier.width(window.leading.dp))
             for (column in window.range) {
@@ -409,6 +419,15 @@ private fun GridCell(
             .background(
                 if (focused) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
             )
+            // An outline as well as a fill. One cell in ten thousand is a small
+            // target, and the fill alone is a shade difference at the size of a word.
+            .then(
+                if (focused) {
+                    Modifier.border(Sizes.hairline, MaterialTheme.colorScheme.primary)
+                } else {
+                    Modifier
+                },
+            )
             .combinedClickable(
                 onClick = {
                     state.focus(row, column)
@@ -464,36 +483,34 @@ private fun ValuePanel(state: ResultGridState, onCopy: (String) -> Unit) {
             .semantics { contentDescription = "grid-detail" },
     ) {
         Row(
-            modifier = Modifier.fillMaxWidth().padding(start = 12.dp, end = 4.dp, top = 4.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(Dbide.colors.paneHeader)
+                .padding(start = Space.lg, end = Space.sm, top = Space.sm, bottom = Space.sm),
+            horizontalArrangement = Arrangement.spacedBy(Space.sm),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
                 text = "${column.name} · ${column.typeName}",
                 style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurface,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f),
             )
             if (column.format == ColumnFormat.JSON) {
-                TextButton(
+                ToolButton(
+                    text = if (pretty) "Raw" else "Pretty",
                     onClick = state::togglePrettyJson,
-                    modifier = Modifier.semantics { contentDescription = "grid-detail-json" },
-                ) {
-                    Text(if (pretty) "Raw" else "Pretty", style = MaterialTheme.typography.labelSmall)
-                }
+                    description = "grid-detail-json",
+                )
             }
-            TextButton(
+            ToolButton(
+                text = "Copy value",
                 onClick = { onCopy(raw) },
-                modifier = Modifier.semantics { contentDescription = "grid-detail-copy" },
-            ) {
-                Text("Copy value", style = MaterialTheme.typography.labelSmall)
-            }
-            TextButton(
-                onClick = state::closePanel,
-                modifier = Modifier.semantics { contentDescription = "grid-detail-close" },
-            ) {
-                Text("Close", style = MaterialTheme.typography.labelSmall)
-            }
+                description = "grid-detail-copy",
+            )
+            ToolButton(text = "Close", onClick = state::closePanel, description = "grid-detail-close")
         }
 
         SelectionContainer(modifier = Modifier.weight(1f)) {
@@ -503,7 +520,7 @@ private fun ValuePanel(state: ResultGridState, onCopy: (String) -> Unit) {
                 modifier = Modifier
                     .fillMaxWidth()
                     .verticalScroll(rememberScrollState())
-                    .padding(horizontal = 12.dp, vertical = 4.dp)
+                    .padding(horizontal = Space.lg, vertical = Space.md)
                     .semantics { contentDescription = "grid-detail-value" },
             )
         }
@@ -516,7 +533,7 @@ private fun ValuePanel(state: ResultGridState, onCopy: (String) -> Unit) {
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier
-                    .padding(horizontal = 12.dp, vertical = 4.dp)
+                    .padding(horizontal = Space.lg, vertical = Space.sm)
                     .semantics { contentDescription = "grid-detail-truncated" },
             )
         }
@@ -540,7 +557,11 @@ private fun StatusBar(state: ResultGridState, onCopy: (String) -> Unit) {
     val copyable = state.copyText()
 
     Row(
-        modifier = Modifier.fillMaxWidth().padding(start = 12.dp, end = 4.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(Dbide.colors.paneHeader)
+            .padding(start = Space.lg, end = Space.sm, top = Space.sm, bottom = Space.sm),
+        horizontalArrangement = Arrangement.spacedBy(Space.sm),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
@@ -552,24 +573,19 @@ private fun StatusBar(state: ResultGridState, onCopy: (String) -> Unit) {
             modifier = Modifier.weight(1f).semantics { contentDescription = "grid-status" },
         )
         if (state.result.columns.isNotEmpty()) {
-            TextButton(
+            ToolButton(
+                text = if (state.panelOpen) "Hide value" else "Show value",
                 onClick = { if (state.panelOpen) state.closePanel() else state.openPanel() },
+                description = "grid-toggle-panel",
                 enabled = state.focused != null,
-                modifier = Modifier.semantics { contentDescription = "grid-toggle-panel" },
-            ) {
-                Text(
-                    if (state.panelOpen) "Hide value" else "Show value",
-                    style = MaterialTheme.typography.labelSmall,
-                )
-            }
+            )
         }
-        TextButton(
+        ToolButton(
+            text = state.copyLabel(),
             onClick = { copyable?.let(onCopy) },
+            description = "grid-copy",
             enabled = copyable != null,
-            modifier = Modifier.semantics { contentDescription = "grid-copy" },
-        ) {
-            Text(state.copyLabel(), style = MaterialTheme.typography.labelSmall)
-        }
+        )
     }
 }
 
@@ -581,15 +597,11 @@ private fun StatusBar(state: ResultGridState, onCopy: (String) -> Unit) {
  */
 @Composable
 private fun CommandResult(modifier: Modifier = Modifier) {
-    Box(
+    EmptyState(
+        title = "Statement completed.",
+        detail = "It returned no columns, so there is no grid to show. " +
+            "The status line below carries what the server reported.",
+        description = "grid-command",
         modifier = modifier.fillMaxWidth(),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(
-            text = "Statement completed.",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.semantics { contentDescription = "grid-command" },
-        )
-    }
+    )
 }

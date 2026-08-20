@@ -2,14 +2,17 @@ package dev.dbide.app.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.layout.width
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -45,7 +48,11 @@ fun ErrorBanner(failure: Failure, onDismiss: (() -> Unit)? = null, modifier: Mod
         onDismiss = onDismiss,
         modifier = modifier,
     ) {
-        Text(failure.message, color = MaterialTheme.colorScheme.onErrorContainer)
+        Text(
+            failure.message,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onErrorContainer,
+        )
         failure.query?.let { QueryErrorDetail(it) }
         Text(
             // The SQLSTATE, when there is one, is more useful to quote than the
@@ -76,7 +83,7 @@ fun ErrorBanner(failure: Failure, onDismiss: (() -> Unit)? = null, modifier: Mod
 @Composable
 private fun QueryErrorDetail(query: DbError.QueryFailed) {
     val foreground = MaterialTheme.colorScheme.onErrorContainer
-    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+    Column(verticalArrangement = Arrangement.spacedBy(Space.xs)) {
         query.detail?.let { ErrorField("DETAIL", it, foreground) }
         query.hint?.let { ErrorField("HINT", it, foreground) }
         query.subject?.describe()?.let { ErrorField("AT", it, foreground) }
@@ -91,7 +98,7 @@ private fun QueryErrorDetail(query: DbError.QueryFailed) {
 
 @Composable
 private fun ErrorField(label: String, value: String, foreground: Color) {
-    Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.Top) {
+    Row(horizontalArrangement = Arrangement.spacedBy(Space.md), verticalAlignment = Alignment.Top) {
         Text(
             text = label,
             style = MaterialTheme.typography.labelSmall,
@@ -111,27 +118,40 @@ private fun ErrorField(label: String, value: String, foreground: Color) {
 @Composable
 fun TestResultBanner(result: TestResult, onDismiss: (() -> Unit)? = null, modifier: Modifier = Modifier) {
     Banner(
-        background = MaterialTheme.colorScheme.primaryContainer,
-        foreground = MaterialTheme.colorScheme.onPrimaryContainer,
+        // Green rather than the accent blue. Blue is what this application uses for
+        // "selected" and "focused" — states, not outcomes — and a test that passed is
+        // an outcome.
+        background = Dbide.colors.successContainer,
+        foreground = Dbide.colors.onSuccessContainer,
         description = "test-succeeded",
         onDismiss = onDismiss,
         modifier = modifier,
     ) {
         Text(
             "Connected in ${result.latencyMillis} ms.",
-            color = MaterialTheme.colorScheme.onPrimaryContainer,
+            style = MaterialTheme.typography.bodyMedium,
+            color = Dbide.colors.onSuccessContainer,
         )
         result.serverVersion?.let { version ->
             Text(
                 "${result.engine.wire} $version",
                 style = MaterialTheme.typography.labelSmall,
                 fontFamily = FontFamily.Monospace,
-                color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f),
+                color = Dbide.colors.onSuccessContainer.copy(alpha = 0.8f),
             )
         }
     }
 }
 
+/**
+ * The shape every banner takes: a tinted panel with a bar of its own colour down the
+ * leading edge.
+ *
+ * The bar is what makes an error and a success distinguishable at the edge of
+ * vision. Two tinted rectangles differ only in hue, and hue is the one channel that
+ * does not survive a colour-blind reader or a projector — a solid 3dp rule reads as
+ * emphasis regardless of what colour it happens to be.
+ */
 @Composable
 private fun Banner(
     background: Color,
@@ -144,16 +164,29 @@ private fun Banner(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(6.dp))
+            .clip(MaterialTheme.shapes.medium)
             .background(background)
-            .padding(12.dp)
+            .height(IntrinsicSize.Min)
             .semantics { contentDescription = description },
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.Top,
     ) {
-        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) { content() }
-        if (onDismiss != null) {
-            TextButton(onClick = onDismiss) { Text("Dismiss", color = foreground) }
+        Box(
+            modifier = Modifier
+                .width(3.dp)
+                .fillMaxHeight()
+                .background(foreground.copy(alpha = 0.65f)),
+        )
+        Column(
+            verticalArrangement = Arrangement.spacedBy(Space.sm),
+            modifier = Modifier.weight(1f).padding(Space.lg),
+        ) {
+            content()
+        }
+        onDismiss?.let {
+            Box(modifier = Modifier.padding(Space.sm)) {
+                ToolButton(text = "Dismiss", onClick = it, description = "banner-dismiss")
+            }
         }
     }
 }

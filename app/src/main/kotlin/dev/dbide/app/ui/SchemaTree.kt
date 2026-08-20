@@ -10,16 +10,15 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -60,7 +59,7 @@ fun SchemaTree(
             onToggleSystem = model::toggleSystemSchemas,
             onRefresh = { model.refresh() },
         )
-        HorizontalDivider()
+        Hairline()
 
         Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
             when (val root = model.root) {
@@ -93,16 +92,20 @@ fun SchemaTree(
             }
         }
 
-        HorizontalDivider()
+        Hairline()
+        // The hint sits on the header's own shade, which is what makes it a footer
+        // rather than one more line of the tree.
         Text(
             text = inserted?.let { "Inserted $it" }
                 ?: "Double-click a name to insert it into the editor as quoted SQL.",
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = 1,
+            maxLines = 2,
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier
-                .padding(horizontal = 12.dp, vertical = 6.dp)
+                .fillMaxWidth()
+                .background(Dbide.colors.paneHeader)
+                .padding(horizontal = Space.lg, vertical = Space.md)
                 .semantics { contentDescription = "tree-hint" },
         )
     }
@@ -114,29 +117,16 @@ private fun TreeHeader(
     onToggleSystem: () -> Unit,
     onRefresh: () -> Unit,
 ) {
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(start = 12.dp, end = 4.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text("Database", style = MaterialTheme.typography.labelLarge)
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            TextButton(
-                onClick = onToggleSystem,
-                modifier = Modifier.semantics { contentDescription = "tree-system-schemas" },
-            ) {
-                Text(
-                    if (showSystemSchemas) "Hide system" else "System",
-                    style = MaterialTheme.typography.labelSmall,
-                )
-            }
-            TextButton(
-                onClick = onRefresh,
-                modifier = Modifier.semantics { contentDescription = "tree-refresh" },
-            ) {
-                Text("Refresh", style = MaterialTheme.typography.labelSmall)
-            }
-        }
+    PaneHeader(title = "Database") {
+        ToolButton(
+            text = if (showSystemSchemas) "Hide system" else "System",
+            onClick = onToggleSystem,
+            description = "tree-system-schemas",
+            // Lit while the system schemas are showing, because that is a mode the
+            // tree is in and not merely a button that was pressed once.
+            emphasis = if (showSystemSchemas) ToolEmphasis.PRIMARY else ToolEmphasis.NORMAL,
+        )
+        ToolButton(text = "Refresh", onClick = onRefresh, description = "tree-refresh")
     }
 }
 
@@ -152,12 +142,14 @@ private fun TreeNode(
     onRefresh: () -> Unit,
     onInsert: () -> Unit,
 ) {
-    val indent = 8.dp + (row.depth * 14).dp
+    val indent = Space.md + (row.depth * 14).dp
 
     Column(modifier = Modifier.fillMaxWidth()) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                .height(Sizes.treeRow)
+                .hoverHighlight()
                 .combinedClickable(
                     onClick = { if (row.expandable) onToggle() },
                     // The plan's "explicit action or double-click". There is no editor
@@ -165,15 +157,18 @@ private fun TreeNode(
                     // the caller; what it produces is already the right text.
                     onDoubleClick = onInsert,
                 )
-                .padding(start = indent, end = 8.dp, top = 3.dp, bottom = 3.dp)
+                .handCursor()
+                .padding(start = indent, end = Space.md)
                 .semantics { contentDescription = row.key.describe() },
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            horizontalArrangement = Arrangement.spacedBy(Space.md),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
                 text = if (!row.expandable) " " else if (row.expanded) "▾" else "▸",
                 style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                // Dimmer than the name beside it: the triangle is a control, and the
+                // name is the thing the user is actually scanning for.
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                 modifier = Modifier.width(10.dp),
             )
             Text(
@@ -211,7 +206,7 @@ private fun TreeNode(
         // true, and replacing it would throw away everything the user had opened.
         row.error?.let { message ->
             Row(
-                modifier = Modifier.padding(start = indent + 16.dp, end = 8.dp),
+                modifier = Modifier.padding(start = indent + Space.xl, end = Space.md),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(4.dp),
             ) {
@@ -223,12 +218,7 @@ private fun TreeNode(
                         contentDescription = "node-error"
                     },
                 )
-                TextButton(
-                    onClick = onRefresh,
-                    modifier = Modifier.semantics { contentDescription = "node-retry" },
-                ) {
-                    Text("Retry", style = MaterialTheme.typography.labelSmall)
-                }
+                ToolButton(text = "Retry", onClick = onRefresh, description = "node-retry")
             }
         }
 
@@ -238,13 +228,14 @@ private fun TreeNode(
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier
-                    .padding(start = indent + 16.dp, end = 8.dp, bottom = 2.dp)
+                    .padding(start = indent + Space.xl, end = Space.md, bottom = Space.xs)
                     .semantics { contentDescription = "node-note" },
             )
         }
     }
 }
 
+/** `PK`, `system`, `not null` — what a node is, in the tree's own shorthand. */
 @Composable
 private fun TreeFlag(text: String) {
     Text(
@@ -258,7 +249,7 @@ private fun TreeFlag(text: String) {
                 MaterialTheme.colorScheme.surfaceVariant,
                 MaterialTheme.shapes.extraSmall,
             )
-            .padding(horizontal = 4.dp),
+            .padding(horizontal = Space.sm),
     )
 }
 
@@ -268,25 +259,23 @@ private fun TreeMessage(text: String, description: String) {
         text = text,
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier.padding(12.dp).semantics { contentDescription = description },
+        modifier = Modifier.padding(Space.lg).semantics { contentDescription = description },
     )
 }
 
 @Composable
 private fun TreeFailure(message: String, onRetry: () -> Unit) {
-    Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+    Column(
+        modifier = Modifier.padding(Space.lg),
+        verticalArrangement = Arrangement.spacedBy(Space.md),
+    ) {
         Text(
             text = message,
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.error,
             modifier = Modifier.semantics { contentDescription = "tree-error" },
         )
-        TextButton(
-            onClick = onRetry,
-            modifier = Modifier.semantics { contentDescription = "tree-retry" },
-        ) {
-            Text("Retry")
-        }
+        ToolButton(text = "Retry", onClick = onRetry, description = "tree-retry")
     }
 }
 

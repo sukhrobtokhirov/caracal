@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -20,6 +19,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import dev.dbide.core.connections.Engine
 import dev.dbide.core.connections.Environment
 import dev.dbide.core.connections.RuntimeState
@@ -32,13 +32,23 @@ import dev.dbide.core.connections.RuntimeStatus
  * fails for a colour-blind user, on a projector, and in a screenshot, and this is
  * the signal that stops someone running a query against the wrong server.
  */
+/**
+ * [inverted] is for the one place the badge sits on its own colour: the shell turns
+ * `errorContainer` when production is selected, and an `errorContainer` chip on an
+ * `errorContainer` bar is a chip nobody can see. Swapping the two puts the badge
+ * back on top of the warning it belongs to.
+ */
 @Composable
-fun EnvironmentBadge(environment: Environment, modifier: Modifier = Modifier) {
+fun EnvironmentBadge(
+    environment: Environment,
+    modifier: Modifier = Modifier,
+    inverted: Boolean = false,
+) {
     val colors = environmentColors(environment)
     Badge(
         text = environment.wire.uppercase(),
-        background = colors.container,
-        foreground = colors.onContainer,
+        background = if (inverted) colors.onContainer else colors.container,
+        foreground = if (inverted) colors.container else colors.onContainer,
         description = "environment-${environment.wire}",
         modifier = modifier,
     )
@@ -55,14 +65,24 @@ fun ReadOnlyBadge(modifier: Modifier = Modifier) {
     )
 }
 
+/**
+ * Which engine, outlined rather than filled.
+ *
+ * A row can carry three of these at once, and three filled pills side by side is a
+ * row that reads as decoration. The engine is the least urgent of the three, so it
+ * is the one that gives up its fill.
+ */
 @Composable
 fun EngineBadge(engine: Engine, modifier: Modifier = Modifier) {
-    Badge(
+    Text(
         text = engine.wire.uppercase(),
-        background = MaterialTheme.colorScheme.surfaceVariant,
-        foreground = MaterialTheme.colorScheme.onSurfaceVariant,
-        description = "engine-${engine.wire}",
-        modifier = modifier,
+        style = MaterialTheme.typography.labelSmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = modifier
+            .clip(MaterialTheme.shapes.extraSmall)
+            .border(Sizes.hairline, Dbide.colors.hairline, MaterialTheme.shapes.extraSmall)
+            .padding(horizontal = Space.sm, vertical = 1.dp)
+            .semantics { contentDescription = "engine-${engine.wire}" },
     )
 }
 
@@ -76,14 +96,18 @@ fun StatusBadge(state: RuntimeState, modifier: Modifier = Modifier) {
         RuntimeStatus.ERROR -> "Error"
     }
     Row(
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        horizontalArrangement = Arrangement.spacedBy(Space.sm),
         verticalAlignment = Alignment.CenterVertically,
         modifier = modifier.semantics { contentDescription = "status-${label.lowercase()}" },
     ) {
         Box(
-            modifier = Modifier.size(8.dp).clip(CircleShape).background(statusColor(state.status)),
+            modifier = Modifier.size(7.dp).clip(CircleShape).background(statusColor(state.status)),
         )
-        Text(label, style = MaterialTheme.typography.labelMedium)
+        Text(
+            label,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 
@@ -93,10 +117,10 @@ fun ColorSwatch(color: String?, modifier: Modifier = Modifier) {
     val parsed = color?.let(::parseHexColor) ?: return
     Box(
         modifier = modifier
-            .size(10.dp)
+            .size(9.dp)
             .clip(CircleShape)
             .background(parsed)
-            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, CircleShape),
+            .border(Sizes.hairline, Dbide.colors.hairline, CircleShape),
     )
 }
 
@@ -112,11 +136,12 @@ private fun Badge(
         text = text,
         style = MaterialTheme.typography.labelSmall,
         fontWeight = FontWeight.Bold,
+        letterSpacing = 0.5.sp,
         color = foreground,
         modifier = modifier
-            .clip(RoundedCornerShape(4.dp))
+            .clip(MaterialTheme.shapes.extraSmall)
             .background(background)
-            .padding(horizontal = 6.dp, vertical = 2.dp)
+            .padding(horizontal = Space.sm, vertical = 1.dp)
             .semantics { contentDescription = description },
     )
 }

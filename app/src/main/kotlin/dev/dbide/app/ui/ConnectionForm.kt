@@ -64,8 +64,8 @@ fun ConnectionForm(
         modifier = modifier
             .fillMaxWidth()
             .verticalScroll(rememberScrollState())
-            .padding(20.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
+            .padding(Space.xl),
+        verticalArrangement = Arrangement.spacedBy(Space.xl),
     ) {
         Text(
             if (form.isEditing) "Edit connection" else "New connection",
@@ -94,7 +94,7 @@ fun ConnectionForm(
             }
         }
 
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(Space.lg)) {
             Field(
                 label = "Host",
                 value = form.host,
@@ -197,10 +197,11 @@ fun ConnectionForm(
         )
 
         Row(
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            horizontalArrangement = Arrangement.spacedBy(Space.lg),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Button(
+                shape = MaterialTheme.shapes.small,
                 onClick = onSave,
                 // Disabled while saving: this is what stops a double click from
                 // creating the connection twice.
@@ -210,13 +211,16 @@ fun ConnectionForm(
                 Text(if (form.isEditing) "Save changes" else "Create connection")
             }
             OutlinedButton(
+                shape = MaterialTheme.shapes.small,
                 onClick = onCancel,
                 enabled = !busy,
                 modifier = Modifier.semantics { contentDescription = "cancel-form" },
             ) {
                 Text("Cancel")
             }
-            if (busy) CircularProgressIndicator(modifier = Modifier.size(20.dp))
+            if (busy) {
+                CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+            }
         }
     }
 }
@@ -230,7 +234,7 @@ fun ConnectionForm(
  */
 @Composable
 private fun SecretField(form: ConnectionFormState, busy: Boolean) {
-    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+    Column(verticalArrangement = Arrangement.spacedBy(Space.md)) {
         if (form.isEditing) {
             CheckboxRow(
                 checked = form.replaceSecret,
@@ -287,7 +291,7 @@ private fun Field(
     modifier: Modifier = Modifier,
     placeholder: String? = null,
 ) {
-    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(Space.sm)) {
         OutlinedTextField(
             value = value,
             onValueChange = onChange,
@@ -325,7 +329,11 @@ private fun CheckboxRow(
     ) {
         // The row owns the click, so the box itself must not also handle it.
         Checkbox(checked = checked, onCheckedChange = null, enabled = enabled)
-        Text(label, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(start = 8.dp))
+        Text(
+            label,
+            style = MaterialTheme.typography.bodyMedium,
+            modifier = Modifier.padding(start = Space.md),
+        )
     }
 }
 
@@ -341,10 +349,14 @@ private fun FieldError(message: String) {
 
 @Composable
 private fun ChipRow(label: String, content: @Composable () -> Unit) {
-    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Text(label, style = MaterialTheme.typography.labelMedium)
+    Column(verticalArrangement = Arrangement.spacedBy(Space.md)) {
+        Text(
+            label,
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
         Row(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            horizontalArrangement = Arrangement.spacedBy(Space.md),
             modifier = Modifier.selectableGroup(),
         ) {
             content()

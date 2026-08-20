@@ -15,10 +15,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -32,6 +30,7 @@ import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.dbide.app.EditorRun
@@ -96,7 +95,11 @@ fun QueryPane(
 @Composable
 private fun ResultArea(model: EditorViewModel, export: ExportViewModel, onCopy: (String) -> Unit) {
     when (val run = model.run) {
-        EditorRun.Idle -> Note("Run a statement to see its result.", "query-idle")
+        EditorRun.Idle -> EmptyState(
+            title = "No result yet",
+            detail = "Run a statement to see its result.",
+            description = "query-idle",
+        )
 
         is EditorRun.Running -> Running(model)
 
@@ -105,17 +108,24 @@ private fun ResultArea(model: EditorViewModel, export: ExportViewModel, onCopy: 
             // A statement that returned no columns has nothing to write to a file,
             // and offering to export one would be offering an empty document.
             if (run.grid.result.columns.isNotEmpty()) {
-                HorizontalDivider()
+                Hairline()
                 ExportStrip(model, export, run)
             }
         }
 
         // Cancelled is not a failure and is not drawn as one: the user asked for the
         // statement to stop, and it stopped.
-        EditorRun.Cancelled -> Note("Cancelled.", "query-cancelled")
+        EditorRun.Cancelled -> EmptyState(
+            title = "Cancelled.",
+            detail = "The statement was stopped before it returned. Nothing was left half-read.",
+            description = "query-cancelled",
+        )
 
         is EditorRun.Failed -> Box(
-            modifier = Modifier.fillMaxSize().padding(16.dp).verticalScroll(rememberScrollState()),
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(Space.xl)
+                .verticalScroll(rememberScrollState()),
             contentAlignment = Alignment.TopCenter,
         ) {
             ErrorBanner(failure = run.failure, modifier = Modifier.fillMaxWidth())
@@ -133,11 +143,11 @@ private fun Running(model: EditorViewModel) {
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+            CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
             Text(
                 text = "Running…",
-                style = MaterialTheme.typography.bodySmall,
-                modifier = Modifier.padding(start = 10.dp),
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.padding(start = Space.lg),
             )
         }
         target?.let {
@@ -146,33 +156,28 @@ private fun Running(model: EditorViewModel) {
                 // one it is without the user scrolling back through the script.
                 text = firstLine(it.sql),
                 style = MaterialTheme.typography.labelSmall,
+                fontFamily = FontFamily.Monospace,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 8.dp, start = 24.dp, end = 24.dp),
+                modifier = Modifier.padding(top = Space.md, start = Space.xxl, end = Space.xxl),
             )
         }
     }
 }
 
-@Composable
-private fun Note(text: String, description: String) {
-    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Text(
-            text = text,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.semantics { contentDescription = description },
-        )
-    }
-}
-
-/** The draggable boundary between the two halves. */
+/**
+ * The draggable boundary between the two halves.
+ *
+ * Wider than the rule it draws, because a 1px drag target is a 1px drag target. The
+ * hairline is what the user sees; the seven points around it are what they can
+ * actually hit.
+ */
 @Composable
 private fun Splitter(onDrag: (Float) -> Unit) {
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .height(7.dp)
-            .background(MaterialTheme.colorScheme.surface)
+            .hoverHighlight()
             .pointerHoverIcon(PointerIcon(Cursor(Cursor.N_RESIZE_CURSOR)))
             .pointerInput(Unit) {
                 detectVerticalDragGestures { change, amount ->
@@ -183,7 +188,7 @@ private fun Splitter(onDrag: (Float) -> Unit) {
             .semantics { contentDescription = "query-splitter" },
         contentAlignment = Alignment.Center,
     ) {
-        HorizontalDivider()
+        Hairline()
     }
 }
 
@@ -217,24 +222,27 @@ private fun ExportStrip(model: EditorViewModel, export: ExportViewModel, run: Ed
     }
 
     Row(
-        modifier = Modifier.fillMaxWidth().padding(start = 4.dp, end = 12.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(Dbide.colors.paneHeader)
+            .padding(horizontal = Space.md, vertical = Space.sm),
+        horizontalArrangement = Arrangement.spacedBy(Space.sm),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        TextButton(
+        ToolButton(
+            text = "Export CSV…",
             onClick = { export.start(connection.id, sql, connection.name) },
+            description = "export-start",
             enabled = refusal == null && !export.running,
-            modifier = Modifier.semantics { contentDescription = "export-start" },
-        ) {
-            Text("Export CSV…", style = MaterialTheme.typography.labelSmall)
-        }
+        )
         if (export.running) {
             CircularProgressIndicator(modifier = Modifier.size(12.dp), strokeWidth = 2.dp)
-            TextButton(
+            ToolButton(
+                text = "Stop",
                 onClick = export::cancel,
-                modifier = Modifier.semantics { contentDescription = "export-stop" },
-            ) {
-                Text("Stop", style = MaterialTheme.typography.labelSmall)
-            }
+                description = "export-stop",
+                emphasis = ToolEmphasis.DANGER,
+            )
         }
         Text(
             text = message,

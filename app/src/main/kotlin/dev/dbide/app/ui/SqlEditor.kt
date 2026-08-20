@@ -14,11 +14,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -28,6 +25,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.key.Key
@@ -50,6 +48,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.input.OffsetMapping
 import androidx.compose.ui.text.input.TransformedText
 import androidx.compose.ui.text.input.VisualTransformation
@@ -84,43 +83,61 @@ import dev.dbide.core.sql.TokenKind
 fun SqlEditor(model: EditorViewModel, modifier: Modifier = Modifier) {
     Column(modifier = modifier.fillMaxSize().semantics { contentDescription = "sql-editor" }) {
         EditorToolbar(model)
-        HorizontalDivider()
+        Hairline()
         EditorText(model, modifier = Modifier.weight(1f))
     }
 }
 
-/** Run, Cancel, and a sentence saying which statement Run means. */
+/**
+ * Run, Cancel, and a sentence saying which statement Run means.
+ *
+ * The sentence is the important half. `Run` in a script of six statements is an
+ * ambiguous button, and the label is what removes the ambiguity before the click
+ * rather than after it.
+ */
 @Composable
 private fun EditorToolbar(model: EditorViewModel) {
     Row(
-        modifier = Modifier.fillMaxWidth().padding(start = 12.dp, end = 4.dp, top = 2.dp, bottom = 2.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(Sizes.paneHeader)
+            .background(Dbide.colors.paneHeader)
+            .padding(start = Space.lg, end = Space.sm),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        horizontalArrangement = Arrangement.spacedBy(Space.sm),
     ) {
         Text(
             text = model.runLabel,
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
             modifier = Modifier.weight(1f).semantics { contentDescription = "editor-run-label" },
         )
         if (model.running) {
-            TextButton(
+            ToolButton(
+                text = "Cancel",
                 onClick = model::cancel,
-                modifier = Modifier.semantics { contentDescription = "editor-cancel" },
-            ) {
-                Text("Cancel", style = MaterialTheme.typography.labelMedium)
-            }
+                description = "editor-cancel",
+                emphasis = ToolEmphasis.DANGER,
+            )
         }
-        TextButton(
+        // The chord is on the button rather than only in the documentation nobody
+        // opens. It is also the only shortcut the editor has, so there is room to say
+        // it in full.
+        ToolButton(
+            text = "Run  $RUN_CHORD",
             onClick = model::execute,
+            description = "editor-run",
             enabled = model.runnable,
-            modifier = Modifier.semantics { contentDescription = "editor-run" },
-        ) {
-            Text("Run", style = MaterialTheme.typography.labelMedium)
-        }
+            emphasis = ToolEmphasis.PRIMARY,
+        )
     }
 }
+
+/** What the Run chord is called on this machine. */
+private val RUN_CHORD: String =
+    if (System.getProperty("os.name").orEmpty().startsWith("Mac")) "⌘↵" else "Ctrl+↵"
 
 /** The document itself, with its gutter, sharing one vertical scroll. */
 @Composable
@@ -167,9 +184,20 @@ private fun EditorText(model: EditorViewModel, modifier: Modifier = Modifier) {
         }
     }
 
-    Row(modifier = modifier.fillMaxSize().verticalScroll(scroll)) {
-        Gutter(layout = layout, script = script, style = style)
-        VerticalDivider(modifier = Modifier.fillMaxHeight())
+    // Which line the caret is on, for the gutter to mark. Counted rather than read
+    // off the layout so it is a document line and not a wrapped visual one.
+    val caretLine = remember(script, caret) {
+        if (caret in 0..script.length) script.take(caret).count { it == '\n' } + 1 else 0
+    }
+
+    Row(
+        modifier = modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.surface)
+            .verticalScroll(scroll),
+    ) {
+        Gutter(layout = layout, script = script, style = style, caretLine = caretLine)
+        VerticalHairline(modifier = Modifier.fillMaxHeight())
         BasicTextField(
             value = model.text,
             onValueChange = model::edit,
@@ -179,7 +207,7 @@ private fun EditorText(model: EditorViewModel, modifier: Modifier = Modifier) {
             cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
             modifier = Modifier
                 .weight(1f)
-                .padding(horizontal = 8.dp, vertical = 4.dp)
+                .padding(horizontal = Space.md, vertical = Space.sm)
                 // Preview, so the chord runs the statement instead of inserting a
                 // newline into it. Meta is the macOS chord and Ctrl everywhere else;
                 // both are accepted on both.
@@ -205,14 +233,24 @@ private fun EditorText(model: EditorViewModel, modifier: Modifier = Modifier) {
  * different theme.
  */
 @Composable
-private fun Gutter(layout: TextLayoutResult?, script: String, style: TextStyle) {
+private fun Gutter(
+    layout: TextLayoutResult?,
+    script: String,
+    style: TextStyle,
+    caretLine: Int,
+) {
     val density = LocalDensity.current
     val measurer = rememberTextMeasurer()
-    val numberStyle = style.copy(color = MaterialTheme.colorScheme.onSurfaceVariant)
+    val numberStyle = style.copy(color = Dbide.colors.gutterText)
+    // The line the caret is on is drawn at full strength, and its band is painted
+    // across the gutter. It is the cheapest possible answer to "where am I?" in a
+    // script long enough that the caret is off screen.
+    val currentStyle = style.copy(color = MaterialTheme.colorScheme.onSurface)
+    val currentBand = Dbide.colors.currentLine
     val lines = remember(script) { script.count { it == '\n' } + 1 }
 
     val width = remember(lines, numberStyle, density) {
-        with(density) { (measurer.measure(lines.toString(), numberStyle).size.width + 20).toDp() }
+        with(density) { (measurer.measure(lines.toString(), numberStyle).size.width + 24).toDp() }
     }
     val height = with(density) { (layout?.size?.height ?: 0).toDp() }
 
@@ -220,7 +258,7 @@ private fun Gutter(layout: TextLayoutResult?, script: String, style: TextStyle) 
         modifier = Modifier
             .width(width)
             .height(height)
-            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .background(Dbide.colors.gutter)
             .semantics { contentDescription = "editor-gutter" },
     ) {
         val result = layout ?: return@Canvas
@@ -230,13 +268,22 @@ private fun Gutter(layout: TextLayoutResult?, script: String, style: TextStyle) 
             // A visual line that continues a wrapped one carries no number of its own.
             if (line > 0 && script.getOrNull(start - 1) != '\n') continue
             number++
-            val text = measurer.measure(number.toString(), numberStyle)
+            val current = number == caretLine
+            val top = result.getLineTop(line)
+            if (current) {
+                drawRect(
+                    color = currentBand,
+                    topLeft = Offset(0f, top),
+                    size = Size(size.width, result.getLineBottom(line) - top),
+                )
+            }
+            val text = measurer.measure(number.toString(), if (current) currentStyle else numberStyle)
             drawText(
                 textLayoutResult = text,
                 topLeft = Offset(
-                    x = size.width - text.size.width - 10.dp.toPx(),
+                    x = size.width - text.size.width - 12.dp.toPx(),
                     // The field's own top padding, so number and line share a baseline.
-                    y = result.getLineTop(line) + 4.dp.toPx(),
+                    y = top + 4.dp.toPx(),
                 ),
             )
         }
@@ -256,22 +303,31 @@ private data class EditorColors(
     val error: Color,
 )
 
+/**
+ * The syntax palette comes from the theme, not from this file.
+ *
+ * It used to be six literal hex values chosen against white. They were correct
+ * there and unreadable anywhere else — a dark theme with a navy keyword on a near
+ * black background is not a dark theme, it is a broken one. [SyntaxColors] holds the
+ * two sets; this only decides how the editor's own shading sits over them.
+ */
 @Composable
 private fun editorColors(): EditorColors {
     val scheme = MaterialTheme.colorScheme
-    return remember(scheme) {
+    val syntax = Dbide.colors.syntax
+    return remember(scheme, syntax) {
         EditorColors(
-            keyword = Color(0xFF0B5FA5),
-            string = Color(0xFF1B7A3D),
-            comment = Color(0xFF7A7A7A),
-            number = Color(0xFF9A4B00),
-            identifier = Color(0xFF6A3FB5),
-            parameter = Color(0xFF9A4B00),
+            keyword = syntax.keyword,
+            string = syntax.string,
+            comment = syntax.comment,
+            number = syntax.number,
+            identifier = syntax.identifier,
+            parameter = syntax.parameter,
             // The statement about to run, shaded rather than outlined: an outline
             // between two adjacent statements is one line the eye has to attribute,
             // and shading is unambiguous about which side it belongs to.
-            target = scheme.primary.copy(alpha = 0.10f),
-            bracket = scheme.primary.copy(alpha = 0.28f),
+            target = scheme.primary.copy(alpha = 0.13f),
+            bracket = scheme.primary.copy(alpha = 0.30f),
             error = scheme.error,
         )
     }

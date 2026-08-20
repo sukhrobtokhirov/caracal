@@ -1,6 +1,5 @@
 package dev.dbide.app.ui
 
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -20,6 +19,7 @@ import dev.dbide.app.EditorViewModel
 import dev.dbide.app.ExportViewModel
 import dev.dbide.app.FakeConnectionService
 import dev.dbide.app.SchemaTreeViewModel
+import dev.dbide.app.ThemeViewModel
 import dev.dbide.app.VaultUiState
 import dev.dbide.app.VaultViewModel
 import dev.dbide.core.connections.Engine
@@ -48,12 +48,13 @@ class ConnectionUiTest {
         setContent {
             val scope = rememberCoroutineScope()
             model = remember { VaultViewModel(service, scope) }
+            val theme = remember { ThemeViewModel(null, scope) }
             LaunchOnce { model.load() }
-            MaterialTheme {
+            DbideTheme {
                 if (model.screen == VaultUiState.Unlocked) {
                     Text("unlocked")
                 } else {
-                    VaultScreen(model)
+                    VaultScreen(model, theme)
                 }
             }
         }
@@ -70,7 +71,8 @@ class ConnectionUiTest {
             val tree = remember { SchemaTreeViewModel(service, scope) }
             val editor = remember { EditorViewModel(service, scope) }
             val export = remember { ExportViewModel(service, scope) { null } }
-            MaterialTheme { WorkspaceScreen(model, tree, editor, export, onLock = {}) }
+            val theme = remember { ThemeViewModel(null, scope) }
+            DbideTheme { WorkspaceScreen(model, tree, editor, export, theme, onLock = {}) }
         }
         waitForIdle()
         return model

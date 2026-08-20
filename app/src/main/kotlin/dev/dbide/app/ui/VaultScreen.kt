@@ -1,8 +1,11 @@
 package dev.dbide.app.ui
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -21,6 +24,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.semantics.contentDescription
@@ -28,6 +32,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
+import dev.dbide.app.ThemeViewModel
 import dev.dbide.app.VaultUiState
 import dev.dbide.app.VaultViewModel
 
@@ -37,9 +42,13 @@ import dev.dbide.app.VaultViewModel
  * The difference between them is stated plainly, because they carry different
  * consequences: on first run the user is choosing a password that cannot be
  * recovered, and on a later run they are simply typing one they already have.
+ *
+ * The form sits on a raised card rather than loose on the background. It is the only
+ * thing on screen and the only thing to do, and a bounded panel says that in a way a
+ * column of centred text does not.
  */
 @Composable
-fun VaultScreen(viewModel: VaultViewModel) {
+fun VaultScreen(viewModel: VaultViewModel, theme: ThemeViewModel) {
     val setup = viewModel.screen == VaultUiState.Setup
     val focus = remember { FocusRequester() }
 
@@ -49,93 +58,131 @@ fun VaultScreen(viewModel: VaultViewModel) {
         }
     }
 
-    Surface(modifier = Modifier.fillMaxSize()) {
-        Box(modifier = Modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) {
-            Column(
-                verticalArrangement = Arrangement.spacedBy(16.dp),
-                modifier = Modifier.widthIn(max = 420.dp),
+    Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+        Box(modifier = Modifier.fillMaxSize()) {
+            // The lock screen is the first frame of every launch, so the theme control
+            // belongs here too: nobody should have to unlock in the dark to ask for
+            // light.
+            ThemeToggle(
+                mode = theme.mode,
+                onCycle = theme::cycle,
+                modifier = Modifier.align(Alignment.TopEnd).padding(Space.lg),
+            )
+
+            Box(
+                modifier = Modifier.fillMaxSize().padding(Space.xxl),
+                contentAlignment = Alignment.Center,
             ) {
-                Text(
-                    if (setup) "Choose a master password" else "Unlock Database IDE",
-                    style = MaterialTheme.typography.headlineSmall,
-                )
-                Text(
-                    if (setup) {
-                        "It encrypts every database password you save. It is never stored " +
-                            "anywhere, so it cannot be recovered — if you forget it, your saved " +
-                            "passwords are gone."
-                    } else {
-                        "Enter your master password to use your saved connections."
-                    },
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-
-                OutlinedTextField(
-                    value = viewModel.password,
-                    onValueChange = viewModel::onPasswordChange,
-                    label = { Text("Master password") },
-                    singleLine = true,
-                    enabled = !viewModel.busy,
-                    visualTransformation = PasswordVisualTransformation(),
-                    keyboardOptions = KeyboardOptions(
-                        imeAction = if (setup) ImeAction.Next else ImeAction.Done,
-                    ),
-                    keyboardActions = KeyboardActions(onDone = { viewModel.submit() }),
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(Space.xl),
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .focusRequester(focus)
-                        .semantics { contentDescription = "master-password" },
-                )
-
-                if (setup) {
-                    OutlinedTextField(
-                        value = viewModel.confirmation,
-                        onValueChange = viewModel::onConfirmationChange,
-                        label = { Text("Confirm master password") },
-                        singleLine = true,
-                        enabled = !viewModel.busy,
-                        visualTransformation = PasswordVisualTransformation(),
-                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                        keyboardActions = KeyboardActions(onDone = { viewModel.submit() }),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .semantics { contentDescription = "confirm-master-password" },
-                    )
-                    Text(
-                        "At least ${viewModel.minimumPasswordLength} characters. Length matters " +
-                            "more here than punctuation.",
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                }
-
-                viewModel.setupHint?.let { hint ->
-                    Text(
-                        hint,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.error,
-                        modifier = Modifier.semantics { contentDescription = "vault-hint" },
-                    )
-                }
-
-                // The message is the same for every wrong password, so a failed attempt
-                // tells an onlooker nothing beyond "not this one".
-                viewModel.failure?.let { failure -> ErrorBanner(failure) }
-
-                Button(
-                    onClick = viewModel::submit,
-                    enabled = viewModel.canSubmit,
-                    modifier = Modifier.semantics { contentDescription = "vault-submit" },
+                        .widthIn(max = 420.dp)
+                        .clip(MaterialTheme.shapes.large)
+                        .background(MaterialTheme.colorScheme.surface)
+                        .border(Sizes.hairline, Dbide.colors.hairline, MaterialTheme.shapes.large)
+                        .padding(Space.xxl),
                 ) {
-                    Text(if (setup) "Create master password" else "Unlock")
-                }
+                    Column(verticalArrangement = Arrangement.spacedBy(Space.md)) {
+                        Text(
+                            if (setup) "Choose a master password" else "Unlock Database IDE",
+                            style = MaterialTheme.typography.headlineSmall,
+                        )
+                        Text(
+                            if (setup) {
+                                "It encrypts every database password you save. It is never stored " +
+                                    "anywhere, so it cannot be recovered — if you forget it, your saved " +
+                                    "passwords are gone."
+                            } else {
+                                "Enter your master password to use your saved connections."
+                            },
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
 
-                if (viewModel.busy) {
-                    Text(
-                        "Deriving the key…",
-                        style = MaterialTheme.typography.bodySmall,
-                        modifier = Modifier.semantics { contentDescription = "vault-busy" },
-                    )
-                    CircularProgressIndicator(modifier = Modifier.size(20.dp))
+                    Column(verticalArrangement = Arrangement.spacedBy(Space.lg)) {
+                        OutlinedTextField(
+                            value = viewModel.password,
+                            onValueChange = viewModel::onPasswordChange,
+                            label = { Text("Master password") },
+                            singleLine = true,
+                            enabled = !viewModel.busy,
+                            visualTransformation = PasswordVisualTransformation(),
+                            keyboardOptions = KeyboardOptions(
+                                imeAction = if (setup) ImeAction.Next else ImeAction.Done,
+                            ),
+                            keyboardActions = KeyboardActions(onDone = { viewModel.submit() }),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .focusRequester(focus)
+                                .semantics { contentDescription = "master-password" },
+                        )
+
+                        if (setup) {
+                            OutlinedTextField(
+                                value = viewModel.confirmation,
+                                onValueChange = viewModel::onConfirmationChange,
+                                label = { Text("Confirm master password") },
+                                singleLine = true,
+                                enabled = !viewModel.busy,
+                                visualTransformation = PasswordVisualTransformation(),
+                                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                                keyboardActions = KeyboardActions(onDone = { viewModel.submit() }),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .semantics { contentDescription = "confirm-master-password" },
+                            )
+                            Text(
+                                "At least ${viewModel.minimumPasswordLength} characters. Length matters " +
+                                    "more here than punctuation.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+
+                    viewModel.setupHint?.let { hint ->
+                        Text(
+                            hint,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.semantics { contentDescription = "vault-hint" },
+                        )
+                    }
+
+                    // The message is the same for every wrong password, so a failed attempt
+                    // tells an onlooker nothing beyond "not this one".
+                    viewModel.failure?.let { failure -> ErrorBanner(failure) }
+
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(Space.lg),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Button(
+                            shape = MaterialTheme.shapes.small,
+                            onClick = viewModel::submit,
+                            enabled = viewModel.canSubmit,
+                            modifier = Modifier.semantics { contentDescription = "vault-submit" },
+                        ) {
+                            Text(if (setup) "Create master password" else "Unlock")
+                        }
+
+                        // Argon2id is deliberately slow, and a second of nothing happening
+                        // is indistinguishable from a button that did not register the
+                        // click. The label says which of the two it is.
+                        if (viewModel.busy) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(16.dp),
+                                strokeWidth = 2.dp,
+                            )
+                            Text(
+                                "Deriving the key…",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.semantics { contentDescription = "vault-busy" },
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -145,11 +192,19 @@ fun VaultScreen(viewModel: VaultViewModel) {
 /** Shown when the configuration database itself cannot be opened. */
 @Composable
 fun VaultUnavailableScreen(screen: VaultUiState.Unavailable) {
-    Surface(modifier = Modifier.fillMaxSize()) {
-        Box(modifier = Modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) {
+    Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+        Box(
+            modifier = Modifier.fillMaxSize().padding(Space.xxl),
+            contentAlignment = Alignment.Center,
+        ) {
             Column(
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-                modifier = Modifier.widthIn(max = 480.dp),
+                verticalArrangement = Arrangement.spacedBy(Space.lg),
+                modifier = Modifier
+                    .widthIn(max = 480.dp)
+                    .clip(MaterialTheme.shapes.large)
+                    .background(MaterialTheme.colorScheme.surface)
+                    .border(Sizes.hairline, Dbide.colors.hairline, MaterialTheme.shapes.large)
+                    .padding(Space.xxl),
             ) {
                 Text("Database IDE cannot start", style = MaterialTheme.typography.headlineSmall)
                 ErrorBanner(screen.failure)

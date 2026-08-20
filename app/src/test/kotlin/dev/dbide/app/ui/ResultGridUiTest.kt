@@ -1,6 +1,5 @@
 package dev.dbide.app.ui
 
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.remember
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.test.ComposeUiTest
@@ -56,7 +55,7 @@ class ResultGridUiTest {
         lateinit var state: ResultGridState
         setContent {
             state = remember { ResultGridState(result) }
-            MaterialTheme { ResultGrid(state, onCopy = { copied += it }) }
+            DbideTheme { ResultGrid(state, onCopy = { copied += it }) }
         }
         waitForIdle()
         return state

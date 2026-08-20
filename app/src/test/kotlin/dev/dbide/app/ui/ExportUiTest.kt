@@ -1,6 +1,5 @@
 package dev.dbide.app.ui
 
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.test.ComposeUiTest
@@ -79,7 +78,7 @@ class ExportUiTest {
                 EditorViewModel(service, scope).also { it.show(connection(readOnly = readOnly)) }
             }
             val export = remember { ExportViewModel(service, scope) { chosen } }
-            MaterialTheme { QueryPane(model, export, onCopy = {}) }
+            DbideTheme { QueryPane(model, export, onCopy = {}) }
         }
         waitForIdle()
         return model

@@ -1,13 +1,13 @@
 package dev.dbide.app.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
@@ -69,7 +69,7 @@ fun WriteConfirmation(
         text = {
             Column(
                 modifier = Modifier.widthIn(max = 460.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
+                verticalArrangement = Arrangement.spacedBy(Space.lg),
             ) {
                 if (production) ProductionBanner(clearance.connectionName)
 
@@ -128,11 +128,11 @@ private fun ProductionBanner(connectionName: String) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(6.dp))
+            .clip(MaterialTheme.shapes.medium)
             .background(MaterialTheme.colorScheme.errorContainer)
-            .padding(horizontal = 12.dp, vertical = 10.dp)
+            .padding(horizontal = Space.lg, vertical = Space.lg)
             .semantics { contentDescription = "write-prod-banner" },
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        horizontalArrangement = Arrangement.spacedBy(Space.md),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         EnvironmentBadge(Environment.PROD)
@@ -154,9 +154,10 @@ private fun StatementPreview(sql: String) {
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(6.dp))
+            .clip(MaterialTheme.shapes.medium)
             .background(MaterialTheme.colorScheme.surfaceVariant)
-            .padding(10.dp)
+            .border(Sizes.hairline, Dbide.colors.hairline, MaterialTheme.shapes.medium)
+            .padding(Space.lg)
             .semantics { contentDescription = "write-statement" },
     )
 }
@@ -173,7 +174,7 @@ private fun TypedAcknowledgement(
     // Focused on open so the keyboard is already where the one required action is.
     LaunchedEffect(Unit) { focus.requestFocus() }
 
-    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+    Column(verticalArrangement = Arrangement.spacedBy(Space.md)) {
         Text(
             text = "Type $connectionName to confirm.",
             style = MaterialTheme.typography.bodySmall,
