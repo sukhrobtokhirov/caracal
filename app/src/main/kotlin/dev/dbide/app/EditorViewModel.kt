@@ -119,6 +119,18 @@ class EditorViewModel(
     var pending: PendingWrite? by mutableStateOf(null)
         private set
 
+    /**
+     * A script waiting to take the editor over, once the user agrees to lose what is
+     * there now. `null` when nothing is being asked for.
+     *
+     * The text is held here rather than fetched again when the dialog is answered,
+     * for the same reason [PendingWrite] holds its target: what arrives must be what
+     * the dialog offered, and the panel it came from can be scrolled, refiltered, or
+     * closed while the question is on screen.
+     */
+    var pendingScript: String? by mutableStateOf(null)
+        private set
+
     private var job: Job? = null
 
     /** The span Run would send, for the editor to draw. `null` when Run is unavailable. */
@@ -200,6 +212,39 @@ class EditorViewModel(
         val inserted = separator + sql
         val updated = text.text.replaceRange(from, to, inserted)
         edit(TextFieldValue(updated, TextRange(from + inserted.length)))
+    }
+
+    /**
+     * Puts [sql] in the editor, in place of whatever is there.
+     *
+     * This is how a statement reopened from history arrives. It asks first when there
+     * is something to lose — §4.3's unsaved-change rule, and the reason it is enforced
+     * here rather than in the panel that calls it: the editor is the only thing that
+     * knows whether its text is a script someone is halfway through or the blank it
+     * was opened with. A script that is only whitespace is not work.
+     *
+     * The caret lands at the end, where someone about to edit the statement wants it,
+     * and the result of the previous run is left alone — it is still a true statement
+     * about the server, and it is often the reason the query is being reopened.
+     */
+    fun open(sql: String) {
+        if (text.text.isBlank() || text.text == sql) replace(sql) else pendingScript = sql
+    }
+
+    /** Agrees to lose the current script, and takes the one that was offered. */
+    fun confirmOpen() {
+        val waiting = pendingScript ?: return
+        pendingScript = null
+        replace(waiting)
+    }
+
+    /** Keeps what is in the editor. The offered script is dropped. */
+    fun cancelOpen() {
+        pendingScript = null
+    }
+
+    private fun replace(sql: String) {
+        edit(TextFieldValue(sql, TextRange(sql.length)))
     }
 
     /**
@@ -302,6 +347,7 @@ class EditorViewModel(
         // A confirmation belongs to the connection it was raised against. Leaving one
         // open across a change of connection is how the wrong server gets written to.
         pending = null
+        pendingScript = null
     }
 
     private fun needsSpace(before: Char): Boolean =

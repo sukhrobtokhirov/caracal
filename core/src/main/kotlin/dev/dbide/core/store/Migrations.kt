@@ -101,6 +101,20 @@ private val MIGRATIONS = listOf(
             "CREATE UNIQUE INDEX idx_connections_name ON connections(name)",
         ),
     ),
+    Migration(
+        version = 3,
+        name = "history is paged by id",
+        statements = listOf(
+            // M4's panel reads history newest-first and pages through it with a
+            // keyset, and the key is `id` rather than `executed_at` — the column
+            // holds `Instant.toString()`, whose optional fractional second makes a
+            // text comparison disagree with a chronological one. ConfigStore.history
+            // explains it in full. What that leaves behind is an index on a column
+            // nothing orders by any more, and its replacement.
+            "DROP INDEX IF EXISTS idx_history_conn_time",
+            "CREATE INDEX idx_history_conn_id ON query_history(connection_id, id DESC)",
+        ),
+    ),
 )
 
 /** The schema version this build writes and understands. */

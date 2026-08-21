@@ -20,8 +20,9 @@ no JDK to install: the installer bundles its own trimmed runtime.
 > connection then opens a schema browser, a SQL editor, a virtualized result grid,
 > and CSV export; a Redis connection opens a bounded `SCAN` key browser with
 > prefix grouping, a paged viewer for each of the six value types, an `INFO`
-> summary, and a command console behind the dangerous-command guard. M4, polish,
-> is next. See [`docs/mvp-steps/`](docs/mvp-steps/README.md).
+> summary, and a command console behind the dangerous-command guard. **M4, polish,
+> is under way** — query history is readable, paged, and reopenable. See
+> [`docs/mvp-steps/`](docs/mvp-steps/README.md).
 
 ## The shape of the product
 
@@ -136,7 +137,8 @@ mattered — this process holds live database credentials.
   ended, and a message that has already been redacted. It is kept in the same
   owner-only database as the sealed credentials, and never written to a log: a
   `WHERE email = '…'` is a record of a person as much as of a query. History is
-  capped per connection and goes with the connection when it is deleted.
+  capped per connection and goes with the connection when it is deleted. Reading it
+  back needs the vault open, and locking discards whatever the panel had loaded.
 
 ### Stored credentials
 
@@ -171,19 +173,23 @@ core/src/main/kotlin/dev/dbide/core/
   sql/           statement splitter, editor execution rule, highlighting    [M2]
   policy/        what a statement may do, and what must be agreed to first  [M2]
   export/        CSV writing, export eligibility, bounded streaming         [M2]
-  history/       what was executed, how it ended, and how much is kept      [M2]
+  history/       what was executed, how it ended, and how much is kept   [M2, M4]
 
 app/src/main/kotlin/dev/dbide/app/
   ui/            connection screens [M1]; schema tree, SQL editor, result grid [M2];
-                 key browser, value viewers, INFO dashboard, console          [M3]
+                 key browser, value viewers, INFO dashboard, console          [M3];
+                 query history                                                [M4]
   Main.kt        window, application lifecycle
 ```
 
-Query history is written from M2 and read from M4: the panel that shows it is
-not built, so the only way to see it today is the `query_history` table in the
-configuration database. Redis console commands are deliberately not in it — a
-command's arguments are where its secrets are, so the console's history lives in
-memory for one session and is discarded when the vault locks.
+Query history is written from M2 and read from M4. **History** in the shell opens
+it: newest first, grouped by day, filtered by connection and by how each execution
+ended, and paged further back on request. An entry can be copied or reopened into
+the editor — reopening never runs anything, and it asks before replacing a script
+you are in the middle of. Clearing names its own scope and never touches the
+connections. Redis console commands are deliberately not recorded — a command's
+arguments are where its secrets are, so the console's history lives in memory for
+one session and is discarded when the vault locks.
 
 Configuration lives in the platform application data directory
 (`~/Library/Application Support/dbide` on macOS, `%AppData%\dbide` on Windows,

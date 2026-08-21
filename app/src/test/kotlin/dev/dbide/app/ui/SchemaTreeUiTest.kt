@@ -16,6 +16,7 @@ import androidx.compose.ui.test.v2.runDesktopComposeUiTest
 import dev.dbide.app.ConnectionsViewModel
 import dev.dbide.app.EditorViewModel
 import dev.dbide.app.ExportViewModel
+import dev.dbide.app.HistoryViewModel
 import dev.dbide.app.FakeConnectionService
 import dev.dbide.app.RedisWorkspace
 import dev.dbide.app.SchemaTreeViewModel
@@ -278,7 +279,10 @@ class SchemaTreeUiTest {
                 val export = remember { ExportViewModel(service, scope) { null } }
                 val theme = remember { ThemeViewModel(null, scope) }
                 val redis = remember { RedisWorkspace(service, scope) }
-                DbideTheme { WorkspaceScreen(connections, tree, editor, export, redis, theme, onLock = {}) }
+                val history = remember { HistoryViewModel(service, scope) }
+                DbideTheme {
+                WorkspaceScreen(connections, tree, editor, export, redis, history, theme, onLock = {})
+            }
             }
             waitForIdle()
 
@@ -308,7 +312,10 @@ class SchemaTreeUiTest {
                 val export = remember { ExportViewModel(service, scope) { null } }
                 val theme = remember { ThemeViewModel(null, scope) }
                 val redis = remember { RedisWorkspace(service, scope) }
-                DbideTheme { WorkspaceScreen(connections, tree, editor, export, redis, theme, onLock = {}) }
+                val history = remember { HistoryViewModel(service, scope) }
+                DbideTheme {
+                WorkspaceScreen(connections, tree, editor, export, redis, history, theme, onLock = {})
+            }
             }
             waitForIdle()
 

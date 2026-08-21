@@ -1,6 +1,7 @@
 package dev.dbide.core.history
 
 import dev.dbide.core.connections.ConnectionDraft
+import dev.dbide.core.connections.ConnectionId
 import dev.dbide.core.connections.ConnectionService
 import dev.dbide.core.connections.DefaultConnectionService
 import dev.dbide.core.connections.Engine
@@ -66,6 +67,10 @@ class QueryHistoryIntegrationTest {
         val vault = Vault(store, params = KdfParams.TESTING)
         return Session(store, registry, DefaultConnectionService(store, vault, registry))
     }
+
+    /** One connection's history as a plain list; these tests are not about paging. */
+    private suspend fun ConfigStore.history(id: ConnectionId) =
+        history(HistoryQuery(connectionId = id)).items
 
     private fun draft(name: String = "Postgres", readOnly: Boolean = true) = ConnectionDraft(
         name = name,

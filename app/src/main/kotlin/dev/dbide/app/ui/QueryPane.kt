@@ -14,9 +14,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -89,6 +91,51 @@ fun QueryPane(
             onCancel = model::cancelConfirmation,
         )
     }
+
+    // The other thing that can take the editor away from its user: a statement
+    // reopened from history, arriving on top of a script they are in the middle of.
+    model.pendingScript?.let {
+        ReplaceScriptConfirmation(onConfirm = model::confirmOpen, onCancel = model::cancelOpen)
+    }
+}
+
+/**
+ * A reopened statement wants the editor, and there is already something in it.
+ *
+ * §4.3's unsaved-change rule. Drafts are not saved anywhere — deliberately, because a
+ * script can hold a password in a `WHERE` clause — so the text in the editor exists
+ * in exactly one place, and replacing it is the only unrecoverable thing this pane
+ * can do to the user's own work.
+ */
+@Composable
+private fun ReplaceScriptConfirmation(onConfirm: () -> Unit, onCancel: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onCancel,
+        title = { Text("Replace what is in the editor?") },
+        text = {
+            Text(
+                "The script you have now is not saved anywhere, and opening this one " +
+                    "over it cannot be undone.",
+            )
+        },
+        confirmButton = {
+            TextButton(
+                onClick = onConfirm,
+                modifier = Modifier.semantics { contentDescription = "confirm-replace-script" },
+            ) {
+                Text("Replace")
+            }
+        },
+        dismissButton = {
+            TextButton(
+                onClick = onCancel,
+                modifier = Modifier.semantics { contentDescription = "cancel-replace-script" },
+            ) {
+                Text("Keep mine")
+            }
+        },
+        modifier = Modifier.semantics { contentDescription = "replace-script-confirmation" },
+    )
 }
 
 /** What the last run left behind, in whichever of its five states it ended. */

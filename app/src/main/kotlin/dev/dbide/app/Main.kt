@@ -114,6 +114,7 @@ private fun FrameWindowScope.Workspace(
     val chooser = rememberCsvFileChooser()
     val export = remember(service, chooser) { ExportViewModel(service, scope, chooser) }
     val redis = remember(service) { RedisWorkspace(service, scope) }
+    val history = remember(service) { HistoryViewModel(service, scope) }
     val vault = remember(service) {
         VaultViewModel(service, scope, onUnlocked = { connections.refresh() })
     }
@@ -130,6 +131,7 @@ private fun FrameWindowScope.Workspace(
             editor = editor,
             export = export,
             redis = redis,
+            history = history,
             theme = theme,
             onLock = {
                 connections.clear()
@@ -146,6 +148,11 @@ private fun FrameWindowScope.Workspace(
                 // those is the one that matters most: a command's arguments can be a
                 // password, and they must not survive the session that typed them.
                 redis.clear()
+                // History is read from the same database the sealed credentials are
+                // in, and it is a record of what was run against which server. A
+                // locked application keeping a page of it on screen would be a locked
+                // application still showing the thing locking is for.
+                history.clear()
                 vault.lock()
             },
         )

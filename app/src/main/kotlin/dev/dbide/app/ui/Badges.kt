@@ -21,10 +21,12 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import dev.dbide.app.HistoryFormat
 import dev.dbide.core.connections.Engine
 import dev.dbide.core.connections.Environment
 import dev.dbide.core.connections.RuntimeState
 import dev.dbide.core.connections.RuntimeStatus
+import dev.dbide.core.history.ExecutionOutcome
 import dev.dbide.core.redis.KeyType
 
 /**
@@ -134,6 +136,36 @@ fun KeyTypeBadge(type: KeyType, modifier: Modifier = Modifier) {
             .border(Sizes.hairline, Dbide.colors.hairline, MaterialTheme.shapes.extraSmall)
             .padding(horizontal = Space.sm, vertical = 1.dp)
             .semantics { contentDescription = "key-type-${type.wire}" },
+    )
+}
+
+/**
+ * How an execution ended.
+ *
+ * Three states and three colours, and the word is always there beside the colour —
+ * the difference between a query that failed and one the user stopped is the
+ * difference between a bug and a decision, and it is not one to leave to a hue.
+ *
+ * Cancelled is drawn in neither green nor red. Nothing failed and nothing finished;
+ * colouring it as either would be the panel having an opinion about a choice the
+ * user made deliberately.
+ */
+@Composable
+fun OutcomeBadge(outcome: ExecutionOutcome, modifier: Modifier = Modifier) {
+    val (background, foreground) = when (outcome) {
+        ExecutionOutcome.OK -> Dbide.colors.successContainer to Dbide.colors.onSuccessContainer
+        ExecutionOutcome.ERROR ->
+            MaterialTheme.colorScheme.errorContainer to MaterialTheme.colorScheme.onErrorContainer
+
+        ExecutionOutcome.CANCELLED ->
+            MaterialTheme.colorScheme.surfaceVariant to MaterialTheme.colorScheme.onSurfaceVariant
+    }
+    Badge(
+        text = HistoryFormat.outcome(outcome).uppercase(),
+        background = background,
+        foreground = foreground,
+        description = "outcome-${outcome.stored}",
+        modifier = modifier,
     )
 }
 

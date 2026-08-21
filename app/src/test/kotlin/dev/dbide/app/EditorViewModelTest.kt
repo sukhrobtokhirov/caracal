@@ -573,6 +573,72 @@ class EditorViewModelTest {
         assertFalse(editor.runnable)
     }
 
+    // --- Reopening a statement from history -----------------------------------
+
+    @Test
+    fun `a reopened statement goes straight into an empty editor, with the caret after it`() = runTest {
+        val editor = editor()
+        editor.type("   \n  |")
+
+        editor.open("select now()")
+
+        // Whitespace is not work. Asking whether to replace three spaces and a
+        // newline is a question with only one sensible answer, asked every time.
+        assertNull(editor.pendingScript)
+        assertEquals("select now()", editor.text.text)
+        assertEquals("select now()".length, editor.text.selection.start)
+    }
+
+    @Test
+    fun `a reopened statement asks before it lands on top of a script`() = runTest {
+        val editor = editor()
+        editor.type("delete from invoices where id = 7|")
+
+        editor.open("select now()")
+
+        assertEquals("select now()", editor.pendingScript)
+        // Nothing has happened to the editor yet, and Run would still send what is
+        // there — the question is open, not answered.
+        assertEquals("delete from invoices where id = 7", editor.text.text)
+    }
+
+    @Test
+    fun `agreeing takes the reopened statement and declining keeps the script`() = runTest {
+        val editor = editor()
+        editor.type("select 1|")
+        editor.open("select 2")
+        editor.cancelOpen()
+
+        assertNull(editor.pendingScript)
+        assertEquals("select 1", editor.text.text)
+
+        editor.open("select 2")
+        editor.confirmOpen()
+
+        assertNull(editor.pendingScript)
+        assertEquals("select 2", editor.text.text)
+        // The script that arrived is the one Run would now send, which means the
+        // splitter has seen it — a replacement that only set the text would leave the
+        // toolbar describing the statement that is no longer there.
+        assertIs<Execution.Ready>(editor.execution)
+        assertEquals("select 2", (editor.execution as Execution.Ready).target.sql)
+    }
+
+    @Test
+    fun `an open question does not survive a change of connection`() = runTest {
+        val editor = editor()
+        editor.type("select 1|")
+        editor.open("select 2")
+
+        editor.show(connection(id = "id-2", name = "Other"))
+
+        // The statement being offered came from a history row belonging to the
+        // connection that is no longer here. Answering it afterwards would put one
+        // server's query into the other server's editor.
+        assertNull(editor.pendingScript)
+        assertEquals("select 1", editor.text.text)
+    }
+
     // --- Inserting a name from the browser ------------------------------------
 
     @Test

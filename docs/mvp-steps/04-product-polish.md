@@ -294,9 +294,60 @@ Keep at most a bounded number/size of result models in memory. If evicting an ol
 9. Navigate tabs, dialogs, schema tree, key browser, and main actions with a keyboard and a screen-reader smoke test.
 10. Work normally for several hours and record every moment another tool feels easier.
 
+## Deviations
+
+Recorded as the milestone is implemented, per the process in [`README.md`](README.md).
+
+### 4.1 and 4.2 — query history
+
+**There is no HTTP API, so there are no endpoints.** The stack move removed the
+loopback server; `GET /api/history` is `ConnectionService.history(HistoryQuery)` and
+`DELETE /api/history` is `ConnectionService.clearHistory(HistoryScope)`, both
+`suspend fun`s called in-process. The Origin check has nothing to check. What
+survived the translation intact is everything the section was actually about: a
+bounded default page, a hard ceiling, keyset pagination, an opaque cursor, an
+optional connection and status filter, and a deletion whose scope is explicit.
+
+**The keyset is `id`, not `(executed_at, id)`.** The column holds
+`Instant.toString()`, whose fractional second is written only when there is one — so
+under the text comparison SQLite applies, `…09:00:00.500Z` sorts *before*
+`…09:00:00Z`. A clock stepped backwards by NTP is the second reason.
+`id` is `INTEGER PRIMARY KEY AUTOINCREMENT`, assigned in write order, and present on
+every row. Migration 3 replaces the index that ordered by time with one that orders
+by it. The retention prune was reading the same broken order and now reads the new
+one.
+
+**The read does not resolve the connection's display information.** The guide asks
+for it because a browser SPA cannot join against a table it has no copy of. The
+panel here is handed the connection list the workspace already holds, so it reads the
+name, colour, and environment live — which is *more* current than a value copied into
+the response, and one less projection type in `:core`. The cascade still guarantees
+every history row has a connection to look up.
+
+**The cursor is opaque by visibility rather than by encoding.** `HistoryCursor`
+wraps a row id whose field is `internal`, so `:app` can carry one from a page back
+into the next request and cannot construct one. `ExecutionRecord.cursor()` is the
+only other way to obtain one, and it can only name a position the caller has already
+been handed a row for.
+
+**History is a window, not a docked panel.** It is the one surface that spans
+connections — the tab strip belongs to one open server — and it follows the
+convention the previous commit established for everything that is a thing you go to
+and come back from. It opens filtered to the selected connection.
+
+**Reopening targets the editor, not a new tab, until 4.3 builds tabs.** The rule the
+section actually cares about is kept in full: opening never executes, and replacing a
+script that holds work asks first. The action is offered only for the connection the
+editor is pointed at; an entry from another server shows a disabled button naming the
+connection that would have to be open, because the alternative is a history click
+that dials production.
+
+**Search is client-side over the loaded pages,** which the section permits, and the
+box says so beside itself rather than in a tooltip.
+
 ## Completion checklist
 
-- [ ] Query history is bounded, paged, filterable, reopenable, and clearable.
+- [x] Query history is bounded, paged, filterable, reopenable, and clearable.
 - [ ] SQL tabs retain their own connection, editor, query, and result state.
 - [ ] Dirty/running tabs cannot be lost silently.
 - [ ] Required shortcuts work without breaking editor or dialog behavior.

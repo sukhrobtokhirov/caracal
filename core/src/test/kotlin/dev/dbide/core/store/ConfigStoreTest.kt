@@ -8,6 +8,8 @@ import dev.dbide.core.connections.Environment
 import dev.dbide.core.connections.TlsMode
 import dev.dbide.core.history.ExecutionOutcome
 import dev.dbide.core.history.ExecutionRecord
+import dev.dbide.core.history.HistoryQuery
+import dev.dbide.core.history.HistoryScope
 import java.nio.file.Files
 import java.nio.file.Path
 import java.sql.DriverManager
@@ -36,6 +38,17 @@ class ConfigStoreTest {
 
     private suspend fun <T> withStore(body: suspend (ConfigStore) -> T): T =
         open().use { body(it) }
+
+    /**
+     * One connection's history as a plain list.
+     *
+     * The store returns a page and a cursor because that is what a panel needs. Most
+     * of these tests are about what was written rather than about paging, and reading
+     * `.items` in twelve of them would be twelve reminders of a fact none of them is
+     * asserting. The paging tests use the real signature.
+     */
+    private suspend fun ConfigStore.history(id: ConnectionId) =
+        history(HistoryQuery(connectionId = id)).items
 
     private fun record(
         id: String = "id-1",
@@ -341,13 +354,113 @@ class ConfigStoreTest {
     }
 
     @Test
+    fun `a page carries a cursor only while there is another page behind it`() = runTest {
+        withStore { store ->
+            store.create(record())
+            repeat(5) { store.record(execution(statement = "q$it")) }
+
+            val first = store.history(HistoryQuery(connectionId = ConnectionId("id-1"), limit = 2))
+            assertEquals(listOf("q4", "q3"), first.items.map { it.statement })
+            assertNotNull(first.next)
+
+            val second = store.history(
+                HistoryQuery(connectionId = ConnectionId("id-1"), limit = 2, olderThan = first.next),
+            )
+            assertEquals(listOf("q2", "q1"), second.items.map { it.statement })
+            assertNotNull(second.next)
+
+            val last = store.history(
+                HistoryQuery(connectionId = ConnectionId("id-1"), limit = 2, olderThan = second.next),
+            )
+            assertEquals(listOf("q0"), last.items.map { it.statement })
+            // The page is short, so there is provably nothing behind it. A cursor here
+            // would draw a Show more that produces nothing when it is pressed.
+            assertNull(last.next)
+        }
+    }
+
+    @Test
+    fun `paging is not shifted by executions recorded while it is under way`() = runTest {
+        withStore { store ->
+            store.create(record())
+            repeat(4) { store.record(execution(statement = "q$it")) }
+
+            val first = store.history(HistoryQuery(connectionId = ConnectionId("id-1"), limit = 2))
+            // History grows at exactly the end paging starts from, which is what an
+            // offset cannot survive: OFFSET 2 would now return q2 again and skip q1.
+            store.record(execution(statement = "later"))
+
+            val second = store.history(
+                HistoryQuery(connectionId = ConnectionId("id-1"), limit = 2, olderThan = first.next),
+            )
+
+            assertEquals(listOf("q1", "q0"), second.items.map { it.statement })
+        }
+    }
+
+    @Test
+    fun `a page can be read across every connection at once, or filtered to one ending`() = runTest {
+        withStore { store ->
+            store.create(record(id = "id-1", name = "Alpha"))
+            store.create(record(id = "id-2", name = "Beta"))
+            store.record(execution(statement = "alpha-ok"))
+            store.record(execution(id = ConnectionId("id-2"), statement = "beta-ok"))
+            store.record(execution(statement = "alpha-failed", outcome = ExecutionOutcome.ERROR))
+
+            assertEquals(
+                listOf("alpha-failed", "beta-ok", "alpha-ok"),
+                store.history(HistoryQuery()).items.map { it.statement },
+            )
+            assertEquals(
+                listOf("alpha-failed"),
+                store.history(HistoryQuery(outcome = ExecutionOutcome.ERROR)).items.map { it.statement },
+            )
+            assertEquals(
+                listOf("alpha-ok"),
+                store.history(
+                    HistoryQuery(connectionId = ConnectionId("id-1"), outcome = ExecutionOutcome.OK),
+                ).items.map { it.statement },
+            )
+        }
+    }
+
+    @Test
+    fun `a page is never larger than the ceiling, whatever it is asked for`() = runTest {
+        withStore { store ->
+            store.create(record())
+            repeat(3) { store.record(execution(statement = "q$it")) }
+
+            // The caller's own number is a request, not an instruction: history is
+            // capped per connection at a thousand statements, and a single call that
+            // read all of them would hand the panel a thousand strings to hold.
+            assertEquals(3, store.history(HistoryQuery(limit = Int.MAX_VALUE)).items.size)
+            assertEquals(1, store.history(HistoryQuery(limit = 0)).items.size)
+        }
+    }
+
+    @Test
+    fun `clearing everything empties every connection and keeps all of them`() = runTest {
+        withStore { store ->
+            store.create(record(id = "id-1", name = "Alpha"))
+            store.create(record(id = "id-2", name = "Beta"))
+            store.record(execution(statement = "alpha"))
+            store.record(execution(id = ConnectionId("id-2"), statement = "beta"))
+
+            assertEquals(2, store.clearHistory(HistoryScope.Everything))
+
+            assertTrue(store.history(HistoryQuery()).isEmpty)
+            assertEquals(2, store.list().size)
+        }
+    }
+
+    @Test
     fun `clearing history leaves the connection alone`() = runTest {
         withStore { store ->
             store.create(record())
             store.record(execution())
             store.record(execution())
 
-            assertEquals(2, store.clearHistory(ConnectionId("id-1")))
+            assertEquals(2, store.clearHistory(HistoryScope.OneConnection(ConnectionId("id-1"))))
 
             assertTrue(store.history(ConnectionId("id-1")).isEmpty())
             assertEquals("Local", store.get(ConnectionId("id-1")).config.name)

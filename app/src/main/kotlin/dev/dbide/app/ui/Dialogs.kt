@@ -75,6 +75,17 @@ fun AppDialog(
      * away, and Escape and Cancel are both still there for someone who meant it.
      */
     dismissOnClickOutside: Boolean = true,
+    /**
+     * Whether the body scrolls as one column.
+     *
+     * True for a form, which is a stack of fields as tall as it needs to be. False
+     * for a window whose content does its own scrolling — a list long enough to
+     * deserve a lazy one cannot be measured inside a parent of unbounded height, and
+     * a history of a thousand statements is exactly that list. Turning it off also
+     * turns off the body padding, because a list that stops short of the window's
+     * edge cannot use the whole of it for rows.
+     */
+    scrolling: Boolean = true,
     rail: (@Composable ColumnScope.() -> Unit)? = null,
     footer: (@Composable RowScope.() -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit,
@@ -121,12 +132,21 @@ fun AppDialog(
                         VerticalHairline()
                     }
                     Column(
-                        verticalArrangement = Arrangement.spacedBy(Space.xl),
+                        verticalArrangement = if (scrolling) {
+                            Arrangement.spacedBy(Space.xl)
+                        } else {
+                            Arrangement.Top
+                        },
                         modifier = Modifier
                             .weight(1f)
                             .fillMaxHeight()
-                            .verticalScroll(rememberScrollState())
-                            .padding(Space.xxl),
+                            .then(
+                                if (scrolling) {
+                                    Modifier.verticalScroll(rememberScrollState()).padding(Space.xxl)
+                                } else {
+                                    Modifier
+                                },
+                            ),
                         content = content,
                     )
                 }

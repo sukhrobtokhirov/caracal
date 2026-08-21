@@ -38,6 +38,7 @@ object Glyphs {
     const val VALUE = "🔎"
     const val CONSOLE = "💻"
     const val SERVER = "📊"
+    const val HISTORY = "🕘"
     const val SETTINGS = "🧰"
     const val APPEARANCE = "🎨"
     const val ABOUT = "💡"

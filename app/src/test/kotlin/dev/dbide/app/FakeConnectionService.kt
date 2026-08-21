@@ -21,6 +21,11 @@ import dev.dbide.core.connections.TestResult
 import dev.dbide.core.connections.TlsMode
 import dev.dbide.core.connections.ValidationException
 import dev.dbide.core.export.CsvExportReport
+import dev.dbide.core.history.ExecutionRecord
+import dev.dbide.core.history.HistoryPage
+import dev.dbide.core.history.HistoryQuery
+import dev.dbide.core.history.HistoryScope
+import dev.dbide.core.history.cursor
 import dev.dbide.core.export.CsvOptions
 import dev.dbide.core.export.ExportLimits
 import dev.dbide.core.redis.CommandClearance
@@ -289,6 +294,50 @@ open class FakeConnectionService(
         requireUnlocked()
         destination.writeText(exportContent)
         return exportReport
+    }
+
+    // --- Query history, M4 ---------------------------------------------------
+
+    /**
+     * What history holds, newest last — the order the store writes rows in.
+     *
+     * A mutable list rather than a fixed answer, because the flows worth asserting
+     * here are the ones where a call changes it: clearing, and the reload that
+     * follows.
+     */
+    val history = mutableListOf<ExecutionRecord>()
+
+    override suspend fun history(request: HistoryQuery): HistoryPage {
+        calls += "history"
+        await()
+        requireUnlocked()
+        // Newest first, then the filters, then the keyset — the same order and the
+        // same meaning as the SQL, so a view model that pages correctly against this
+        // pages correctly against SQLite.
+        val matching = history.asReversed()
+            .filter { request.connectionId == null || it.connectionId == request.connectionId }
+            .filter { request.outcome == null || it.outcome == request.outcome }
+        val from = request.olderThan
+            ?.let { cursor -> matching.indexOfFirst { it.cursor() == cursor } + 1 }
+            ?: 0
+        val remaining = matching.drop(from)
+        val page = remaining.take(request.limit)
+        return HistoryPage(
+            items = page,
+            next = if (remaining.size > page.size) page.last().cursor() else null,
+        )
+    }
+
+    override suspend fun clearHistory(scope: HistoryScope): Int {
+        calls += "clearHistory"
+        await()
+        requireUnlocked()
+        val going = history.filter {
+            scope is HistoryScope.Everything ||
+                (scope as HistoryScope.OneConnection).id == it.connectionId
+        }
+        history.removeAll(going)
+        return going.size
     }
 
     private fun refuse(schema: String) {

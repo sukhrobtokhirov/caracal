@@ -7,6 +7,7 @@ import dev.dbide.core.store.DuplicateNameException
 import dev.dbide.core.vault.KdfParams
 import dev.dbide.core.vault.SecretIdentity
 import dev.dbide.core.vault.Vault
+import dev.dbide.core.history.HistoryScope
 import dev.dbide.core.vault.VaultLockedException
 import dev.dbide.core.vault.VaultState
 import dev.dbide.core.vault.WrongPasswordException
@@ -96,6 +97,11 @@ class ConnectionServiceTest {
             assertThrows<VaultLockedException> { session.service.test(view.id) }
             assertThrows<VaultLockedException> { session.service.open(view.id) }
             assertThrows<VaultLockedException> { session.service.close(view.id) }
+            // History is the newest of these and the easiest to leave out, and it is
+            // the one holding the statements: a locked application must not read back
+            // the `WHERE email = '…'` someone ran this morning.
+            assertThrows<VaultLockedException> { session.service.history() }
+            assertThrows<VaultLockedException> { session.service.clearHistory(HistoryScope.Everything) }
         }
     }
 

@@ -16,6 +16,11 @@ import dev.dbide.core.connections.TlsMode
 import dev.dbide.core.history.DEFAULT_HISTORY_RETENTION
 import dev.dbide.core.history.ExecutionOutcome
 import dev.dbide.core.history.ExecutionRecord
+import dev.dbide.core.history.HistoryCursor
+import dev.dbide.core.history.HistoryPage
+import dev.dbide.core.history.HistoryQuery
+import dev.dbide.core.history.HistoryScope
+import dev.dbide.core.history.MAX_HISTORY_PAGE
 import dev.dbide.core.vault.MetadataStore
 import java.nio.file.Files
 import java.nio.file.Path
@@ -175,37 +180,76 @@ class ConfigStore private constructor(
     }
 
     /**
-     * The most recent [limit] executions on one connection, newest first.
+     * One page of history, newest first.
      *
-     * The `id` tiebreak matters more than it looks: two statements run in the same
-     * millisecond are ordered by insertion and not arbitrarily, so a history panel
-     * paging through this cannot show a row twice or skip one.
+     * Ordered by `id` alone, and that is a decision rather than a shortcut. The
+     * obvious key is `executed_at`, and it does not work: the column holds
+     * `Instant.toString()`, which writes a fractional second only when there is one,
+     * so `…09:00:00.500Z` sorts *before* `…09:00:00Z` under the text comparison
+     * SQLite applies to it. A clock that steps backwards over NTP is the second
+     * reason. `id` is `INTEGER PRIMARY KEY AUTOINCREMENT`, assigned in the order rows
+     * were written, and every row has one — which is what a keyset needs and what a
+     * timestamp, here, is not.
      *
-     * This is what M4's history panel reads. It exists now because a record that
-     * nothing can read back is a record nothing has tested.
+     * The page is read with one row more than [HistoryQuery.limit] asks for and the
+     * extra one is discarded. That is what makes [HistoryPage.next] a fact rather
+     * than a guess: a Show more that appears at the end of a connection's history and
+     * then produces nothing is a control that has taught the user to distrust it.
      */
-    suspend fun history(id: ConnectionId, limit: Int = DEFAULT_HISTORY_RETENTION): List<ExecutionRecord> =
-        query { db ->
-            db.prepareStatement(
-                """
-                SELECT id, connection_id, statement, duration_ms, row_count, status, error, executed_at
-                FROM query_history WHERE connection_id = ?
-                ORDER BY executed_at DESC, id DESC LIMIT ?
-                """.trimIndent(),
-            ).use { statement ->
-                statement.setString(1, id.value)
-                statement.setInt(2, limit)
-                statement.executeQuery().use { rows ->
-                    buildList { while (rows.next()) add(rows.toExecutionRecord()) }
-                }
-            }
+    suspend fun history(request: HistoryQuery): HistoryPage = query { db ->
+        val limit = request.limit.coerceIn(1, MAX_HISTORY_PAGE)
+        // Each filter arrives as its condition and its value together, so a term can
+        // never reach the SQL without the bind that fills it. Nothing here is
+        // interpolated — not the connection id, and not the outcome that came from a
+        // closed enum and would have been safe.
+        val filters = buildList<Pair<String, Any>> {
+            request.connectionId?.let { add("connection_id = ?" to it.value) }
+            request.outcome?.let { add("status = ?" to it.stored) }
+            request.olderThan?.let { add("id < ?" to it.id) }
+        }
+        val where = if (filters.isEmpty()) {
+            ""
+        } else {
+            filters.joinToString(" AND ", prefix = "WHERE ") { it.first }
         }
 
-    /** Forgets one connection's history without touching the connection itself. */
-    suspend fun clearHistory(id: ConnectionId): Int = query { db ->
-        db.prepareStatement("DELETE FROM query_history WHERE connection_id = ?").use { statement ->
-            statement.setString(1, id.value)
-            statement.executeUpdate()
+        db.prepareStatement(
+            """
+            SELECT id, connection_id, statement, duration_ms, row_count, status, error, executed_at
+            FROM query_history $where ORDER BY id DESC LIMIT ?
+            """.trimIndent(),
+        ).use { statement ->
+            filters.forEachIndexed { index, (_, value) -> statement.setObject(index + 1, value) }
+            statement.setInt(filters.size + 1, limit + 1)
+            statement.executeQuery().use { rows ->
+                val read = buildList { while (rows.next()) add(rows.toExecutionRecord()) }
+                val items = read.take(limit)
+                HistoryPage(
+                    items = items,
+                    next = if (read.size > limit) items.last().id?.let(::HistoryCursor) else null,
+                )
+            }
+        }
+    }
+
+    /**
+     * Forgets history, for one connection or for all of them.
+     *
+     * The connections themselves are never touched. Deleting a connection deletes its
+     * history through the schema's cascade; this is the other direction, and it has to
+     * stay the other direction — a user clearing an afternoon of queries is not asking
+     * to lose the servers they ran them against.
+     */
+    suspend fun clearHistory(scope: HistoryScope): Int = query { db ->
+        when (scope) {
+            HistoryScope.Everything ->
+                db.prepareStatement("DELETE FROM query_history").use { it.executeUpdate() }
+
+            is HistoryScope.OneConnection ->
+                db.prepareStatement("DELETE FROM query_history WHERE connection_id = ?").use { statement ->
+                    statement.setString(1, scope.id.value)
+                    statement.executeUpdate()
+                }
         }
     }
 
@@ -222,7 +266,7 @@ class ConfigStore private constructor(
             DELETE FROM query_history
             WHERE connection_id = ? AND id NOT IN (
                 SELECT id FROM query_history WHERE connection_id = ?
-                ORDER BY executed_at DESC, id DESC LIMIT ?
+                ORDER BY id DESC LIMIT ?
             )
             """.trimIndent(),
         ).use { statement ->

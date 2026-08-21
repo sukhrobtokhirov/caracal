@@ -11,6 +11,9 @@ import dev.dbide.core.export.CsvOptions
 import dev.dbide.core.export.ExportLimits
 import dev.dbide.core.history.ExecutionOutcome
 import dev.dbide.core.history.ExecutionRecord
+import dev.dbide.core.history.HistoryPage
+import dev.dbide.core.history.HistoryQuery
+import dev.dbide.core.history.HistoryScope
 import dev.dbide.core.postgres.PostgresCatalog
 import dev.dbide.core.redis.CommandConsent
 import dev.dbide.core.redis.CommandResult
@@ -146,6 +149,30 @@ interface ConnectionService {
         options: CsvOptions = CsvOptions(),
         limits: ExportLimits = ExportLimits(),
     ): CsvExportReport
+
+    /**
+     * One page of query history, newest first.
+     *
+     * Reading it needs the vault open, for the same reason listing connections does:
+     * a statement is a map of a database, and often of a person — `WHERE email =
+     * '…'` is a record of someone whether or not it ever returned a row.
+     *
+     * The connection a row names is not resolved here. Every row's connection still
+     * exists — the schema cascades history away with it — and the caller already
+     * holds the list it would be joined against, so a name read from that list is the
+     * connection's *current* name rather than one copied at some point in the past.
+     */
+    suspend fun history(request: HistoryQuery = HistoryQuery()): HistoryPage
+
+    /**
+     * Forgets history, for one connection or for all of them. Returns how many rows
+     * went.
+     *
+     * Never removes a connection. The cascade runs the other way, and a user asking
+     * to forget an afternoon of queries is not asking to lose the servers they ran
+     * them against.
+     */
+    suspend fun clearHistory(scope: HistoryScope): Int
 
     /**
      * The `INFO` summary of an open Redis connection.
@@ -427,6 +454,18 @@ class DefaultConnectionService(
         requireUnlocked()
         val adapter = registry.postgres(id).adapter
         return CsvExport.writeToFile(destination) { out -> adapter.exportCsv(sql, out, options, limits) }
+    }
+
+    // --- Query history, M4 ---------------------------------------------------
+
+    override suspend fun history(request: HistoryQuery): HistoryPage {
+        requireUnlocked()
+        return store.history(request)
+    }
+
+    override suspend fun clearHistory(scope: HistoryScope): Int {
+        requireUnlocked()
+        return store.clearHistory(scope)
     }
 
     /** Releases every client. Called during application shutdown. */

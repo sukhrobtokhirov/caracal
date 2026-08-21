@@ -37,6 +37,7 @@ import androidx.compose.ui.unit.dp
 import dev.dbide.app.ConnectionsViewModel
 import dev.dbide.app.EditorViewModel
 import dev.dbide.app.ExportViewModel
+import dev.dbide.app.HistoryViewModel
 import dev.dbide.app.Pane
 import dev.dbide.app.RedisWorkspace
 import dev.dbide.app.SchemaTreeViewModel
@@ -97,6 +98,7 @@ fun WorkspaceScreen(
     editor: EditorViewModel,
     export: ExportViewModel,
     redis: RedisWorkspace,
+    history: HistoryViewModel,
     theme: ThemeViewModel,
     onLock: () -> Unit,
 ) {
@@ -151,6 +153,12 @@ fun WorkspaceScreen(
     // list, so it survives selecting a different connection behind it.
     var settings: Boolean by remember { mutableStateOf(false) }
 
+    // The history window, which is the one surface that spans connections: the tab
+    // strip belongs to one open server, and "what did I run this morning" is rarely a
+    // question about only one of them. It opens filtered to the selected connection,
+    // because that is what the user was looking at a moment ago.
+    var historyOpen: Boolean by remember { mutableStateOf(false) }
+
     // What a row can do to itself. Opening also selects, so double-clicking one row
     // while another is selected does not leave the shell naming the wrong server.
     val actions = ConnectionActions(
@@ -176,6 +184,10 @@ fun WorkspaceScreen(
                 selected = current,
                 sidebar = sidebar,
                 onToggleSidebar = { sidebar = !sidebar },
+                onOpenHistory = {
+                    history.open(current?.id)
+                    historyOpen = true
+                },
                 onOpenSettings = { settings = true },
                 onLock = onLock,
             )
@@ -308,6 +320,28 @@ fun WorkspaceScreen(
 
     if (settings) SettingsDialog(theme = theme, onDismiss = { settings = false })
 
+    if (historyOpen) {
+        HistoryWindow(
+            model = history,
+            connections = viewModel.connections,
+            actions = HistoryActions(
+                copy = copy,
+                // Only where there is an editor pointed at that same server. Opening
+                // the connection first would be this window dialling production
+                // because someone clicked a row to read it.
+                openInEditor = postgres?.let {
+                    { record ->
+                        historyOpen = false
+                        tab = WorkspaceTab.QUERY
+                        editor.open(record.statement)
+                    }
+                },
+                editorConnection = postgres?.id,
+            ),
+            onDismiss = { historyOpen = false },
+        )
+    }
+
     viewModel.pendingDelete?.let { pending ->
         DeleteConfirmation(
             view = pending,
@@ -341,6 +375,7 @@ private fun WorkspaceBar(
     selected: ConnectionView?,
     sidebar: Boolean,
     onToggleSidebar: () -> Unit,
+    onOpenHistory: () -> Unit,
     onOpenSettings: () -> Unit,
     onLock: () -> Unit,
 ) {
@@ -404,6 +439,11 @@ private fun WorkspaceBar(
             // The theme moved inside the settings window. A button that cycles three
             // values can only be understood by pressing it repeatedly, and the window
             // it now lives in shows all three with what each one is for.
+            ToolButton(
+                text = "History",
+                onClick = onOpenHistory,
+                description = "open-history",
+            )
             ToolButton(
                 text = "Settings",
                 onClick = onOpenSettings,
