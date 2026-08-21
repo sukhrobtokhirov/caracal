@@ -1,9 +1,11 @@
 package dev.dbide.app.ui
 
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Shapes
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
@@ -12,7 +14,10 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -74,6 +79,30 @@ fun DbideTheme(
     }
 }
 
+/**
+ * The window's ground, under everything and under nothing in particular.
+ *
+ * A window whose content draws nothing is not a window showing nothing — it is a
+ * window showing whatever the toolkit last cleared its surface to, which is white.
+ * That is fine right up until the application is dark by default and has two states
+ * that legitimately draw nothing: the frames before the configuration database has
+ * been opened, and the frames before the vault has said whether it exists. Both of
+ * them are at launch, which is where a flash of white is most visible and least
+ * excusable.
+ *
+ * So the root is painted rather than left to the platform. It costs one fill of one
+ * rectangle and it is the difference between an application that opens and one that
+ * blinks.
+ */
+@Composable
+fun AppSurface(content: @Composable () -> Unit) {
+    Surface(
+        modifier = Modifier.fillMaxSize().semantics { contentDescription = "app-surface" },
+        color = MaterialTheme.colorScheme.background,
+        content = content,
+    )
+}
+
 /** Reads the theme the way `MaterialTheme` does, so call sites look the same. */
 object Dbide {
     val colors: DbideColors
@@ -94,7 +123,15 @@ data class DbideColors(
     val chrome: Color,
     /** A pane's header strip: the tree's title row, the grid's column headers. */
     val paneHeader: Color,
-    /** Every divider in the application. Dimmer than Material's, on purpose. */
+    /**
+     * Every divider in the application, and the outline of anything that is only
+     * being grouped. Dimmer than Material's, on purpose.
+     *
+     * Not the border of something you can click or type into: a control whose
+     * boundary is the only thing identifying it needs 3:1 against what it sits on,
+     * which is more than a divider between two panes should ever be. Those use
+     * `colorScheme.outline`, and `ThemeContrastTest` holds both to their own floor.
+     */
     val hairline: Color,
     /** A row under the pointer. */
     val hover: Color,
@@ -102,7 +139,12 @@ data class DbideColors(
     val stripe: Color,
     /** Behind the editor's line numbers. */
     val gutter: Color,
-    /** The line numbers themselves. */
+    /**
+     * The line numbers themselves.
+     *
+     * Recessed, but not below AA: "the error is on line 214" is unreadable advice
+     * if 214 is the number you cannot make out.
+     */
     val gutterText: Color,
     /** The line the caret is on. */
     val currentLine: Color,
@@ -116,7 +158,14 @@ data class DbideColors(
     val syntax: SyntaxColors,
 )
 
-/** What the SQL lexer's token kinds are drawn as. */
+/**
+ * What the SQL lexer's token kinds are drawn as.
+ *
+ * Every one of these is body text and is held to 4.5:1 against the editor — against
+ * the current-line band as well as the plain surface, because the line the caret is
+ * on is the line being read. `comment` is the one that had to move for it: a comment
+ * is meant to recede, and it was receding past the point of being legible.
+ */
 @Immutable
 data class SyntaxColors(
     val keyword: Color,
@@ -145,7 +194,7 @@ val LocalDbideColors = staticCompositionLocalOf { DarkExtras }
  * value each, which is what lets a pane, its header, and the shell behind it all be
  * distinguishable without a border between any of them.
  */
-private val DarkScheme = darkColorScheme(
+internal val DarkScheme = darkColorScheme(
     primary = Color(0xFF6BA1FF),
     onPrimary = Color(0xFF07214C),
     primaryContainer = Color(0xFF21395F),
@@ -168,7 +217,7 @@ private val DarkScheme = darkColorScheme(
     surfaceVariant = Color(0xFF23272F),
     onSurfaceVariant = Color(0xFF98A1AE),
     surfaceContainerHighest = Color(0xFF2A2F38),
-    outline = Color(0xFF4A525E),
+    outline = Color(0xFF697586),
     outlineVariant = Color(0xFF2C323B),
     // Production red has to survive being a small badge on a dark background, which
     // is why it is lighter than a warning colour would normally be.
@@ -178,14 +227,14 @@ private val DarkScheme = darkColorScheme(
     onErrorContainer = Color(0xFFFFDAD5),
 )
 
-private val DarkExtras = DbideColors(
+internal val DarkExtras = DbideColors(
     chrome = Color(0xFF12151A),
     paneHeader = Color(0xFF1E222A),
     hairline = Color(0xFF2C323B),
     hover = Color(0x0DFFFFFF),
     stripe = Color(0x0BFFFFFF),
     gutter = Color(0xFF1A1D23),
-    gutterText = Color(0xFF5D6673),
+    gutterText = Color(0xFF7D8A9B),
     currentLine = Color(0x0AFFFFFF),
     focusRing = Color(0xFF6BA1FF),
     success = Color(0xFF5FC894),
@@ -194,7 +243,7 @@ private val DarkExtras = DbideColors(
     syntax = SyntaxColors(
         keyword = Color(0xFF7FB3FF),
         string = Color(0xFF98C379),
-        comment = Color(0xFF6B7583),
+        comment = Color(0xFF828FA0),
         number = Color(0xFFE5A15C),
         identifier = Color(0xFFC6A0F6),
         parameter = Color(0xFFE5C07B),
@@ -203,7 +252,7 @@ private val DarkExtras = DbideColors(
 
 // --- Light -----------------------------------------------------------------
 
-private val LightScheme = lightColorScheme(
+internal val LightScheme = lightColorScheme(
     primary = Color(0xFF1B62D6),
     onPrimary = Color(0xFFFFFFFF),
     primaryContainer = Color(0xFFD9E6FF),
@@ -223,7 +272,7 @@ private val LightScheme = lightColorScheme(
     surfaceVariant = Color(0xFFEDEFF3),
     onSurfaceVariant = Color(0xFF5A6472),
     surfaceContainerHighest = Color(0xFFE4E8EE),
-    outline = Color(0xFFA7B0BD),
+    outline = Color(0xFF7F8690),
     outlineVariant = Color(0xFFDFE3E9),
     error = Color(0xFFC13A2E),
     onError = Color(0xFFFFFFFF),
@@ -232,19 +281,21 @@ private val LightScheme = lightColorScheme(
 )
 
 /**
- * The light palette's syntax colours are the ones this editor already shipped with.
+ * The light palette's syntax colours are, near enough, the ones this editor shipped
+ * with.
  *
  * They were chosen against a white background and they work there; what the dark
- * theme needed was a second set, not a replacement for these.
+ * theme needed was a second set, not a replacement for these. Only `comment` moved,
+ * and only far enough to clear 4.5:1 — it was sitting at 4.29.
  */
-private val LightExtras = DbideColors(
+internal val LightExtras = DbideColors(
     chrome = Color(0xFFEDEFF3),
     paneHeader = Color(0xFFF2F4F7),
     hairline = Color(0xFFDFE3E9),
     hover = Color(0x0A000000),
     stripe = Color(0x05000000),
     gutter = Color(0xFFF2F4F7),
-    gutterText = Color(0xFF8C95A3),
+    gutterText = Color(0xFF666C76),
     currentLine = Color(0x08000000),
     focusRing = Color(0xFF1B62D6),
     success = Color(0xFF1E7A4C),
@@ -253,7 +304,7 @@ private val LightExtras = DbideColors(
     syntax = SyntaxColors(
         keyword = Color(0xFF0B5FA5),
         string = Color(0xFF1B7A3D),
-        comment = Color(0xFF7A7A7A),
+        comment = Color(0xFF6E6E6E),
         number = Color(0xFF9A4B00),
         identifier = Color(0xFF6A3FB5),
         parameter = Color(0xFF9A4B00),

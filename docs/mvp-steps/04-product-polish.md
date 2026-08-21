@@ -599,6 +599,76 @@ grid of unknown width, and a key list of unknown length all have no shape to
 pre-draw. A named wait is honest about knowing nothing; a skeleton of the wrong shape
 is a guess the user has to unlearn when the real thing arrives.
 
+### 4.8 — theme and contrast
+
+**The theme itself arrived early and is unchanged.** Light, dark, and system have
+been in the application since the M2 visual pass: two colour systems side by side —
+Material's scheme for what its own components read, and `DbideColors` for the dozen
+things Material has no word for, a hairline between panes, a zebra stripe, an editor
+keyword. The section asks for tokens rather than component-specific colour patches
+and that is what was already there; what §4.8 found was not missing tokens but
+tokens whose *values* nobody had checked.
+
+**Contrast is now arithmetic rather than an opinion.** `ThemeContrastTest` computes
+the WCAG 2.1 relative luminance of every readable pairing in both palettes — 124 of
+them — and fails below 4.5:1 for text and 3:1 for a boundary that identifies a
+control. It found six real failures, three in each theme, and all six are fixed:
+
+| | was | is | why it mattered |
+|---|---|---|---|
+| line numbers | 2.90 / 2.75 | 4.81 / 4.80 | "the error is on line 214" is unreadable advice when 214 is unreadable |
+| syntax comment | 3.62 / 4.29 | 4.61 / 4.76 | a comment should recede, not disappear |
+| `outline` | 2.14 / 2.19 | 3.20 / 3.19 | it is the border of a text field and the dot that means *closed* |
+
+The floors are measured against the worst surface each colour can land on rather
+than the one it was picked over — five surfaces for a border, and for the editor
+both the plain background and the band under the caret, because the line the caret
+is on is the line being read. A translucent token is composited first: `currentLine`
+is white at four percent, which sounds like nothing and costs the old comment colour
+another third of a point.
+
+**Not every hairline was a divider.** `Dbide.colors.hairline` is documented as the
+divider token and was also drawing the border of the theme toggle and of every
+inline text field — controls whose boundary is the only thing saying they are there.
+Those two now use `colorScheme.outline`, which is what Material means by the role and
+is now held to 3:1; `hairline` stays where it was, because a rule between two panes
+identifies nothing and a 3:1 grid of them would make the whole window shout. A test
+asserts that ordering directly, so raising `hairline` to something that would pass
+fails instead.
+
+**The first frame was white.** The window has two states that legitimately draw
+nothing — before the configuration database is open, and before the vault has said
+whether it exists — and both are at launch. A Compose window whose content draws
+nothing does not show nothing; it shows whatever the toolkit last cleared its surface
+to, which is white. A dark-by-default application was flashing white on every single
+launch, in the one place a splash screen would go. The root is now painted
+(`AppSurface`), and the AWT frame's own background follows the theme too, for the
+gap on realization and during a live resize where the toolkit outruns the renderer.
+`ThemeUiTest` captures the pixels of an empty frame and asserts its colour, because
+this is a bug about what reached the screen rather than about what a composable was
+told.
+
+**The preference is read with the store, not a frame after it.** It was loaded from
+a `LaunchedEffect` once the store existed, so a light-preferring user got one frame
+of dark and then their own theme. `ThemeViewModel.read` now runs inside the same
+IO pass that opens the database — one row on a connection that is open anyway — and
+the first frame with any content in it is already correct. The frames *before* that
+are still the default, and deliberately: the alternative is holding the window shut
+on a disk read, and a slower launch is a worse trade than a correctly-coloured empty
+rectangle.
+
+**Density was left alone.** The section pairs theme with "Theme and density" in the
+settings rail, and density is not offered. The type scale and the row heights are
+already a deliberate desk-distance answer, tuned once in `Space`, `Sizes`, and
+`DenseTypography`; a second scale would double every layout decision in the
+application to serve a preference nobody has asked for yet. The rail entry says what
+the section contains today.
+
+**Disabled controls stay at Material's alpha.** WCAG exempts an inactive control, and
+§4.7 had already dealt with the real complaint underneath the rule — every disabled
+button in the application now sits beside a word saying what it is waiting for, which
+is the thing a contrast ratio was never going to supply.
+
 ## Completion checklist
 
 - [x] Query history is bounded, paged, filterable, reopenable, and clearable.
@@ -609,7 +679,7 @@ is a guess the user has to unlearn when the real thing arrives.
 - [x] Errors are normalized and presented at the correct scope.
 - [x] PostgreSQL error highlighting is accurate and never stale/misleading.
 - [x] Every primary surface has intentional loading and empty states.
-- [ ] Light/dark/system themes cover editor, grid, dialogs, and status colors.
+- [x] Light/dark/system themes cover editor, grid, dialogs, and status colors.
 - [ ] Core workflows are keyboard accessible and usable at zoom.
 - [ ] Large normal-use states stay responsive and memory-bounded.
 

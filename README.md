@@ -30,7 +30,10 @@ no JDK to install: the installer bundles its own trimmed runtime.
 > moment the script moves out from under it. Every pane that waits on a server says
 > what it is waiting for, every empty one says how to fill it, and a connection that
 > drops says your open scripts are still here and offers the button that brings them
-> back. See
+> back. Light, dark, and system are one set of named tokens rather than a colour per
+> component, every readable pair in both of them is held to WCAG AA by a test that
+> does the arithmetic, and the window no longer opens with a frame of white before it
+> remembers it is dark. See
 > [`docs/mvp-steps/`](docs/mvp-steps/README.md).
 
 ## The shape of the product
@@ -187,7 +190,7 @@ core/src/main/kotlin/dev/dbide/core/
 app/src/main/kotlin/dev/dbide/app/
   ui/            connection screens [M1]; schema tree, SQL editor, result grid [M2];
                  key browser, value viewers, INFO dashboard, console          [M3];
-                 query history                                                [M4]
+                 query history, theme and contrast tokens                     [M4]
   Main.kt        window, application lifecycle
 ```
 

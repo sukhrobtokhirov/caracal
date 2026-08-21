@@ -1,17 +1,21 @@
 package dev.dbide.app
 
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.withFrameNanos
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.FrameWindowScope
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
+import dev.dbide.app.ui.AppSurface
 import dev.dbide.app.ui.DbideTheme
 import dev.dbide.app.ui.QuitConfirmation
+import dev.dbide.app.ui.ThemeMode
 import dev.dbide.app.ui.VaultScreen
 import dev.dbide.app.ui.VaultUnavailableScreen
 import dev.dbide.app.ui.WorkspaceScreen
@@ -42,6 +46,8 @@ import kotlinx.coroutines.withContext
 private class Application(
     private val store: ConfigStore,
     val service: ConnectionService,
+    /** The theme preference, read while the store was being opened. */
+    val theme: ThemeMode,
 ) : AutoCloseable {
     /**
      * The unencrypted corner of the configuration database.
@@ -63,7 +69,13 @@ private class Application(
             val store = ConfigStore.open(AppPaths.configDatabase())
             val vault = Vault(store)
             val registry = ConnectionRegistry()
-            Application(store, DefaultConnectionService(store, vault, registry))
+            Application(
+                store = store,
+                service = DefaultConnectionService(store, vault, registry),
+                // Read here rather than from the composition, so the theme arrives
+                // with the store instead of one frame after it.
+                theme = ThemeViewModel.read(store),
+            )
         }
     }
 }
@@ -95,27 +107,37 @@ fun main() = application {
         window.minimumSize = Dimension(760, 480)
         ReportColdStart()
 
-        // The theme is bound to the store as soon as there is one. Before that — the
-        // first frame, and the frame that says the store could not be opened — it is
-        // the default, which is why the default is the one that does not flash.
+        // The theme arrives with the store, already read. Before that — the frames
+        // before the store is open, and the one that says it could not be — it is the
+        // default, which is why the default is the one most people would have chosen.
         val theme = remember(startup) {
-            ThemeViewModel((startup as? Startup.Ready)?.value?.preferences, scope)
+            val ready = (startup as? Startup.Ready)?.value
+            ThemeViewModel(ready?.preferences, scope, ready?.theme ?: ThemeMode.DEFAULT)
         }
-        LaunchedEffect(theme) { theme.load() }
 
         DbideTheme(theme.mode) {
-            when (val state = startup) {
-                // The first frame, before the configuration database has been opened.
-                Startup.Opening -> Unit
-                is Startup.Failed -> VaultUnavailableScreen(VaultUiState.Unavailable(state.failure))
-                is Startup.Ready -> Workspace(
-                    service = state.value.service,
-                    theme = theme,
-                    scope = scope,
-                    exit = exit,
-                    shortcuts = shortcuts,
-                    onQuit = ::exitApplication,
-                )
+            // What AWT clears the frame to before Skia has painted anything into it:
+            // on realization, and on every live resize, where the toolkit outruns the
+            // renderer and paints the gap itself. The platform default is white.
+            val shell = MaterialTheme.colorScheme.background
+            LaunchedEffect(shell) { window.background = java.awt.Color(shell.toArgb()) }
+
+            // Painted, and painted first: two of the states below draw nothing at all,
+            // and both of them are at launch. See [AppSurface].
+            AppSurface {
+                when (val state = startup) {
+                    // The first frame, before the configuration database has been opened.
+                    Startup.Opening -> Unit
+                    is Startup.Failed -> VaultUnavailableScreen(VaultUiState.Unavailable(state.failure))
+                    is Startup.Ready -> Workspace(
+                        service = state.value.service,
+                        theme = theme,
+                        scope = scope,
+                        exit = exit,
+                        shortcuts = shortcuts,
+                        onQuit = ::exitApplication,
+                    )
+                }
             }
         }
     }

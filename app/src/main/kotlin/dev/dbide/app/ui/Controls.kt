@@ -219,7 +219,9 @@ fun ThemeToggle(mode: ThemeMode, onCycle: () -> Unit, modifier: Modifier = Modif
     Box(
         modifier = modifier
             .clip(MaterialTheme.shapes.small)
-            .border(Sizes.hairline, Dbide.colors.hairline, MaterialTheme.shapes.small)
+            // `outline`, not `hairline`: this border is the only thing saying there is
+            // a button here, and a boundary that identifies a control owes 3:1.
+            .border(Sizes.hairline, MaterialTheme.colorScheme.outline, MaterialTheme.shapes.small)
             .hoverHighlight(MaterialTheme.shapes.small)
             .clickable(onClick = onCycle)
             .handCursor()
@@ -333,7 +335,8 @@ fun InlineField(
         modifier = modifier
             .clip(MaterialTheme.shapes.small)
             .background(MaterialTheme.colorScheme.surface)
-            .border(Sizes.hairline, Dbide.colors.hairline, MaterialTheme.shapes.small)
+            // As above: an empty field is a rectangle, and the rectangle is the field.
+            .border(Sizes.hairline, MaterialTheme.colorScheme.outline, MaterialTheme.shapes.small)
             .padding(horizontal = Space.md, vertical = Space.sm),
         contentAlignment = Alignment.CenterStart,
     ) {

@@ -34,7 +34,10 @@ import dev.dbide.core.connections.Engine
 
 /** Which section of the settings window is showing. */
 private enum class SettingsSection(val label: String, val glyph: String, val detail: String) {
-    APPEARANCE("Appearance", Glyphs.APPEARANCE, "Theme and density"),
+    // Not "Theme and density": the density is one deliberate desk-distance answer
+    // tuned in Space, Sizes, and DenseTypography, and it is not a preference. A rail
+    // entry naming a setting that is not in the panel is a rail entry that lies.
+    APPEARANCE("Appearance", Glyphs.APPEARANCE, "How the application looks"),
     ENGINES("Engines", Glyphs.DATABASE, "What this build can talk to"),
     ABOUT("About", Glyphs.ABOUT, "Where your data lives"),
 }
