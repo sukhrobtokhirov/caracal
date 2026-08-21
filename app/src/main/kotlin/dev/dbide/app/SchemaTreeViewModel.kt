@@ -114,6 +114,22 @@ class SchemaTreeViewModel(
     /** The in-flight read per node; the schema list is the one keyed by `null`. */
     private val jobs = mutableMapOf<NodeKey?, Job>()
 
+    /**
+     * The nodes being re-read while their previous answer is still on screen.
+     *
+     * §4.7 asks for refreshing and initial loading to be different states, and in a
+     * tree the difference is the whole point of the distinction. A first read has
+     * nothing to show and says so. A re-read has the old listing, which is very
+     * nearly right, and blanking the pane to a spinner throws away the user's scroll
+     * position, their place in a list of four hundred schemas, and the row they were
+     * about to click — to replace it, a second later, with almost exactly the same
+     * thing.
+     */
+    private val refreshing: SnapshotStateSet<NodeKey?> = mutableStateSetOf()
+
+    /** Whether the schema list itself is being re-read under what is already drawn. */
+    val reloading: Boolean get() = null in refreshing
+
     /** The tree, flattened to what is visible right now. */
     val rows: List<TreeRow>
         get() = buildList {
@@ -203,15 +219,31 @@ class SchemaTreeViewModel(
                 label = schema.name,
                 kind = RowKind.SCHEMA,
                 detail = schema.owner,
-                flags = if (schema.system) listOf("system") else emptyList(),
+                flags = buildList {
+                    if (schema.system) add("system")
+                    // Worth a flag even on a schema that is full, because every object
+                    // under it will refuse to be read and the listing gives no hint of
+                    // that: `pg_catalog` is readable by everyone.
+                    if (!schema.usable) add("no access")
+                },
                 expandable = true,
                 expanded = open,
                 // All four kinds are read together when the schema opens, so the wait
                 // belongs to the schema rather than to four separate lines of it.
-                loading = open && states.any { it == null || it is NodeState.Loading },
+                loading = open && (
+                    states.any { it == null || it is NodeState.Loading } ||
+                        folders.any { it in refreshing }
+                    ),
                 error = if (open) refused?.failure?.message else null,
+                // §4.7: an empty schema and one this role cannot look into are the
+                // same blank space and different problems. The privilege is the more
+                // useful of the two answers, so it is the one that gets said.
                 note = if (open && states.all { it is NodeState.Ready && it.items.isEmpty() }) {
-                    "This schema has no tables, views, or functions."
+                    if (schema.usable) {
+                        "This schema has no tables, views, or functions."
+                    } else {
+                        "This role has no USAGE on this schema, so nothing in it is visible."
+                    }
                 } else {
                     null
                 },
@@ -245,6 +277,7 @@ class SchemaTreeViewModel(
                 detail = ready?.items?.size?.toString(),
                 expandable = ready != null,
                 expanded = open,
+                loading = key in refreshing,
                 error = (state as? NodeState.Failed)?.failure?.message,
                 note = if (open && ready?.truncated == true) {
                     "Showing the first ${ready.items.size}."
@@ -279,7 +312,7 @@ class SchemaTreeViewModel(
                 // Functions have no columns worth a tree node in v0.1, so they do not open.
                 expandable = target.kind != ObjectKind.FUNCTION,
                 expanded = open,
-                loading = state is NodeState.Loading,
+                loading = state is NodeState.Loading || key in refreshing,
                 error = (state as? NodeState.Failed)?.failure?.message,
                 note = if (open && ready?.items?.isEmpty() == true) "No columns." else null,
                 identifier = Identifiers.qualify(target.schema, target.name),
@@ -311,7 +344,7 @@ class SchemaTreeViewModel(
 
     private fun loadSchemas() {
         val id = connectionId ?: return
-        launch(null, { root = it }) {
+        launch(null, root, { root = it }) {
             val listing = service.schemas(id, showSystemSchemas)
             NodeState.Ready(listing.items, listing.truncated)
         }
@@ -333,7 +366,7 @@ class SchemaTreeViewModel(
 
             is NodeKey.Folder -> {
                 if (!force && objects[key].isSettled) return
-                launch(key, { objects[key] = it }) {
+                launch(key, objects[key], { objects[key] = it }) {
                     val listing = service.objects(id, key.schema, key.kind)
                     NodeState.Ready(listing.items, listing.truncated)
                 }
@@ -341,7 +374,7 @@ class SchemaTreeViewModel(
 
             is NodeKey.Relation -> {
                 if (!force && columns[key].isSettled) return
-                launch(key, { columns[key] = it }) {
+                launch(key, columns[key], { columns[key] = it }) {
                     NodeState.Ready(service.columns(id, key.schema, key.name))
                 }
             }
@@ -358,11 +391,16 @@ class SchemaTreeViewModel(
      */
     private fun <T> launch(
         key: NodeKey?,
+        current: NodeState<T>?,
         into: (NodeState<T>) -> Unit,
         body: suspend () -> NodeState<T>,
     ) {
         jobs.remove(key)?.cancel()
-        into(NodeState.Loading)
+        // A node that already has an answer keeps showing it and is marked as being
+        // re-read; one that has none, or whose last attempt failed, reports Loading.
+        // A failure is not something to leave on screen while it is being retried —
+        // the whole reason the user pressed Refresh is that they do not want it.
+        if (current is NodeState.Ready) refreshing += key else into(NodeState.Loading)
         val job = scope.launch {
             val state = try {
                 body()
@@ -372,14 +410,22 @@ class SchemaTreeViewModel(
                 NodeState.Failed(problem.toFailure())
             }
             into(state)
+            refreshing -= key
         }
         jobs[key] = job
-        job.invokeOnCompletion { jobs.remove(key, job) }
+        job.invokeOnCompletion {
+            jobs.remove(key, job)
+            // Cancellation does not run the body's last line. A node collapsed
+            // mid-read would otherwise be marked as refreshing for the rest of the
+            // session, and its row would spin forever.
+            refreshing -= key
+        }
     }
 
     private fun reset() {
         jobs.values.forEach { it.cancel() }
         jobs.clear()
+        refreshing.clear()
         objects.clear()
         columns.clear()
         expanded.clear()

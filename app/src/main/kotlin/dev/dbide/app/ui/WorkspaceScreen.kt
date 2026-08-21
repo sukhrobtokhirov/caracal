@@ -11,7 +11,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -51,6 +53,7 @@ import dev.dbide.core.connections.ConnectionId
 import dev.dbide.core.connections.ConnectionView
 import dev.dbide.core.connections.Engine
 import dev.dbide.core.connections.Environment
+import dev.dbide.core.connections.RuntimeStatus
 import java.awt.datatransfer.StringSelection
 import kotlinx.coroutines.launch
 
@@ -393,7 +396,7 @@ fun WorkspaceScreen(
                     // the application threw the user's place away to ask a question.
                     val view = current
                     if (view == null) {
-                        EmptyPane(any = viewModel.connections.isNotEmpty())
+                        EmptyPane(any = viewModel.connections.isNotEmpty(), onCreate = viewModel::startCreating)
                     } else {
                         val detail: @Composable () -> Unit = {
                             ConnectionDetail(
@@ -408,9 +411,25 @@ fun WorkspaceScreen(
                         }
                         // The editor exists only where there is a server to send a
                         // statement to. A closed connection has its details and
-                        // nothing else, which is also the screen that reopens it.
+                        // nothing else, which is also the screen that reopens it —
+                        // except while it is being dialled, or while it is down with
+                        // the user's scripts still in this process. §4.7: those two are
+                        // not "here are some settings", they are "wait" and "this
+                        // broke, your work is safe, here is the button".
                         if (browsing?.id != view.id) {
-                            detail()
+                            when {
+                                view.runtime.status == RuntimeStatus.OPENING ->
+                                    Connecting(view.config.name)
+
+                                tabs.of(view.id).isNotEmpty() -> Disconnected(
+                                    view = view,
+                                    tabs = tabs.of(view.id).size,
+                                    busy = viewModel.busy,
+                                    onReconnect = { viewModel.open(view.id) },
+                                )
+
+                                else -> detail()
+                            }
                         } else {
                             WorkspaceTabs(tabs = panes, selected = tab, onSelect = { tab = it })
                             Hairline()
@@ -721,6 +740,83 @@ private fun WorkspaceTabs(
 }
 
 /**
+ * The connection is being dialled.
+ *
+ * A named wait rather than a blank pane. Opening a server can take a few seconds
+ * behind a VPN, and a pane that shows nothing for those seconds is indistinguishable
+ * from a pane that has broken.
+ */
+@Composable
+private fun Connecting(name: String) {
+    Box(
+        modifier = Modifier.fillMaxSize().semantics { contentDescription = "workspace-connecting" },
+        contentAlignment = Alignment.Center,
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
+            Text(
+                text = "Connecting to $name…",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(start = Space.lg),
+            )
+        }
+    }
+}
+
+/**
+ * The connection is down and this window still holds work that was open on it.
+ *
+ * §4.7 asks for Reconnect "without discarding editor text", and the text was never
+ * in danger — `EditorTabs` keeps a connection's tabs when the connection goes away,
+ * and hands them back when it returns. What was missing is anyone saying so. A user
+ * whose editor has just been replaced by a page of connection settings has every
+ * reason to assume the twenty lines they had not run are gone, and the only way to
+ * find out otherwise is to risk finding out they were right.
+ *
+ * So the count is said out loud, the reason the server gave is repeated here rather
+ * than left on the connection tab, and Reconnect is the primary action on the pane
+ * the work was on.
+ */
+@Composable
+private fun Disconnected(
+    view: ConnectionView,
+    tabs: Int,
+    busy: Boolean,
+    onReconnect: () -> Unit,
+) {
+    EmptyState(
+        title = if (view.runtime.status == RuntimeStatus.ERROR) {
+            "${view.config.name} is not connected"
+        } else {
+            "${view.config.name} is closed"
+        },
+        detail = listOfNotNull(
+            view.runtime.lastError,
+            if (tabs == 1) {
+                "Your open tab and everything in it is still here, and comes back with " +
+                    "the connection."
+            } else {
+                "Your $tabs open tabs and everything in them are still here, and come " +
+                    "back with the connection."
+            },
+        ).joinToString(" "),
+        description = "workspace-disconnected",
+        action = {
+            ToolButton(
+                // Never left disabled without a word for why: while something else is
+                // in flight the button says what it is waiting on.
+                text = if (busy) "Working…" else "Reconnect",
+                onClick = onReconnect,
+                description = "workspace-reconnect",
+                enabled = !busy,
+                emphasis = ToolEmphasis.PRIMARY,
+            )
+        },
+    )
+}
+
+/**
  * The working pane with nothing selected.
  *
  * Two different sentences, because they are two different situations: an empty
@@ -729,14 +825,26 @@ private fun WorkspaceTabs(
  * teaches someone that its messages are not worth reading.
  */
 @Composable
-private fun EmptyPane(any: Boolean) {
+private fun EmptyPane(any: Boolean, onCreate: () -> Unit) {
     EmptyState(
         title = if (any) "No connection selected" else "No connections yet",
         detail = if (any) {
             "Select a connection, or create one."
         } else {
-            "Choose New to add a PostgreSQL or Redis server. Everything stays on this machine."
+            "Add a PostgreSQL or Redis server and it opens here. Everything stays on this " +
+                "machine, encrypted under your master password."
         },
         description = "workspace-empty",
+        action = {
+            // On both, not only on the first run. A populated install with nothing
+            // selected still has a sidebar to click, but the button costs one line and
+            // spares the user hunting for the one in a sidebar they may have collapsed.
+            ToolButton(
+                text = "Add connection",
+                onClick = onCreate,
+                description = "workspace-empty-create",
+                emphasis = ToolEmphasis.PRIMARY,
+            )
+        },
     )
 }

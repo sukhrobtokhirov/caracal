@@ -536,6 +536,69 @@ marking the one before it would be pointing at the wrong thing.
 changed type between being selected and being read reloads the viewer as the type it
 now is — `DbError.KeyTypeChanged` carries it. Neither reaches the workspace.
 
+### 4.7 — loading and empty states
+
+**Most of the required states were already there,** built with the surface each one
+belongs to rather than retrofitted here: the locked store explains why the master
+password is wanted, an empty history says where history is kept, a zero-row result
+keeps its column headers and its duration, a statement that returned no columns says
+what it did return, an empty Redis string, stream, or collection says the key exists
+and holds nothing, and a `SCAN` that stopped on a budget is a different sentence from
+one that finished. What §4.7 added is the five places where the state existed but did
+not do its job.
+
+**An empty state that has an action now carries it.** "Choose New to add a server" is
+a description of a button somewhere else; the first-run pane offers **Add connection**
+itself, and the empty Redis result offers **Clear filters**. The Redis one appears
+only when there is something to clear — an empty database is not a filter problem, and
+a button that would change nothing teaches people to distrust buttons.
+
+**An empty result names the filters that produced it.** The pattern *and* the type,
+whenever both are set: either one alone is a complete explanation of an empty
+keyspace, and the keys that are not there give no clue which. `RedisBrowserViewModel.clearFilters`
+drops both in one action and clears the search box as well as the applied pattern —
+leaving the text in it would make the button look like it had done nothing.
+
+**An empty schema and one this role cannot look into are now different sentences.**
+The section asks for the distinction and the catalog could not make it: `pg_catalog`
+is world-readable, so a schema you have no `USAGE` on lists exactly like an empty one
+and every table under it refuses to be selected from. `SCHEMA_SELECT` now reads
+`has_schema_privilege(n.oid, 'USAGE')` — for the *current* role, not the owner already
+in the column beside it — as one more column on a listing that was being read anyway.
+An unusable schema is flagged `no access` whether or not it is empty, because the
+listing gives no other hint, and when it is empty the note says which of the two
+things is true.
+
+**Refreshing is no longer initial loading.** `SchemaTreeViewModel` reported
+`NodeState.Loading` for every read, so pressing Refresh blanked a tree of four hundred
+schemas to a spinner and gave it back a second later almost unchanged — along with the
+user's lost scroll position and the row they were about to click. A node that already
+has an answer now keeps showing it and is marked as being re-read; only a node with
+nothing, or one whose last attempt failed, reports Loading. A failure is not left on
+screen during a retry: wanting it gone is why the user pressed the button.
+
+**A dropped connection is not a page of settings.** The pane behind a connection that
+closes or errors used to fall back to `ConnectionDetail`, which is correct for a
+connection you have never opened and wrong for one you were working in: the editor
+vanishes and nothing says whether the twenty unrun lines in it survived. They always
+did — `EditorTabs` keeps a connection's tabs when the connection goes away — but the
+only way to find that out was to risk finding out otherwise. The pane now says what
+happened, repeats the reason the server gave, counts the tabs that are still here, and
+puts **Reconnect** where the work was. A connection still being dialled gets its own
+named wait rather than the same fallback.
+
+**No disabled control is left without a word for why.** The connection pane's spinner
+sat beside five greyed-out buttons and said only that *something* was happening;
+it now names the operation — testing, opening, closing, saving, deleting. Refresh
+reads `Refreshing…` while the tree re-reads, and Reconnect reads `Working…` while
+something else is in flight.
+
+**Skeletons were not used anywhere.** The section permits them only where they
+resemble the arriving layout, and nothing here qualifies: a tree of unknown depth, a
+grid of unknown width, and a key list of unknown length all have no shape to
+pre-draw. A named wait is honest about knowing nothing; a skeleton of the wrong shape
+is a guess the user has to unlearn when the real thing arrives.
+
 ## Completion checklist
 
 - [x] Query history is bounded, paged, filterable, reopenable, and clearable.
@@ -545,7 +608,7 @@ now is — `DbError.KeyTypeChanged` carries it. Neither reaches the workspace.
 - [x] Connection switching preserves production/read-only context.
 - [x] Errors are normalized and presented at the correct scope.
 - [x] PostgreSQL error highlighting is accurate and never stale/misleading.
-- [ ] Every primary surface has intentional loading and empty states.
+- [x] Every primary surface has intentional loading and empty states.
 - [ ] Light/dark/system themes cover editor, grid, dialogs, and status colors.
 - [ ] Core workflows are keyboard accessible and usable at zoom.
 - [ ] Large normal-use states stay responsive and memory-bounded.

@@ -346,6 +346,18 @@ private fun GroupDisclosure(row: KeyRow, onToggle: () -> Unit) {
 }
 
 /**
+ * The filters in force, in one phrase.
+ *
+ * Both are named when both are set, because either one on its own is a complete
+ * explanation of an empty result and the user cannot tell which from the keys that
+ * are not there.
+ */
+private fun describeFilters(model: RedisBrowserViewModel): String = listOfNotNull(
+    model.appliedPattern.takeIf { it.isNotBlank() },
+    model.typeFilter?.let { "type ${it.wire}" },
+).joinToString(" and ")
+
+/**
  * Nothing came back — which is three different situations.
  *
  * A traversal that finished having matched nothing is a fact about the keyspace. One
@@ -358,8 +370,9 @@ private fun EmptyKeyspace(model: RedisBrowserViewModel) {
     when (model.progress) {
         is ScanProgress.More -> EmptyState(
             title = "No keys yet.",
-            detail = "The scan has walked part of the keyspace without matching anything. " +
-                "Load more to continue from where it stopped.",
+            detail = "The scan has walked part of the keyspace without matching " +
+                (if (model.filtered) describeFilters(model) else "anything") +
+                ". Load more to continue from where it stopped.",
             description = "keys-empty-partial",
             action = {
                 ToolButton(
@@ -373,12 +386,27 @@ private fun EmptyKeyspace(model: RedisBrowserViewModel) {
 
         ScanProgress.Complete -> EmptyState(
             title = "No keys match.",
-            detail = if (model.appliedPattern.isBlank()) {
-                "This database is empty."
+            // §4.7: the pattern and the type are what the user has to change, so both
+            // are named. Saying "nothing matched" without repeating the filters is
+            // asking someone to remember what they typed four panes ago.
+            detail = if (model.filtered) {
+                "The whole keyspace was scanned and nothing matched ${describeFilters(model)}."
             } else {
-                "The whole keyspace was scanned and nothing matched ${model.appliedPattern}."
+                "The whole keyspace was scanned. This database is empty."
             },
             description = "keys-empty-complete",
+            action = if (model.filtered) {
+                {
+                    ToolButton(
+                        text = "Clear filters",
+                        onClick = model::clearFilters,
+                        description = "keys-clear-filters",
+                        emphasis = ToolEmphasis.PRIMARY,
+                    )
+                }
+            } else {
+                null
+            },
         )
 
         else -> BrowserMessage("Scanning…", "keys-scanning")

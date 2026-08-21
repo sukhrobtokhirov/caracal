@@ -27,7 +27,10 @@ no JDK to install: the installer bundles its own trimmed runtime.
 > it, including a connection switcher that will not let Enter dial production; and a
 > failure is shown where it happened, with the character PostgreSQL pointed at
 > underlined in the editor — and un-underlined, with a sentence saying why, the
-> moment the script moves out from under it. See
+> moment the script moves out from under it. Every pane that waits on a server says
+> what it is waiting for, every empty one says how to fill it, and a connection that
+> drops says your open scripts are still here and offers the button that brings them
+> back. See
 > [`docs/mvp-steps/`](docs/mvp-steps/README.md).
 
 ## The shape of the product

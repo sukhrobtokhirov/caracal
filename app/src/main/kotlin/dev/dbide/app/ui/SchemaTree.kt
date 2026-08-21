@@ -82,6 +82,7 @@ fun SchemaTree(
     Column(modifier = modifier.fillMaxSize().semantics { contentDescription = "schema-tree" }) {
         TreeHeader(
             showSystemSchemas = model.showSystemSchemas,
+            reloading = model.reloading,
             onToggleSystem = model::toggleSystemSchemas,
             onRefresh = { model.refresh() },
         )
@@ -156,6 +157,7 @@ fun SchemaTree(
 @Composable
 private fun TreeHeader(
     showSystemSchemas: Boolean,
+    reloading: Boolean,
     onToggleSystem: () -> Unit,
     onRefresh: () -> Unit,
 ) {
@@ -168,7 +170,15 @@ private fun TreeHeader(
             // tree is in and not merely a button that was pressed once.
             emphasis = if (showSystemSchemas) ToolEmphasis.PRIMARY else ToolEmphasis.NORMAL,
         )
-        ToolButton(text = "Refresh", onClick = onRefresh, description = "tree-refresh")
+        // §4.7: the tree below is the previous listing, still perfectly usable, so
+        // the only place the re-read is visible is here. A disabled Refresh that did
+        // not say why would look like a broken one.
+        ToolButton(
+            text = if (reloading) "Refreshing…" else "Refresh",
+            onClick = onRefresh,
+            description = "tree-refresh",
+            enabled = !reloading,
+        )
     }
 }
 

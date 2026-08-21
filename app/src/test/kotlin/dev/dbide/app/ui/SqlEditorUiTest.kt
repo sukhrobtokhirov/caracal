@@ -377,4 +377,47 @@ class SqlEditorUiTest {
 
             onNodeWithContentDescription("sql-editor").assertDoesNotExist()
         }
+
+    @Test
+    fun `a connection that drops says the scripts are safe and offers to reconnect`() =
+        runDesktopComposeUiTest(width = 1500, height = 900) {
+            val service = service()
+            val view = service.seed(name = "Live", status = RuntimeStatus.OPEN)
+            lateinit var connections: ConnectionsViewModel
+            lateinit var tabs: EditorTabs
+            setContent {
+                val scope = rememberCoroutineScope()
+                connections = remember { ConnectionsViewModel(service, scope) }
+                val tree = remember { SchemaTreeViewModel(service, scope) }
+                tabs = remember { EditorTabs(service, scope) { null } }
+                val theme = remember { ThemeViewModel(null, scope) }
+                val redis = remember { RedisWorkspace(service, scope) }
+                val history = remember { HistoryViewModel(service, scope) }
+                DbideTheme {
+                    WorkspaceScreen(connections, tree, tabs, redis, history, theme, onLock = {})
+                }
+            }
+            waitForIdle()
+
+            onNodeWithContentDescription("connection-Live").performClick()
+            waitForIdle()
+            onNodeWithContentDescription("editor-text").performTextInput("select 1")
+            waitForIdle()
+
+            connections.close(view.id)
+            waitForIdle()
+
+            // §4.7: not a page of connection settings. The pane says what happened,
+            // says the work is still here, and offers the one action that undoes it.
+            onNodeWithContentDescription("workspace-disconnected").assertIsDisplayed()
+            onNodeWithContentDescription("workspace-reconnect").assertIsEnabled()
+            // The claim the pane is making, checked against the thing itself.
+            assertEquals("select 1", tabs.tabs.single().editor.text.text)
+
+            onNodeWithContentDescription("workspace-reconnect").performClick()
+            waitForIdle()
+
+            onNodeWithContentDescription("sql-editor").assertIsDisplayed()
+            assertEquals("select 1", tabs.tabs.single().editor.text.text)
+        }
 }

@@ -11,7 +11,9 @@ import dev.dbide.core.redis.ScanStop
 import dev.dbide.core.redis.Ttl
 import dev.dbide.core.vault.VaultState
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.TestScope
@@ -178,6 +180,46 @@ class RedisBrowserViewModelTest {
         advanceUntilIdle()
 
         assertEquals("redisScan(0, null, hash)", service.scans().last())
+    }
+
+    @Test
+    fun `clearing the filters drops both and walks the keyspace again`() = runTest {
+        val service = service()
+        service.scanPage = page(key("a"))
+        val model = model(service)
+        model.show(id)
+        advanceUntilIdle()
+
+        model.edit("user:*")
+        model.search()
+        model.filterBy(KeyType.HASH)
+        advanceUntilIdle()
+        assertTrue(model.filtered)
+
+        model.clearFilters()
+        advanceUntilIdle()
+
+        // Both filters, and the box as well as the applied pattern — leaving the text
+        // in it would make the button look like it had done nothing.
+        assertEquals("redisScan(0, null, null)", service.scans().last())
+        assertEquals("", model.pattern)
+        assertEquals("", model.appliedPattern)
+        assertNull(model.typeFilter)
+        assertFalse(model.filtered)
+    }
+
+    @Test
+    fun `clearing filters that are not set reads nothing`() = runTest {
+        val service = service()
+        val model = model(service)
+        model.show(id)
+        advanceUntilIdle()
+        val reads = service.scans().size
+
+        model.clearFilters()
+        advanceUntilIdle()
+
+        assertEquals(reads, service.scans().size, "an unfiltered browser restarted its scan")
     }
 
     @Test

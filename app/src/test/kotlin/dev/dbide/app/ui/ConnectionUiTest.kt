@@ -143,6 +143,13 @@ class ConnectionUiTest {
 
         onNodeWithContentDescription("connections-empty").assertIsDisplayed()
         onNodeWithContentDescription("workspace-empty").assertIsDisplayed()
+
+        // §4.7: an empty state that only describes the situation leaves the user to
+        // find the way out of it. This one is the way out.
+        onNodeWithContentDescription("workspace-empty-create").performClick()
+        waitForIdle()
+
+        onNodeWithContentDescription("new-connection-dialog").assertExists()
     }
 
     @Test

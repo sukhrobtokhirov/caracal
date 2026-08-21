@@ -53,7 +53,12 @@ class PostgresCatalog(
     suspend fun schemas(includeSystem: Boolean = false): Listing<SchemaInfo> =
         list(if (includeSystem) ALL_SCHEMAS else USER_SCHEMAS) { rows ->
             val name = rows.getString(1)
-            SchemaInfo(name = name, owner = rows.getString(2), system = isSystem(name))
+            SchemaInfo(
+                name = name,
+                owner = rows.getString(2),
+                system = isSystem(name),
+                usable = rows.getBoolean(3),
+            )
         }
 
     /**
@@ -169,6 +174,12 @@ class PostgresCatalog(
 
     private companion object {
         /**
+         * `has_schema_privilege` answers for the *current* role, which is the one
+         * whose queries will fail — not the owner in the column beside it. It is asked
+         * here rather than per schema on demand because it is one more column on a
+         * listing that is already being read, and the alternative is a round trip at
+         * the moment the user opens an empty schema and wants an answer.
+         *
          * `nspname LIKE 'pg\_%'` covers `pg_catalog`, `pg_toast`, and every
          * `pg_temp_N`/`pg_toast_temp_N` pair a busy server has accumulated. The
          * backslash is LIKE's escape, so the underscore is an underscore and not "any
@@ -176,7 +187,8 @@ class PostgresCatalog(
          */
         const val SCHEMA_SELECT = """
             SELECT n.nspname,
-                   pg_catalog.pg_get_userbyid(n.nspowner)
+                   pg_catalog.pg_get_userbyid(n.nspowner),
+                   pg_catalog.has_schema_privilege(n.oid, 'USAGE')
               FROM pg_catalog.pg_namespace n
         """
 

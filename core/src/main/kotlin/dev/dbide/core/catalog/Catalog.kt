@@ -14,6 +14,20 @@ data class SchemaInfo(
     val name: String,
     val owner: String? = null,
     val system: Boolean = false,
+    /**
+     * Whether this role may actually look inside the schema.
+     *
+     * `pg_catalog` is world-readable, so the browser can list the tables in a schema
+     * the user has no `USAGE` on and every one of them will refuse to be selected
+     * from. The listing and the permission are genuinely two different facts, and
+     * §4.7 asks the empty case to tell them apart: a schema with nothing in it and a
+     * schema you are not allowed to look in are the same blank space and completely
+     * different problems.
+     *
+     * `true` when the privilege was not asked about, which is what every caller that
+     * builds a `SchemaInfo` by hand does. Absence of an answer is not a denial.
+     */
+    val usable: Boolean = true,
 )
 
 /** The kinds of object the browser can list. Each one is a separate catalog query. */

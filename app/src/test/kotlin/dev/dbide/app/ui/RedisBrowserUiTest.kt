@@ -167,6 +167,48 @@ class RedisBrowserUiTest {
         }
 
     @Test
+    fun `an empty filtered scan names the filters and offers to clear them`() =
+        runDesktopComposeUiTest(width = 420, height = 700) {
+            val service = FakeConnectionService(VaultState.UNLOCKED).apply {
+                scanPage = page(key("session:a"))
+            }
+            val model = browser(service)
+
+            // A pattern that matches nothing, so the empty state has to explain
+            // itself in terms of the filter rather than the keyspace.
+            service.scanPage = page()
+            onNodeWithContentDescription("keys-pattern").performTextInput("nope:*")
+            onNodeWithContentDescription("keys-search").performClick()
+            waitForIdle()
+
+            onNodeWithContentDescription("keys-empty-complete").assertIsDisplayed()
+            onNodeWithContentDescription("keys-clear-filters").assertIsDisplayed()
+
+            service.scanPage = page(key("session:a"))
+            onNodeWithContentDescription("keys-clear-filters").performClick()
+            waitForIdle()
+
+            // Both the box and the traversal, so the browser is back where it started.
+            assertEquals("", model.pattern)
+            assertEquals("redisScan(0, null, null)", service.calls.last { it.startsWith("redisScan") })
+            onNodeWithContentDescription("keys-clear-filters").assertDoesNotExist()
+        }
+
+    @Test
+    fun `an empty unfiltered scan offers nothing to clear`() =
+        runDesktopComposeUiTest(width = 420, height = 700) {
+            val service = FakeConnectionService(VaultState.UNLOCKED).apply {
+                scanPage = page()
+            }
+            browser(service)
+
+            // An empty database is not a filter problem, and a button that would
+            // change nothing is a button that teaches people to distrust them.
+            onNodeWithContentDescription("keys-empty-complete").assertIsDisplayed()
+            onNodeWithContentDescription("keys-clear-filters").assertDoesNotExist()
+        }
+
+    @Test
     fun `a pattern is sent when it is searched`() =
         runDesktopComposeUiTest(width = 420, height = 700) {
             val service = FakeConnectionService(VaultState.UNLOCKED).apply {

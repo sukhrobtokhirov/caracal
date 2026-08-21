@@ -133,6 +133,23 @@ class PostgresPermissionsIntegrationTest {
         }
     }
 
+    @Test
+    fun `a schema the role has no USAGE on is listed as unusable`() = runBlocking {
+        // §4.7's distinction, and the reason it needs the server to answer it: both
+        // schemas list from `pg_catalog` identically, and only `has_schema_privilege`
+        // separates "nothing in it" from "nothing you may look at".
+        reader().use { session ->
+            val schemas = session.catalog.schemas().items.associateBy { it.name }
+
+            assertEquals(true, schemas.getValue("public").usable)
+            assertEquals(
+                false,
+                schemas.getValue(WALLED).usable,
+                "a schema this role was never granted USAGE on reported as usable",
+            )
+        }
+    }
+
     // --- Fixtures -------------------------------------------------------------
 
     private fun reader() = PostgresSession(readerConfig())
@@ -150,6 +167,9 @@ class PostgresPermissionsIntegrationTest {
 
     companion object {
         private const val READER = "limited_reader"
+
+        /** A schema the reader is never granted `USAGE` on. It has a table, so it is not empty. */
+        private const val WALLED = "walled"
         private const val READER_PASSWORD = "reader-secret"
 
         private val postgres: PostgreSQLContainer<*> =
@@ -168,6 +188,11 @@ class PostgresPermissionsIntegrationTest {
                     // One table, one privilege. Everything else is denied by omission,
                     // which is how a real read-only role is built.
                     statement.execute("GRANT SELECT ON published TO $READER")
+
+                    // Deliberately never granted to the reader: it is what
+                    // `has_schema_privilege` has to notice.
+                    statement.execute("CREATE SCHEMA $WALLED")
+                    statement.execute("CREATE TABLE $WALLED.hidden (id int)")
                 }
             }
         }

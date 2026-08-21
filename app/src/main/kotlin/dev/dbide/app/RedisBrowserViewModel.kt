@@ -186,6 +186,26 @@ class RedisBrowserViewModel(
         start()
     }
 
+    /** Whether the keys on screen were collected under a pattern or a type filter. */
+    val filtered: Boolean get() = appliedPattern.isNotBlank() || typeFilter != null
+
+    /**
+     * Drops both filters and walks the keyspace again from the start.
+     *
+     * One action rather than two, because §4.7 asks the empty result to offer a way
+     * out of it and a user looking at nothing does not want to work out which of the
+     * two filters is the one hiding their keys. The box is cleared as well as the
+     * applied pattern: leaving the text in it would make the button look like it had
+     * done nothing.
+     */
+    fun clearFilters() {
+        if (!filtered) return
+        pattern = ""
+        appliedPattern = ""
+        typeFilter = null
+        start()
+    }
+
     /**
      * Groups or ungroups the keys already on screen.
      *

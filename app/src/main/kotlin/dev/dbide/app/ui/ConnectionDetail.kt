@@ -179,6 +179,15 @@ fun ConnectionDetail(
                         contentDescription = "busy-${activity.name.lowercase()}"
                     },
                 )
+                // §4.7: a spinner beside five buttons that have all gone grey says
+                // that something is happening and not which of the five it was. The
+                // word is what turns a frozen row of controls into a wait.
+                Text(
+                    text = activity.describe(),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.semantics { contentDescription = "busy-label" },
+                )
             }
         }
     }
@@ -251,4 +260,15 @@ private fun DetailRow(label: String, value: String) {
             color = MaterialTheme.colorScheme.onSurface,
         )
     }
+}
+
+/** What a control is disabled for, in one word the user can read while they wait. */
+private fun Activity.describe(): String = when (this) {
+    Activity.NONE -> ""
+    Activity.LOADING -> "Loading…"
+    Activity.SAVING -> "Saving…"
+    Activity.TESTING -> "Testing the connection…"
+    Activity.OPENING -> "Opening the connection…"
+    Activity.CLOSING -> "Closing the connection…"
+    Activity.DELETING -> "Deleting…"
 }

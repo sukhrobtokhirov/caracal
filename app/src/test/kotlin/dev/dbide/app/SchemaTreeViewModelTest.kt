@@ -7,9 +7,11 @@ import dev.dbide.core.catalog.SchemaInfo
 import dev.dbide.core.connections.ConnectionId
 import dev.dbide.core.vault.VaultState
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceUntilIdle
@@ -270,6 +272,77 @@ class SchemaTreeViewModelTest {
             "\"Sales\".\"Order Items\"",
             model.rows.single { it.label == "Order Items" }.identifier,
         )
+    }
+
+    @Test
+    fun `a re-read keeps the previous listing on screen and says it is reloading`() = runTest {
+        // §4.7: refreshing is not initial loading. The first read has nothing to show;
+        // the second has the answer from the first, which is very nearly right, and
+        // blanking the pane to a spinner throws away the user's place in it.
+        val service = service()
+        val model = model(service)
+        model.show(id)
+        advanceUntilIdle()
+        assertEquals(listOf("public", "sales"), model.rows.map { it.label })
+
+        service.gate = CompletableDeferred()
+        model.refresh()
+
+        assertTrue(model.reloading, "the header did not say the tree was being re-read")
+        assertEquals(
+            listOf("public", "sales"),
+            model.rows.map { it.label },
+            "the tree went blank while it was being refreshed",
+        )
+
+        service.gate?.complete(Unit)
+        advanceUntilIdle()
+
+        assertFalse(model.reloading)
+        assertEquals(listOf("public", "sales"), model.rows.map { it.label })
+    }
+
+    @Test
+    fun `a first read has nothing to keep and reports loading`() = runTest {
+        val service = service()
+        service.gate = CompletableDeferred()
+        val model = model(service)
+
+        model.show(id)
+
+        assertIs<NodeState.Loading>(model.root)
+        assertFalse(model.reloading, "a first read was reported as a refresh")
+
+        service.gate?.complete(Unit)
+        advanceUntilIdle()
+    }
+
+    @Test
+    fun `an empty schema says whether it is empty or merely closed to this role`() = runTest {
+        val service = service()
+        service.schemas = Listing(
+            listOf(SchemaInfo("public"), SchemaInfo("walled", usable = false)),
+        )
+        val model = model(service)
+        model.show(id)
+        advanceUntilIdle()
+
+        model.toggle(NodeKey.Schema("public"))
+        model.toggle(NodeKey.Schema("walled"))
+        advanceUntilIdle()
+
+        val public = model.rows.single { it.key == NodeKey.Schema("public") }
+        val walled = model.rows.single { it.key == NodeKey.Schema("walled") }
+
+        assertEquals("This schema has no tables, views, or functions.", public.note)
+        assertEquals(
+            "This role has no USAGE on this schema, so nothing in it is visible.",
+            walled.note,
+        )
+        // And it is flagged whether or not it is empty: every object under it would
+        // refuse to be read, and the listing alone gives no hint of that.
+        assertTrue("no access" in walled.flags)
+        assertTrue("no access" !in public.flags)
     }
 
     @Test
