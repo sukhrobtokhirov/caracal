@@ -58,7 +58,7 @@ fun RedisKeyBrowser(
     modifier: Modifier = Modifier,
 ) {
     Column(modifier = modifier.fillMaxSize().semantics { contentDescription = "redis-browser" }) {
-        PaneHeader(title = "Keys") {
+        PaneHeader(title = "Keys", glyph = Glyphs.KEYS) {
             ToolButton(
                 text = if (model.grouped) "Grouped" else "Flat",
                 onClick = model::toggleGrouping,
@@ -248,6 +248,16 @@ private fun KeyRowLine(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             GroupDisclosure(row = row, onToggle = onToggle)
+            // A grouping is a folder; a key is what it holds. The type badge further
+            // along the row still spells the word out — this is the version of it the
+            // eye can read while scrolling, and it is absent exactly when the type is,
+            // which is when the server was never asked.
+            Glyph(
+                when {
+                    row.expandable -> if (row.expanded) Glyphs.SCHEMA_OPEN else Glyphs.SCHEMA
+                    else -> row.metadata?.type?.let { Glyphs.of(it) } ?: Glyphs.KEYS
+                },
+            )
             Text(
                 text = row.label,
                 style = MaterialTheme.typography.bodySmall,

@@ -90,6 +90,7 @@ fun VerticalHairline(modifier: Modifier = Modifier) {
 fun PaneHeader(
     title: String,
     modifier: Modifier = Modifier,
+    glyph: String? = null,
     actions: @Composable RowScope.() -> Unit = {},
 ) {
     Row(
@@ -98,8 +99,12 @@ fun PaneHeader(
             .height(Sizes.paneHeader)
             .background(Dbide.colors.paneHeader)
             .padding(start = Space.lg, end = Space.sm),
+        horizontalArrangement = Arrangement.spacedBy(Space.md),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        // The glyph is what tells three identically-shaped header strips apart at the
+        // speed the eye moves between panes, before any of the three words is read.
+        glyph?.let { Glyph(it) }
         Text(
             text = title,
             style = MaterialTheme.typography.labelMedium,

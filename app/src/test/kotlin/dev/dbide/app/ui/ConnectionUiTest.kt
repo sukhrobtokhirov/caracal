@@ -256,6 +256,131 @@ class ConnectionUiTest {
         onNodeWithText("This is a PROD connection.").assertIsDisplayed()
     }
 
+    // --- The windows ---------------------------------------------------------
+
+    @Test
+    fun `creating a connection opens a window over the workspace, and cancelling closes it`() =
+        runDesktopComposeUiTest(width = 1400, height = 1600) {
+            val service = FakeConnectionService(VaultState.UNLOCKED)
+            service.seed(name = "Local")
+            val model = workspace(service)
+            waitUntil { model.connections.isNotEmpty() }
+
+            onNodeWithContentDescription("new-connection").performClick()
+            waitForIdle()
+
+            onNodeWithContentDescription("new-connection-dialog").assertExists()
+            // The window is over the workspace, not instead of it: the sidebar the
+            // user was reading is still there behind it.
+            onNodeWithContentDescription("connection-Local").assertIsDisplayed()
+
+            onNodeWithContentDescription("cancel-form").performClick()
+            waitForIdle()
+
+            onNodeWithContentDescription("new-connection-dialog").assertDoesNotExist()
+            assertTrue(service.drafts.isEmpty())
+        }
+
+    @Test
+    fun `opening the New window does not empty the workspace behind it`() =
+        runDesktopComposeUiTest(width = 1400, height = 1600) {
+            val service = FakeConnectionService(VaultState.UNLOCKED)
+            service.seed(name = "Local")
+            val model = workspace(service)
+            waitUntil { model.connections.isNotEmpty() }
+
+            onNodeWithContentDescription("connection-Local").performMouseInput { doubleClick() }
+            waitUntil { model.connections.single().runtime.status == RuntimeStatus.OPEN }
+            waitForIdle()
+
+            onNodeWithContentDescription("new-connection").performClick()
+            waitForIdle()
+
+            // Nothing is selected while a new connection is being created, and the
+            // editor the user was working in stays on screen regardless.
+            onNodeWithContentDescription("new-connection-dialog").assertExists()
+            onNodeWithContentDescription("sql-editor").assertIsDisplayed()
+            onNodeWithContentDescription("schema-tree").assertIsDisplayed()
+        }
+
+    @Test
+    fun `the engine is chosen in the window's rail, and the form follows it`() =
+        runDesktopComposeUiTest(width = 1400, height = 1600) {
+            val service = FakeConnectionService(VaultState.UNLOCKED)
+            val model = workspace(service)
+
+            onNodeWithContentDescription("new-connection").performClick()
+            onNodeWithContentDescription("field-name").performTextInput("Cache")
+            onNodeWithContentDescription("field-host").performTextInput("localhost")
+            onNodeWithContentDescription("engine-choice-redis").performClick()
+            waitForIdle()
+
+            // Choosing the engine is what fills in its port and its database index,
+            // so the one click is the whole decision.
+            onNodeWithContentDescription("save-connection").performClick()
+            waitUntil { model.connections.isNotEmpty() }
+
+            val draft = service.drafts.single()
+            assertEquals(Engine.REDIS, draft.engine)
+            assertEquals(6379, draft.port)
+            assertEquals("0", draft.database)
+        }
+
+    @Test
+    fun `editing opens a window, and the connection it is editing is still behind it`() =
+        runDesktopComposeUiTest(width = 1400, height = 1600) {
+            val service = FakeConnectionService(VaultState.UNLOCKED)
+            service.seed(name = "Local", hasSecret = true)
+            val model = workspace(service)
+            waitUntil { model.connections.isNotEmpty() }
+
+            onNodeWithContentDescription("connection-Local").performClick()
+            onNodeWithContentDescription("edit-connection").performClick()
+            waitForIdle()
+
+            onNodeWithContentDescription("edit-connection-dialog").assertExists()
+            // The detail pane underneath is still the one being edited, so the window
+            // is a question about something the user can still see.
+            onNodeWithContentDescription("test-connection").assertIsDisplayed()
+        }
+
+    @Test
+    fun `the theme is chosen in the settings window rather than cycled in the shell`() =
+        runDesktopComposeUiTest(width = 1400, height = 1600) {
+            val service = FakeConnectionService(VaultState.UNLOCKED)
+            lateinit var theme: ThemeViewModel
+            setContent {
+                val scope = rememberCoroutineScope()
+                val model = remember { ConnectionsViewModel(service, scope) }
+                val tree = remember { SchemaTreeViewModel(service, scope) }
+                val editor = remember { EditorViewModel(service, scope) }
+                val export = remember { ExportViewModel(service, scope) { null } }
+                theme = remember { ThemeViewModel(null, scope) }
+                val redis = remember { RedisWorkspace(service, scope) }
+                DbideTheme(theme.mode) {
+                    WorkspaceScreen(model, tree, editor, export, redis, theme, onLock = {})
+                }
+            }
+            waitForIdle()
+
+            assertEquals(ThemeMode.DARK, theme.mode)
+
+            onNodeWithContentDescription("open-settings").performClick()
+            waitForIdle()
+            onNodeWithContentDescription("settings-dialog").assertExists()
+
+            onNodeWithContentDescription("theme-choice-light").performClick()
+            waitForIdle()
+
+            // Named rather than cycled: the click lands on the theme that was wanted.
+            assertEquals(ThemeMode.LIGHT, theme.mode)
+
+            onNodeWithContentDescription("settings-done").performClick()
+            waitForIdle()
+
+            onNodeWithContentDescription("settings-dialog").assertDoesNotExist()
+        }
+
     // --- Creating ------------------------------------------------------------
 
     @Test

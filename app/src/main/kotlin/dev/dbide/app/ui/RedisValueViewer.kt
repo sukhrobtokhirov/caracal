@@ -58,7 +58,7 @@ fun RedisValueViewer(
     modifier: Modifier = Modifier,
 ) {
     Column(modifier = modifier.fillMaxSize().semantics { contentDescription = "redis-value" }) {
-        PaneHeader(title = "Value") {
+        PaneHeader(title = "Value", glyph = Glyphs.VALUE) {
             val string = (model.state as? ValueState.Ready)?.value as? LoadedValue.Text
             if (string != null && model.json != null) {
                 ToolButton(

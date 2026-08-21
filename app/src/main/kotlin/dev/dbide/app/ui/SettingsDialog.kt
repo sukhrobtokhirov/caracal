@@ -1,0 +1,253 @@
+package dev.dbide.app.ui
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.unit.dp
+import dev.dbide.app.ThemeViewModel
+import dev.dbide.core.connections.Engine
+
+/** Which section of the settings window is showing. */
+private enum class SettingsSection(val label: String, val glyph: String, val detail: String) {
+    APPEARANCE("Appearance", Glyphs.APPEARANCE, "Theme and density"),
+    ENGINES("Engines", Glyphs.DATABASE, "What this build can talk to"),
+    ABOUT("About", Glyphs.ABOUT, "Where your data lives"),
+}
+
+/**
+ * The application's settings, as a window.
+ *
+ * The theme used to be a button in the shell that cycled through three values, which
+ * is a control that can only be operated by pressing it and seeing what happens —
+ * fine for two states, guesswork for three. Here the three are laid out with what
+ * each one means, the current one is marked, and choosing one is a click on the thing
+ * you want rather than a click on the thing you have.
+ *
+ * It is a rail-and-panel window rather than a list for the same reason the connection
+ * dialog is: this is where the *next* preference goes, and a settings window that has
+ * to be reorganised to hold a second section was the wrong shape to begin with.
+ */
+@Composable
+fun SettingsDialog(theme: ThemeViewModel, onDismiss: () -> Unit) {
+    var section: SettingsSection by remember { mutableStateOf(SettingsSection.APPEARANCE) }
+
+    AppDialog(
+        title = "Settings",
+        subtitle = "Preferences are stored unencrypted beside the vault, so the first screen can honour them.",
+        description = "settings-dialog",
+        icon = { AppMark(size = 26.dp) },
+        onDismiss = onDismiss,
+        maxWidth = 760.dp,
+        maxHeight = 560.dp,
+        rail = {
+            RailHeading("Application")
+            SettingsSection.entries.forEach { entry ->
+                RailItem(
+                    label = entry.label,
+                    detail = entry.detail,
+                    description = "settings-${entry.name.lowercase()}",
+                    selected = section == entry,
+                    onClick = { section = entry },
+                    leading = { Glyph(entry.glyph, size = 14) },
+                )
+            }
+        },
+        footer = {
+            Spacer(modifier = Modifier.weight(1f))
+            OutlinedButton(
+                shape = MaterialTheme.shapes.small,
+                onClick = onDismiss,
+                modifier = Modifier.semantics { contentDescription = "settings-done" },
+            ) {
+                Text("Done")
+            }
+        },
+    ) {
+        when (section) {
+            SettingsSection.APPEARANCE -> Appearance(theme)
+            SettingsSection.ENGINES -> Engines()
+            SettingsSection.ABOUT -> About()
+        }
+    }
+}
+
+/**
+ * The theme, as three choices with their reasons.
+ *
+ * Applied on the click and not on a Save, which is what makes the choice legible: the
+ * window behind the dialog is already in the theme being chosen, and the dialog is
+ * too.
+ */
+@Composable
+private fun Appearance(theme: ThemeViewModel) {
+    DialogSection(
+        title = "Theme",
+        glyph = Glyphs.APPEARANCE,
+        detail = "Applied immediately, and remembered for the next launch.",
+    ) {
+        Column(
+            verticalArrangement = Arrangement.spacedBy(Space.md),
+            modifier = Modifier.fillMaxWidth().selectableGroup(),
+        ) {
+            ThemeMode.entries.forEach { mode ->
+                RailItem(
+                    label = mode.label,
+                    detail = mode.blurb,
+                    description = "theme-choice-${mode.wire}",
+                    selected = theme.mode == mode,
+                    onClick = { theme.select(mode) },
+                    leading = { ThemeSwatch(mode) },
+                )
+            }
+        }
+    }
+}
+
+/** A two-tone chip standing for what a theme looks like, so the label is not alone. */
+@Composable
+private fun ThemeSwatch(mode: ThemeMode) {
+    val dark = Color(0xFF15171C)
+    val light = Color(0xFFF6F7F9)
+    Row(
+        modifier = Modifier
+            .size(width = 26.dp, height = 18.dp)
+            .clip(MaterialTheme.shapes.extraSmall)
+            .border(Sizes.hairline, Dbide.colors.hairline, MaterialTheme.shapes.extraSmall),
+    ) {
+        val halves = when (mode) {
+            ThemeMode.LIGHT -> listOf(light, light)
+            ThemeMode.DARK -> listOf(dark, dark)
+            ThemeMode.SYSTEM -> listOf(light, dark)
+        }
+        halves.forEach { half ->
+            Box(modifier = Modifier.weight(1f).height(18.dp).background(half))
+        }
+    }
+}
+
+private val ThemeMode.blurb: String
+    get() = when (this) {
+        ThemeMode.SYSTEM -> "Follow whatever the desktop is set to"
+        ThemeMode.LIGHT -> "For a bright room and a projector"
+        ThemeMode.DARK -> "The default, for a window that sits beside a terminal"
+    }
+
+/** What this build can connect to, with the marks used everywhere else. */
+@Composable
+private fun Engines() {
+    DialogSection(
+        title = "Engines",
+        glyph = Glyphs.DATABASE,
+        detail = "Both are read through their own driver; neither is proxied through a server of ours.",
+    ) {
+        Engine.entries.forEach { engine ->
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(MaterialTheme.shapes.medium)
+                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                    .padding(Space.lg),
+                horizontalArrangement = Arrangement.spacedBy(Space.lg),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                EngineTile(engine, size = 38.dp)
+                Column(verticalArrangement = Arrangement.spacedBy(Space.xs)) {
+                    Text(
+                        text = when (engine) {
+                            Engine.POSTGRES -> "PostgreSQL"
+                            Engine.REDIS -> "Redis"
+                        },
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    Text(
+                        text = when (engine) {
+                            Engine.POSTGRES ->
+                                "Schema browser, SQL editor, CSV export. Default port 5432."
+
+                            Engine.REDIS ->
+                                "Keyspace browser, value viewer, command console. Default port 6379."
+                        },
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Spacer(modifier = Modifier.weight(1f))
+                EngineBadge(engine)
+            }
+        }
+    }
+}
+
+/**
+ * Where the data is.
+ *
+ * The one question this section exists to answer is the one a local-first tool has to
+ * answer out loud: nothing here has been sent anywhere, and here is the directory
+ * that proves it.
+ */
+@Composable
+private fun About() {
+    DialogSection(title = "Database IDE", glyph = Glyphs.ABOUT) {
+        Text(
+            "A local desktop client for PostgreSQL and Redis. Connections, saved passwords, " +
+                "and query history live in one file on this machine and are never sent anywhere.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Column(
+            verticalArrangement = Arrangement.spacedBy(Space.md),
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(MaterialTheme.shapes.medium)
+                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                .padding(Space.lg),
+        ) {
+            AboutRow("Passwords", "Sealed with your master password. Never shown, never logged.")
+            AboutRow("Telemetry", "None.")
+            AboutRow("Write safety", "Statements that modify data are confirmed; production is typed out.")
+        }
+    }
+}
+
+@Composable
+private fun AboutRow(label: String, value: String) {
+    Row(horizontalArrangement = Arrangement.spacedBy(Space.lg)) {
+        Text(
+            label,
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.width(112.dp),
+        )
+        Text(
+            value,
+            style = MaterialTheme.typography.bodySmall,
+            fontFamily = FontFamily.Default,
+            color = MaterialTheme.colorScheme.onSurface,
+        )
+    }
+}

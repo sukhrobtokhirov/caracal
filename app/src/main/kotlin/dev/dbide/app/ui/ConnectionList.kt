@@ -32,8 +32,10 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.DpOffset
+import androidx.compose.ui.unit.dp
 import dev.dbide.core.connections.ConnectionId
 import dev.dbide.core.connections.ConnectionView
+import dev.dbide.core.connections.Engine
 import dev.dbide.core.connections.Environment
 
 /**
@@ -76,7 +78,7 @@ fun ConnectionList(
     modifier: Modifier = Modifier,
 ) {
     Column(modifier = modifier.fillMaxSize()) {
-        PaneHeader(title = "Connections") {
+        PaneHeader(title = "Connections", glyph = Glyphs.CONNECTIONS) {
             ToolButton(
                 text = "New",
                 onClick = onCreate,
@@ -92,14 +94,22 @@ fun ConnectionList(
         Hairline()
 
         if (connections.isEmpty()) {
-            Text(
-                "No connections yet. Choose New to add a PostgreSQL or Redis server.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier
-                    .padding(Space.lg)
-                    .semantics { contentDescription = "connections-empty" },
-            )
+            Column(
+                verticalArrangement = Arrangement.spacedBy(Space.lg),
+                modifier = Modifier.padding(Space.lg),
+            ) {
+                Text(
+                    "No connections yet. Choose New to add a PostgreSQL or Redis server.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.semantics { contentDescription = "connections-empty" },
+                )
+                // The two marks the New window opens on. An empty sidebar is the one
+                // place with room to say what the application can talk to.
+                Row(horizontalArrangement = Arrangement.spacedBy(Space.md)) {
+                    Engine.entries.forEach { engine -> EngineTile(engine, size = 30.dp) }
+                }
+            }
             return@Column
         }
 
@@ -140,15 +150,21 @@ private fun GroupHeader(environment: Environment, count: Int) {
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(
-            environment.wire.uppercase(),
-            style = MaterialTheme.typography.labelSmall,
-            color = if (environment == Environment.PROD) {
-                MaterialTheme.colorScheme.error
-            } else {
-                MaterialTheme.colorScheme.onSurfaceVariant
-            },
-        )
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(Space.sm),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Glyph(Glyphs.of(environment))
+            Text(
+                environment.wire.uppercase(),
+                style = MaterialTheme.typography.labelSmall,
+                color = if (environment == Environment.PROD) {
+                    MaterialTheme.colorScheme.error
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                },
+            )
+        }
         Text(
             count.toString(),
             style = MaterialTheme.typography.labelSmall,
@@ -234,6 +250,12 @@ private fun ConnectionRow(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.fillMaxWidth(),
             ) {
+                // The engine's mark, where the row starts. It replaces the outlined
+                // POSTGRES badge that used to sit on the second line: the badge was a
+                // word being read to answer a question the eye can answer from a
+                // shape, and it took a third of the width the host needs. It carries
+                // the badge's own content description, so nothing announces less.
+                EngineLogo(view.config.engine, size = 14.dp, described = true)
                 ColorSwatch(view.config.color)
                 // The name takes everything the status does not. A second weighted
                 // child here would halve it, and half a sidebar is not enough for
@@ -254,7 +276,6 @@ private fun ConnectionRow(
                 horizontalArrangement = Arrangement.spacedBy(Space.sm),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                EngineBadge(view.config.engine)
                 // Production and read-only travel with the row itself, not just the
                 // detail pane: the list is where the wrong click happens.
                 if (view.config.environment == Environment.PROD) EnvironmentBadge(Environment.PROD)

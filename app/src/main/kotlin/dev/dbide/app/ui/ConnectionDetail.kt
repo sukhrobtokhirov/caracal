@@ -54,11 +54,27 @@ fun ConnectionDetail(
         verticalArrangement = Arrangement.spacedBy(Space.xl),
     ) {
         Row(
-            horizontalArrangement = Arrangement.spacedBy(Space.md),
+            horizontalArrangement = Arrangement.spacedBy(Space.lg),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            ColorSwatch(config.color)
-            Text(config.name, style = MaterialTheme.typography.titleMedium)
+            // The engine's mark at heading size. The badge under it still says the
+            // word, so the mark is the shortcut and never the only statement.
+            EngineTile(config.engine, size = 36.dp)
+            Column(verticalArrangement = Arrangement.spacedBy(Space.xs)) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(Space.md),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    ColorSwatch(config.color)
+                    Text(config.name, style = MaterialTheme.typography.titleMedium)
+                }
+                Text(
+                    "${config.host}:${config.port}",
+                    style = MaterialTheme.typography.labelSmall,
+                    fontFamily = FontFamily.Monospace,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
 
         Row(
@@ -183,11 +199,17 @@ fun DeleteConfirmation(view: ConnectionView, onConfirm: () -> Unit, onCancel: ()
                     "This removes the connection and its saved password. It cannot be undone.",
                 )
                 if (view.config.environment == Environment.PROD) {
-                    Text(
-                        "This is a PROD connection.",
-                        color = MaterialTheme.colorScheme.error,
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(Space.md),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Glyph(Glyphs.PROD, size = 13)
+                        Text(
+                            "This is a PROD connection.",
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                    }
                 }
             }
         },

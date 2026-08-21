@@ -55,7 +55,7 @@ import dev.dbide.core.redis.RedisReply
 @Composable
 fun RedisConsole(model: RedisConsoleViewModel, modifier: Modifier = Modifier) {
     Column(modifier = modifier.fillMaxSize().semantics { contentDescription = "redis-console" }) {
-        PaneHeader(title = "Console") {
+        PaneHeader(title = "Console", glyph = Glyphs.CONSOLE) {
             ToolButton(
                 text = "Clear",
                 onClick = model::clearHistory,

@@ -41,6 +41,7 @@ import dev.dbide.app.Pane
 import dev.dbide.app.RedisWorkspace
 import dev.dbide.app.SchemaTreeViewModel
 import dev.dbide.app.ThemeViewModel
+import dev.dbide.core.connections.ConnectionId
 import dev.dbide.core.connections.ConnectionView
 import dev.dbide.core.connections.Engine
 import dev.dbide.core.connections.Environment
@@ -56,12 +57,12 @@ import kotlinx.coroutines.launch
  * keyspace and a Redis one has no SQL editor, so offering either would be offering a
  * tab that can only say "not for this engine".
  */
-private enum class WorkspaceTab(val label: String) {
-    QUERY("Query"),
-    KEY("Value"),
-    CONSOLE("Console"),
-    SERVER("Server"),
-    CONNECTION("Connection"),
+private enum class WorkspaceTab(val label: String, val glyph: String) {
+    QUERY("Query", Glyphs.QUERY),
+    KEY("Value", Glyphs.VALUE),
+    CONSOLE("Console", Glyphs.CONSOLE),
+    SERVER("Server", Glyphs.SERVER),
+    CONNECTION("Connection", Glyphs.CONNECTIONS),
 }
 
 /** The tabs an engine has, in the order they are shown. */
@@ -101,9 +102,23 @@ fun WorkspaceScreen(
 ) {
     LaunchedEffect(Unit) { viewModel.refresh() }
 
+    // What the window is about, which is not always what is selected.
+    //
+    // Creating a connection selects nothing — there is nothing to select yet — and
+    // that used to empty the workspace out behind the form. Now that the form is a
+    // window over the workspace, an emptied workspace is visible the whole time it is
+    // open: the grid the user was reading disappears, the object browser collapses
+    // everything they had expanded, and all of it comes back when they press Cancel.
+    // So while a window is open the workspace holds its place.
+    var held: ConnectionId? by remember { mutableStateOf(null) }
+    LaunchedEffect(viewModel.selected?.id) { viewModel.selected?.id?.let { held = it } }
+    val current = viewModel.selected ?: (viewModel.pane as? Pane.Form)?.let {
+        viewModel.connections.firstOrNull { view -> view.id == held }
+    }
+
     // Only an open connection has anything to browse. A closed one is not reopened to
     // fill a panel: the user closed it.
-    val browsing = viewModel.selected?.takeIf { it.runtime.isOpen }
+    val browsing = current?.takeIf { it.runtime.isOpen }
     val postgres = browsing?.takeIf { it.config.engine == Engine.POSTGRES }
     val redisView = browsing?.takeIf { it.config.engine == Engine.REDIS }
     // Keyed on the configuration and not just the identifier: §2.4's policy asks the
@@ -132,6 +147,10 @@ fun WorkspaceScreen(
     // three more columns of it.
     var sidebar: Boolean by remember { mutableStateOf(true) }
 
+    // The settings window. It is state of the window rather than of the connection
+    // list, so it survives selecting a different connection behind it.
+    var settings: Boolean by remember { mutableStateOf(false) }
+
     // What a row can do to itself. Opening also selects, so double-clicking one row
     // while another is selected does not leave the shell naming the wrong server.
     val actions = ConnectionActions(
@@ -154,10 +173,10 @@ fun WorkspaceScreen(
     Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surface) {
         Column(modifier = Modifier.fillMaxSize()) {
             WorkspaceBar(
-                selected = viewModel.selected,
-                theme = theme,
+                selected = current,
                 sidebar = sidebar,
                 onToggleSidebar = { sidebar = !sidebar },
+                onOpenSettings = { settings = true },
                 onLock = onLock,
             )
             Hairline()
@@ -182,12 +201,17 @@ fun WorkspaceScreen(
                 if (postgres != null) {
                     SchemaTree(
                         model = tree,
-                        // Straight into the script at the caret. The name arrives
-                        // quoted, so a mixed-case table is the table it names.
-                        onInsertIdentifier = { identifier ->
-                            tab = WorkspaceTab.QUERY
-                            editor.insert(identifier)
-                        },
+                        actions = TreeActions(
+                            // Straight into the script at the caret. The text arrives
+                            // quoted, so a mixed-case table is the table it names —
+                            // and inserting brings the editor forward, because a name
+                            // typed into a pane nobody is looking at has gone nowhere.
+                            insert = { sql ->
+                                tab = WorkspaceTab.QUERY
+                                editor.insert(sql)
+                            },
+                            copy = copy,
+                        ),
                         modifier = Modifier
                             .width(Sizes.browser)
                             .background(MaterialTheme.colorScheme.background),
@@ -227,47 +251,40 @@ fun WorkspaceScreen(
                         )
                     }
 
-                    when (val pane = viewModel.pane) {
-                        Pane.Empty -> EmptyPane(any = viewModel.connections.isNotEmpty())
-                        is Pane.Form -> ConnectionForm(
-                            form = pane.state,
-                            busy = viewModel.busy,
-                            onSave = viewModel::save,
-                            onCancel = viewModel::cancelForm,
-                        )
-
-                        is Pane.Detail -> {
-                            val view = viewModel.connections.firstOrNull { it.id == pane.id }
-                            val detail: @Composable () -> Unit = {
-                                if (view == null) {
-                                    EmptyPane(any = viewModel.connections.isNotEmpty())
-                                } else {
-                                    ConnectionDetail(
-                                        view = view,
-                                        activity = viewModel.activity,
-                                        onEdit = { viewModel.startEditing(view) },
-                                        onTest = { viewModel.test(view.id) },
-                                        onOpen = { viewModel.open(view.id) },
-                                        onClose = { viewModel.close(view.id) },
-                                        onDelete = { viewModel.confirmDelete(view) },
-                                    )
-                                }
-                            }
-                            // The editor exists only where there is a server to send a
-                            // statement to. A closed connection has its details and
-                            // nothing else, which is also the screen that reopens it.
-                            if (browsing?.id != pane.id) {
-                                detail()
-                            } else {
-                                WorkspaceTabs(tabs = tabs, selected = tab, onSelect = { tab = it })
-                                Hairline()
-                                when (tab) {
-                                    WorkspaceTab.QUERY -> QueryPane(editor, export, onCopy = copy)
-                                    WorkspaceTab.KEY -> RedisValueViewer(redis.value, onCopy = copy)
-                                    WorkspaceTab.CONSOLE -> RedisConsole(redis.console)
-                                    WorkspaceTab.SERVER -> RedisInfoDashboard(redis.info)
-                                    WorkspaceTab.CONNECTION -> detail()
-                                }
+                    // The form is a window now, so what the working area shows while
+                    // one is open is whatever it was showing before: the connection
+                    // being edited, or the empty state a new one is being created
+                    // from. A modal over a pane that has gone blank reads as though
+                    // the application threw the user's place away to ask a question.
+                    val view = current
+                    if (view == null) {
+                        EmptyPane(any = viewModel.connections.isNotEmpty())
+                    } else {
+                        val detail: @Composable () -> Unit = {
+                            ConnectionDetail(
+                                view = view,
+                                activity = viewModel.activity,
+                                onEdit = { viewModel.startEditing(view) },
+                                onTest = { viewModel.test(view.id) },
+                                onOpen = { viewModel.open(view.id) },
+                                onClose = { viewModel.close(view.id) },
+                                onDelete = { viewModel.confirmDelete(view) },
+                            )
+                        }
+                        // The editor exists only where there is a server to send a
+                        // statement to. A closed connection has its details and
+                        // nothing else, which is also the screen that reopens it.
+                        if (browsing?.id != view.id) {
+                            detail()
+                        } else {
+                            WorkspaceTabs(tabs = tabs, selected = tab, onSelect = { tab = it })
+                            Hairline()
+                            when (tab) {
+                                WorkspaceTab.QUERY -> QueryPane(editor, export, onCopy = copy)
+                                WorkspaceTab.KEY -> RedisValueViewer(redis.value, onCopy = copy)
+                                WorkspaceTab.CONSOLE -> RedisConsole(redis.console)
+                                WorkspaceTab.SERVER -> RedisInfoDashboard(redis.info)
+                                WorkspaceTab.CONNECTION -> detail()
                             }
                         }
                     }
@@ -275,6 +292,21 @@ fun WorkspaceScreen(
             }
         }
     }
+
+    // Everything that changes something is a window over the workspace rather than a
+    // pane inside it, and all of them are mounted here — after the layout, so they
+    // draw over it, and beside each other, so there is one place that says what the
+    // application can be asking the user right now.
+    (viewModel.pane as? Pane.Form)?.let { form ->
+        ConnectionDialog(
+            form = form.state,
+            busy = viewModel.busy,
+            onSave = viewModel::save,
+            onCancel = viewModel::cancelForm,
+        )
+    }
+
+    if (settings) SettingsDialog(theme = theme, onDismiss = { settings = false })
 
     viewModel.pendingDelete?.let { pending ->
         DeleteConfirmation(
@@ -307,9 +339,9 @@ private fun clipEntryOf(text: String) = ClipEntry(StringSelection(text))
 @Composable
 private fun WorkspaceBar(
     selected: ConnectionView?,
-    theme: ThemeViewModel,
     sidebar: Boolean,
     onToggleSidebar: () -> Unit,
+    onOpenSettings: () -> Unit,
     onLock: () -> Unit,
 ) {
     val production = selected?.config?.environment == Environment.PROD
@@ -340,6 +372,7 @@ private fun WorkspaceBar(
                 description = "toggle-sidebar",
                 emphasis = if (sidebar) ToolEmphasis.PRIMARY else ToolEmphasis.NORMAL,
             )
+            AppMark(size = 16.dp)
             Text(
                 "Database IDE",
                 style = MaterialTheme.typography.titleSmall,
@@ -347,6 +380,10 @@ private fun WorkspaceBar(
             )
             if (selected != null) {
                 Text("/", color = foreground.copy(alpha = 0.4f))
+                // The engine's own mark, so the bar says what kind of server this is
+                // before it says which one. The badge that used to carry it is still
+                // in the detail pane, where there is room for a word.
+                EngineLogo(selected.config.engine, size = 14.dp, described = true)
                 ColorSwatch(selected.config.color)
                 Text(
                     selected.config.name,
@@ -364,7 +401,14 @@ private fun WorkspaceBar(
             horizontalArrangement = Arrangement.spacedBy(Space.sm),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            ThemeToggle(mode = theme.mode, onCycle = theme::cycle)
+            // The theme moved inside the settings window. A button that cycles three
+            // values can only be understood by pressing it repeatedly, and the window
+            // it now lives in shows all three with what each one is for.
+            ToolButton(
+                text = "Settings",
+                onClick = onOpenSettings,
+                description = "open-settings",
+            )
             ToolButton(text = "Lock", onClick = onLock, description = "lock-application")
         }
     }
@@ -414,15 +458,21 @@ private fun WorkspaceTabs(
                     .semantics { contentDescription = "workspace-tab-${entry.name.lowercase()}" },
                 contentAlignment = Alignment.Center,
             ) {
-                Text(
-                    text = entry.label,
-                    style = MaterialTheme.typography.labelMedium,
-                    color = if (active) {
-                        MaterialTheme.colorScheme.onSurface
-                    } else {
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                    },
-                )
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(Space.sm),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Glyph(entry.glyph)
+                    Text(
+                        text = entry.label,
+                        style = MaterialTheme.typography.labelMedium,
+                        color = if (active) {
+                            MaterialTheme.colorScheme.onSurface
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        },
+                    )
+                }
             }
         }
     }

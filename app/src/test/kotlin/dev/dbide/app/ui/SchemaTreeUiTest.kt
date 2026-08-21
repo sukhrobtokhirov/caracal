@@ -11,6 +11,7 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performMouseInput
+import androidx.compose.ui.test.rightClick
 import androidx.compose.ui.test.v2.runDesktopComposeUiTest
 import dev.dbide.app.ConnectionsViewModel
 import dev.dbide.app.EditorViewModel
@@ -58,13 +59,19 @@ class SchemaTreeUiTest {
     private fun ComposeUiTest.tree(
         service: FakeConnectionService,
         inserted: MutableList<String> = mutableListOf(),
+        copied: MutableList<String> = mutableListOf(),
     ): SchemaTreeViewModel {
         lateinit var model: SchemaTreeViewModel
         setContent {
             val scope = rememberCoroutineScope()
             model = remember { SchemaTreeViewModel(service, scope) }
             LaunchedEffect(Unit) { model.show(ConnectionId("id-1")) }
-            DbideTheme { SchemaTree(model, onInsertIdentifier = { inserted += it }) }
+            DbideTheme {
+                SchemaTree(
+                    model,
+                    TreeActions(insert = { inserted += it }, copy = { copied += it }),
+                )
+            }
         }
         waitForIdle()
         return model
@@ -164,6 +171,81 @@ class SchemaTreeUiTest {
 
             assertEquals(listOf("\"public\".\"users\""), inserted)
             onNodeWithText("Inserted \"public\".\"users\"").assertIsDisplayed()
+        }
+
+    @Test
+    fun `right-clicking a table offers a query over it, and writes the statement`() =
+        runDesktopComposeUiTest(width = 500, height = 900) {
+            val inserted = mutableListOf<String>()
+            tree(service(), inserted)
+            clickNode("node-schema-public")
+            clickNode("node-folder-public-table")
+
+            onNodeWithContentDescription("node-object-public-users").performMouseInput {
+                rightClick()
+            }
+            waitForIdle()
+
+            onNodeWithContentDescription("menu-select-rows").assertIsDisplayed()
+            onNodeWithContentDescription("menu-copy").assertIsDisplayed()
+            onNodeWithContentDescription("menu-refresh").assertIsDisplayed()
+
+            onNodeWithContentDescription("menu-select-rows").performClick()
+            waitForIdle()
+
+            // Bounded, quoted, qualified — and it arrives in the editor rather than
+            // at the server, so Run is still the user's decision.
+            assertEquals(listOf("SELECT * FROM \"public\".\"users\" LIMIT 100;"), inserted)
+            // The menu closes behind the action it performed.
+            onNodeWithContentDescription("menu-select-rows").assertDoesNotExist()
+        }
+
+    @Test
+    fun `the menu copies the same name a double-click would insert`() =
+        runDesktopComposeUiTest(width = 500, height = 900) {
+            val copied = mutableListOf<String>()
+            tree(service(), copied = copied)
+            clickNode("node-schema-public")
+            clickNode("node-folder-public-table")
+            clickNode("node-object-public-users")
+
+            onNodeWithContentDescription("node-column-public-users-2").performMouseInput {
+                rightClick()
+            }
+            waitForIdle()
+
+            // A column names nothing to select from and has nothing under it to
+            // re-read, so it offers the two lines it can honour and no more.
+            onNodeWithContentDescription("menu-select-rows").assertDoesNotExist()
+            onNodeWithContentDescription("menu-refresh").assertDoesNotExist()
+
+            onNodeWithContentDescription("menu-copy").performClick()
+            waitForIdle()
+
+            assertEquals(listOf("\"email\""), copied)
+            onNodeWithText("Copied \"email\"").assertIsDisplayed()
+        }
+
+    @Test
+    fun `a folder offers only the re-read it can honour`() =
+        runDesktopComposeUiTest(width = 500, height = 900) {
+            val service = service()
+            tree(service)
+            clickNode("node-schema-public")
+
+            onNodeWithContentDescription("node-folder-public-table").performMouseInput {
+                rightClick()
+            }
+            waitForIdle()
+
+            onNodeWithContentDescription("menu-insert").assertDoesNotExist()
+            onNodeWithContentDescription("menu-refresh").performClick()
+            waitForIdle()
+
+            // One node re-read, not the whole connection: the schema list is still
+            // the one the tree started with.
+            assertEquals(1, service.calls.count { it.startsWith("schemas") })
+            assertEquals(2, service.calls.count { it == "objects(public, TABLE)" })
         }
 
     @Test

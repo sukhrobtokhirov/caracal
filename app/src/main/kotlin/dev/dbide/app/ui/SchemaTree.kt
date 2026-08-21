@@ -27,10 +27,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 import dev.dbide.app.NodeKey
 import dev.dbide.app.NodeState
@@ -39,20 +43,41 @@ import dev.dbide.app.SchemaTreeViewModel
 import dev.dbide.app.TreeRow
 
 /**
+ * Where a node's text can be sent.
+ *
+ * Two destinations rather than one lambda per menu line, because the menu's lines
+ * differ in the *text* and not in where it goes: a name, a qualified name, and a
+ * whole `SELECT` all end up in the same editor. Which text belongs to which line is
+ * this file's business; where the editor and the clipboard are is the shell's.
+ */
+class TreeActions(
+    /** Puts SQL into the editor at the caret, and brings the editor forward. */
+    val insert: (String) -> Unit,
+    val copy: (String) -> Unit,
+)
+
+/**
  * The object browser.
  *
  * Everything on screen was asked for: a node's children are read when it is opened,
  * and a node that could not be read says so on its own line. The tree is never
  * replaced by an error, because the schema whose permissions are wrong is usually
  * not the one being worked in.
+ *
+ * A row answers the three desktop gestures the sidebar's rows already answer: click
+ * opens it, double-click inserts its name, right-click offers the rest. The menu is
+ * where the things with no other affordance live — the query a table is usually
+ * wanted for, the clipboard, and a re-read of one node rather than the whole tree.
  */
 @Composable
 fun SchemaTree(
     model: SchemaTreeViewModel,
-    onInsertIdentifier: (String) -> Unit,
+    actions: TreeActions,
     modifier: Modifier = Modifier,
 ) {
-    var inserted: String? by remember(model.connectionId) { mutableStateOf(null) }
+    // What the last gesture did, for the footer. One line for all of them: they
+    // answer the same question — "did that land?" — and the pane is 320dp wide.
+    var echo: String? by remember(model.connectionId) { mutableStateOf(null) }
 
     Column(modifier = modifier.fillMaxSize().semantics { contentDescription = "schema-tree" }) {
         TreeHeader(
@@ -82,8 +107,24 @@ fun SchemaTree(
                                     onRefresh = { model.refresh(row.key) },
                                     onInsert = {
                                         row.identifier?.let {
-                                            onInsertIdentifier(it)
-                                            inserted = it
+                                            actions.insert(it)
+                                            echo = "Inserted $it"
+                                        }
+                                    },
+                                    onCopy = {
+                                        row.identifier?.let {
+                                            actions.copy(it)
+                                            echo = "Copied $it"
+                                        }
+                                    },
+                                    // The statement, not the result: a menu line that
+                                    // sent a query to production the moment it was
+                                    // clicked would be a menu people learn to avoid.
+                                    // It lands in the editor, where Run is a decision.
+                                    onSelectRows = {
+                                        row.identifier?.let {
+                                            actions.insert("SELECT * FROM $it LIMIT 100;")
+                                            echo = "Inserted a query over $it"
                                         }
                                     },
                                 )
@@ -97,8 +138,8 @@ fun SchemaTree(
         // The hint sits on the header's own shade, which is what makes it a footer
         // rather than one more line of the tree.
         Text(
-            text = inserted?.let { "Inserted $it" }
-                ?: "Double-click a name to insert it into the editor as quoted SQL.",
+            text = echo
+                ?: "Double-click a name to insert it as quoted SQL. Right-click for the rest.",
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 2,
@@ -118,7 +159,7 @@ private fun TreeHeader(
     onToggleSystem: () -> Unit,
     onRefresh: () -> Unit,
 ) {
-    PaneHeader(title = "Database") {
+    PaneHeader(title = "Database", glyph = Glyphs.DATABASE) {
         ToolButton(
             text = if (showSystemSchemas) "Hide system" else "System",
             onClick = onToggleSystem,
@@ -142,14 +183,30 @@ private fun TreeNode(
     onToggle: () -> Unit,
     onRefresh: () -> Unit,
     onInsert: () -> Unit,
+    onCopy: () -> Unit,
+    onSelectRows: () -> Unit,
 ) {
     val indent = Space.md + (row.depth * 14).dp
 
-    Column(modifier = Modifier.fillMaxWidth()) {
+    var menuOpen by remember(row.key) { mutableStateOf(false) }
+    var menuAt by remember(row.key) { mutableStateOf(DpOffset.Zero) }
+    // The menu hangs off the whole node — the row and whatever error or note is under
+    // it — and Material places it below its anchor, so opening it under the pointer
+    // means subtracting the anchor's height back off. Measured rather than assumed:
+    // the row is a fixed 26dp, but a schema that could not be read is taller.
+    var height by remember(row.key) { mutableStateOf(0) }
+    val density = LocalDensity.current
+
+    Column(modifier = Modifier.fillMaxWidth().onSizeChanged { height = it.height }) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(Sizes.treeRow)
+                // The row the menu belongs to stays lit while the menu is open. The
+                // tree has no selection to fall back on, and a menu of five lines
+                // floating over forty identical monospace names is otherwise a menu
+                // with no visible subject.
+                .background(if (menuOpen) MaterialTheme.colorScheme.surfaceVariant else Color.Transparent)
                 .hoverHighlight()
                 .combinedClickable(
                     onClick = { if (row.expandable) onToggle() },
@@ -158,6 +215,15 @@ private fun TreeNode(
                     // the caller; what it produces is already the right text.
                     onDoubleClick = onInsert,
                 )
+                .onSecondaryClick { position ->
+                    // `position` is already in the whole row's coordinates — the
+                    // gesture sits outside the indent padding — so the offset is the
+                    // pointer as it was, less the anchor Material is measuring from.
+                    menuAt = with(density) {
+                        DpOffset(position.x.toDp(), position.y.toDp() - height.toDp())
+                    }
+                    menuOpen = true
+                }
                 .handCursor()
                 .padding(start = indent, end = Space.md)
                 .semantics { contentDescription = row.key.describe() },
@@ -169,6 +235,17 @@ private fun TreeNode(
                 expanded = row.expanded,
                 description = "${row.key.describe()}-toggle",
                 onToggle = onToggle,
+            )
+            // What this row is, before its name is read. A tree of forty monospace
+            // identifiers all look alike until something distinguishes a table from
+            // the view beside it, and the flag the row already carries is enough to
+            // give a primary key its own mark rather than a column's.
+            Glyph(
+                if (row.flags.contains("PK")) {
+                    Glyphs.PRIMARY_KEY
+                } else {
+                    Glyphs.of(row.kind, row.expanded)
+                },
             )
             Text(
                 text = row.label,
@@ -231,6 +308,61 @@ private fun TreeNode(
                     .semantics { contentDescription = "node-note" },
             )
         }
+
+        ContextMenu(
+            expanded = menuOpen,
+            at = menuAt,
+            onDismiss = { menuOpen = false },
+            description = "node-menu",
+            actions = nodeActions(row, onRefresh, onInsert, onCopy, onSelectRows),
+        )
+    }
+}
+
+/**
+ * The menu one node offers.
+ *
+ * Built from the row rather than from a kind-by-kind table, because the row already
+ * knows the two things the menu turns on: whether it names something insertable, and
+ * whether it has children to re-read. A folder has neither an identifier nor a name
+ * worth quoting, and it gets one line; a column has a name and no children, and it
+ * gets two.
+ *
+ * The order is what the row is most often wanted for. On a table that is the query —
+ * "show me what is in this" is the reason the tree was opened at all — and the two
+ * clipboard-shaped lines follow it, with the re-read last because it is maintenance
+ * rather than work. No line here is destructive, so nothing is set behind a rule.
+ */
+private fun nodeActions(
+    row: TreeRow,
+    onRefresh: () -> Unit,
+    onInsert: () -> Unit,
+    onCopy: () -> Unit,
+    onSelectRows: () -> Unit,
+): List<MenuAction> = buildList {
+    val queryable = row.kind == RowKind.TABLE ||
+        row.kind == RowKind.VIEW ||
+        row.kind == RowKind.MATERIALIZED_VIEW
+    // A hundred rows, because the point of the line is to see the shape of the data
+    // and an unbounded SELECT against a table the tree just estimated at nine million
+    // rows is a mistake the menu would be making on the user's behalf.
+    if (queryable) add(MenuAction("Select 100 rows", "menu-select-rows") { onSelectRows() })
+    if (row.identifier != null) {
+        // The same text for both, and the same text a double-click produces: quoted,
+        // and qualified when the node has a schema to qualify with. A menu that
+        // copied a bare name would be a second vocabulary for one identifier.
+        add(MenuAction("Insert name", "menu-insert") { onInsert() })
+        add(MenuAction("Copy name", "menu-copy") { onCopy() })
+    }
+    // Only where there is something under the node to re-read. A column has nothing,
+    // and a function has no children this version draws, so neither offers it.
+    if (row.expandable) {
+        add(
+            MenuAction(
+                label = if (queryable) "Refresh columns" else "Refresh",
+                description = "menu-refresh",
+            ) { onRefresh() },
+        )
     }
 }
 

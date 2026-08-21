@@ -165,6 +165,14 @@ class SchemaTreeViewModel(
         objects.keys.filter { it.isUnder(key) }.forEach { objects.remove(it) }
         columns.keys.filter { it.isUnder(key) }.forEach { columns.remove(it) }
         if (key == null) loadSchemas()
+        // A node the user pointed at is read again even when it is closed. Its
+        // children may be out of sight, but the listing itself is not: a folder is
+        // drawn from the listing it holds and says how many objects are in it, so
+        // dropping that cache and reading nothing back would delete the line the
+        // refresh was asked for. Only a node nobody has opened needs this — the ones
+        // that are open are read by the loop below, and asking twice would cancel
+        // the first read halfway through.
+        if (key != null && key !in expanded) load(key, force = true)
         // Whatever is still open is read again now. A refresh that emptied the tree
         // and waited for the user to re-open every node would be worse than stale.
         expanded.filter { it.isUnder(key) }.forEach { load(it, force = true) }

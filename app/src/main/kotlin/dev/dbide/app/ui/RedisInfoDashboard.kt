@@ -47,7 +47,7 @@ import dev.dbide.core.redis.ServerInfo
 @Composable
 fun RedisInfoDashboard(model: RedisInfoViewModel, modifier: Modifier = Modifier) {
     Column(modifier = modifier.fillMaxSize().semantics { contentDescription = "redis-info" }) {
-        PaneHeader(title = "Server") {
+        PaneHeader(title = "Server", glyph = Glyphs.SERVER) {
             if (model.loading) {
                 CircularProgressIndicator(
                     strokeWidth = 1.5.dp,

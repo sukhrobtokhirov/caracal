@@ -80,6 +80,15 @@ object Sizes {
      */
     val keyBrowser = 340.dp
 
+    /**
+     * The rail down the left of a dialog.
+     *
+     * Wider than a sidebar row needs, because a rail entry is two lines: what the
+     * section is, and one line saying what choosing it means. "PostgreSQL" over
+     * "Relational, port 5432" is a choice someone can make without opening it first.
+     */
+    val dialogRail = 220.dp
+
     /** The accent stripe marking the selected row in a list. */
     val selectionStripe = 2.dp
 
