@@ -23,6 +23,23 @@ import dev.dbide.core.connections.ValidationException
 import dev.dbide.core.export.CsvExportReport
 import dev.dbide.core.export.CsvOptions
 import dev.dbide.core.export.ExportLimits
+import dev.dbide.core.redis.CommandClearance
+import dev.dbide.core.redis.CommandConfirmationRequired
+import dev.dbide.core.redis.CommandConsent
+import dev.dbide.core.redis.CommandResult
+import dev.dbide.core.redis.KeyMetadata
+import dev.dbide.core.redis.KeyType
+import dev.dbide.core.redis.MemoryEstimate
+import dev.dbide.core.redis.RedisCommand
+import dev.dbide.core.redis.RedisCursor
+import dev.dbide.core.redis.RedisKey
+import dev.dbide.core.redis.RedisReply
+import dev.dbide.core.redis.ScanPage
+import dev.dbide.core.redis.ScanStop
+import dev.dbide.core.redis.ServerInfo
+import dev.dbide.core.redis.Ttl
+import dev.dbide.core.redis.ValuePage
+import dev.dbide.core.redis.ValueRequest
 import dev.dbide.core.result.CellValue
 import dev.dbide.core.result.Column
 import dev.dbide.core.result.ColumnFormat
@@ -279,6 +296,93 @@ open class FakeConnectionService(
             throw DbException(DbError.QueryFailed("permission denied for schema $schema"))
         }
     }
+
+    // --- Redis, M3 -----------------------------------------------------------
+
+    /** What [redisScan] hands back. A test that cares sets it; most do not. */
+    var scanPage: ScanPage = ScanPage(
+        cursor = RedisCursor.START,
+        keys = emptyList(),
+        iterations = 1,
+        stopped = ScanStop.COMPLETE,
+    )
+
+    /** What [redisInfo] hands back. Restricted by default, which is the harder case. */
+    var serverInfo: ServerInfo = ServerInfo(restricted = true)
+
+    /** What [redisValue] hands back, or `null` to have it report a missing key. */
+    var valuePage: ValuePage? = null
+
+    /** What [redisCommand] hands back when the guard is satisfied. */
+    var commandResult: CommandResult = CommandResult(
+        command = "PING",
+        reply = RedisReply.Status("PONG"),
+        duration = 1.milliseconds,
+        truncated = false,
+    )
+
+    /**
+     * The consent each console command arrived with.
+     *
+     * §3.10's single-use rule is a UI property — the toggle resets after one execution
+     * and is never saved — so it can only be asserted by recording what the UI actually
+     * sent, command by command.
+     */
+    val consents = mutableListOf<CommandConsent>()
+
+    override suspend fun redisInfo(id: ConnectionId): ServerInfo {
+        calls += "redisInfo"
+        await()
+        requireUnlocked()
+        return serverInfo
+    }
+
+    override suspend fun redisScan(
+        id: ConnectionId,
+        cursor: RedisCursor,
+        match: String?,
+        type: KeyType?,
+        pageSize: Int?,
+    ): ScanPage {
+        calls += "redisScan($cursor, $match, ${type?.wire})"
+        await()
+        requireUnlocked()
+        return scanPage
+    }
+
+    override suspend fun redisKey(id: ConnectionId, key: RedisKey): KeyMetadata {
+        calls += "redisKey"
+        await()
+        requireUnlocked()
+        return scanPage.keys.firstOrNull { it.key == key }
+            ?: KeyMetadata(key = key, type = null, ttl = Ttl.Gone, memory = MemoryEstimate.Absent)
+    }
+
+    override suspend fun redisValue(id: ConnectionId, request: ValueRequest): ValuePage {
+        calls += "redisValue(${request.type.wire})"
+        await()
+        requireUnlocked()
+        return valuePage
+            ?: throw DbException(DbError.KeyTypeChanged(expected = request.type.wire, actual = null))
+    }
+
+    override suspend fun redisCommand(
+        id: ConnectionId,
+        command: RedisCommand,
+        consent: CommandConsent,
+    ): CommandResult {
+        calls += "redisCommand(${command.label})"
+        consents += consent
+        await()
+        requireUnlocked()
+        // The real guard lives in `:core` and is tested there. What a UI test needs is
+        // the one behaviour it has to react to: a command that asks a question.
+        confirmations.remove(command.label)?.let { throw CommandConfirmationRequired(it) }
+        return commandResult
+    }
+
+    /** Commands this double will demand an acknowledgement for, once each. */
+    val confirmations = mutableMapOf<String, CommandClearance.Confirm>()
 
     override suspend fun shutdown() {
         calls += "shutdown"

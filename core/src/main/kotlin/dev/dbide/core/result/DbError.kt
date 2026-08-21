@@ -108,11 +108,29 @@ sealed interface DbError {
         override val code: String = "read_only_violation"
     }
 
+    /**
+     * A command the application refused to send.
+     *
+     * [command] is the normalized name and, for a container command like `CONFIG`,
+     * the subcommand with it — never the arguments, which are what carry the secrets.
+     *
+     * [reason] separates the two refusals M3 makes, because they end differently: a
+     * dangerous command on a writable connection can be sent after an explicit
+     * acknowledgement, and one on a read-only connection cannot be sent at all. A UI
+     * that offered an override for the second would be offering a button that does
+     * nothing.
+     */
     data class CommandNotAllowed(
         override val message: String,
         val command: String,
+        val reason: Reason = Reason.DANGEROUS,
     ) : DbError {
-        override val code: String = "command_not_allowed"
+        override val code: String = reason.code
+
+        enum class Reason(val code: String) {
+            DANGEROUS("command_not_allowed"),
+            READ_ONLY("command_not_allowed_read_only"),
+        }
     }
 
     /**
@@ -131,6 +149,41 @@ sealed interface DbError {
         override val message: String = "This connection configuration is not supported.",
     ) : DbError {
         override val code: String = "unsupported_configuration"
+    }
+
+    /**
+     * The request itself was malformed, before any server was asked.
+     *
+     * A scan cursor that is not a cursor, a page size that is not a number, a command
+     * with no command in it. Distinct from [QueryFailed] because no server has an
+     * opinion about it: nothing was sent, and nothing needs to be retried differently
+     * against a different server.
+     */
+    data class InvalidRequest(
+        override val message: String,
+    ) : DbError {
+        override val code: String = "invalid_request"
+    }
+
+    /**
+     * The key changed type between being selected and being read.
+     *
+     * Ordinary in Redis, where a key is deleted and recreated as something else by
+     * whatever owns it, and the reason §3.6 asks for the type to be re-checked before
+     * every value read: a hash viewer issuing `HSCAN` against what is now a list gets
+     * `WRONGTYPE`, which says nothing about what to do next. This does — [actual] is
+     * the viewer to open instead.
+     */
+    data class KeyTypeChanged(
+        val expected: String,
+        val actual: String?,
+        override val message: String = if (actual == null) {
+            "That key is no longer there."
+        } else {
+            "That key is now a $actual, not a $expected."
+        },
+    ) : DbError {
+        override val code: String = "key_type_changed"
     }
 }
 

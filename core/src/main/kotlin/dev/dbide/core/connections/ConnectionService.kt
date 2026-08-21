@@ -12,6 +12,18 @@ import dev.dbide.core.export.ExportLimits
 import dev.dbide.core.history.ExecutionOutcome
 import dev.dbide.core.history.ExecutionRecord
 import dev.dbide.core.postgres.PostgresCatalog
+import dev.dbide.core.redis.CommandConsent
+import dev.dbide.core.redis.CommandResult
+import dev.dbide.core.redis.KeyMetadata
+import dev.dbide.core.redis.KeyType
+import dev.dbide.core.redis.RedisAdapter
+import dev.dbide.core.redis.RedisCommand
+import dev.dbide.core.redis.RedisCursor
+import dev.dbide.core.redis.RedisKey
+import dev.dbide.core.redis.ScanPage
+import dev.dbide.core.redis.ServerInfo
+import dev.dbide.core.redis.ValuePage
+import dev.dbide.core.redis.ValueRequest
 import dev.dbide.core.postgres.PostgresConnectionConfig
 import dev.dbide.core.postgres.PostgresProbe
 import dev.dbide.core.redis.RedisSession
@@ -134,6 +146,61 @@ interface ConnectionService {
         options: CsvOptions = CsvOptions(),
         limits: ExportLimits = ExportLimits(),
     ): CsvExportReport
+
+    /**
+     * The `INFO` summary of an open Redis connection.
+     *
+     * Never fails for want of permission. A server that refuses `INFO` returns a
+     * [ServerInfo] marked restricted, because §3.8 requires the key tools to keep
+     * working when the dashboard cannot be drawn — and an ACL that grants read access
+     * and withholds `INFO` is the ordinary way to hand someone a production cache.
+     */
+    suspend fun redisInfo(id: ConnectionId): ServerInfo
+
+    /**
+     * One page of an open Redis connection's keyspace, with each key's metadata.
+     *
+     * Bounded on every axis by [dev.dbide.core.redis.RedisLimits], and never `KEYS`.
+     * An empty page is a successful result: `MATCH` filters on the server, so a
+     * selective pattern produces empty batches while the cursor advances, and only
+     * [ScanPage.complete] means the traversal is over.
+     */
+    suspend fun redisScan(
+        id: ConnectionId,
+        cursor: RedisCursor = RedisCursor.START,
+        match: String? = null,
+        type: KeyType? = null,
+        pageSize: Int? = null,
+    ): ScanPage
+
+    /** One key's type, TTL, and size estimate, read fresh. */
+    suspend fun redisKey(id: ConnectionId, key: RedisKey): KeyMetadata
+
+    /**
+     * One page of one Redis value, in the shape its type has.
+     *
+     * The key's type is re-read before anything else, so a key that has been deleted
+     * and recreated as something else reports
+     * [dev.dbide.core.result.DbError.KeyTypeChanged] with the type it is now, rather
+     * than a bare `WRONGTYPE`.
+     */
+    suspend fun redisValue(id: ConnectionId, request: ValueRequest): ValuePage
+
+    /**
+     * Runs a raw Redis command, once [dev.dbide.core.redis.RedisCommandGuard] is
+     * satisfied.
+     *
+     * [consent] is what the user has agreed to for *this* command and is never
+     * remembered past it. A command that needs an acknowledgement it has not been
+     * given throws [dev.dbide.core.redis.CommandConfirmationRequired] carrying the
+     * question to put on screen; the guard is consulted inside `:core`, so a caller
+     * cannot reach the server by declining to ask.
+     */
+    suspend fun redisCommand(
+        id: ConnectionId,
+        command: RedisCommand,
+        consent: CommandConsent = CommandConsent.None,
+    ): CommandResult
 
     /** Releases every client. Called during application shutdown. */
     suspend fun shutdown()
@@ -403,6 +470,46 @@ class DefaultConnectionService(
             runCatching { store.record(entry) }
                 .onFailure { log.debug("an execution could not be recorded in history") }
         }
+    }
+
+    // --- Redis, M3 -----------------------------------------------------------
+    //
+    // Like the PostgreSQL catalog reads, none of these needs a decrypted password and
+    // all of them refuse a connection that is not open rather than dialing one: a
+    // stale key list is not permission to reconnect to production.
+
+    override suspend fun redisInfo(id: ConnectionId): ServerInfo = redis(id).info()
+
+    override suspend fun redisScan(
+        id: ConnectionId,
+        cursor: RedisCursor,
+        match: String?,
+        type: KeyType?,
+        pageSize: Int?,
+    ): ScanPage = redis(id).scan(cursor = cursor, match = match, type = type, pageSize = pageSize)
+
+    override suspend fun redisKey(id: ConnectionId, key: RedisKey): KeyMetadata = redis(id).metadata(key)
+
+    override suspend fun redisValue(id: ConnectionId, request: ValueRequest): ValuePage =
+        redis(id).value(request)
+
+    /**
+     * Runs a console command.
+     *
+     * Not recorded in query history, and §3.9 is explicit about why: a Redis command's
+     * arguments are where its secrets are — `AUTH`, `CONFIG SET requirepass`, a session
+     * token being written to a key — and a history that stored them would be a file of
+     * credentials on disk. The console's own history stays in memory for the session.
+     */
+    override suspend fun redisCommand(
+        id: ConnectionId,
+        command: RedisCommand,
+        consent: CommandConsent,
+    ): CommandResult = redis(id).execute(command, consent)
+
+    private suspend fun redis(id: ConnectionId): RedisAdapter {
+        requireUnlocked()
+        return registry.redis(id).adapter
     }
 
     private suspend fun catalog(id: ConnectionId): PostgresCatalog {

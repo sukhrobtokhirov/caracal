@@ -8,6 +8,7 @@ import dev.dbide.core.catalog.ObjectKind
 import dev.dbide.core.catalog.SchemaInfo
 import dev.dbide.core.result.DbError
 import dev.dbide.core.result.DbException
+import dev.dbide.core.text.Redaction
 import java.sql.PreparedStatement
 import java.sql.ResultSet
 import java.sql.SQLException

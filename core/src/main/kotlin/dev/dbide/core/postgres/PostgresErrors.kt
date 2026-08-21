@@ -3,6 +3,7 @@ package dev.dbide.core.postgres
 import dev.dbide.core.result.DbError
 import dev.dbide.core.result.ErrorSubject
 import dev.dbide.core.result.Notice
+import dev.dbide.core.text.Redaction
 import java.security.cert.CertificateException
 import java.sql.SQLException
 import java.sql.SQLTimeoutException

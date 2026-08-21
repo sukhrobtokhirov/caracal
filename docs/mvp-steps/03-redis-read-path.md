@@ -56,6 +56,23 @@ Every endpoint verifies that the saved connection exists, is Redis, is unlocked,
 
 Use base-10 cursor strings in JSON and URLs. Redis cursors are unsigned 64-bit values, which can exceed JavaScript's exact integer range. Never serialize them as JSON numbers.
 
+> **Note, 2026-08-21 — there are no endpoints, and the cursor rule survives anyway.**
+> The five routes above are the Go build's, and the stack move deleted the wire they
+> travelled on. They are now suspend functions: `RedisAdapter.info`, `.scan`,
+> `.metadata`, `.value`, and `.execute`, reached through `ConnectionService`, which is
+> where "exists, is Redis, is unlocked, has an open client" is checked — `redis(id)`
+> asks the registry, and the registry hands back a Redis client or throws
+> `WrongEngineException`. There is no routing, so "key names are data, not path
+> segments" is now stronger than it was: a key is a `RedisKey` carrying bytes, and
+> there is no string form of it anywhere on the path to the server.
+>
+> The cursor rule is kept, and the reason it was written for turns out not to have
+> been the JSON. A Redis cursor is unsigned 64-bit, so half its range does not fit in
+> a `Long` as a positive number — a cursor past 2^63 read as one comes back negative,
+> and a negative cursor sent back is a protocol error partway through a traversal
+> that was working. `RedisCursor` is therefore still text: validated on the way in,
+> normalized so two spellings compare equal, and otherwise opaque.
+
 ## Work packages
 
 ### 3.1 Define safe resource limits
@@ -391,16 +408,76 @@ Assert that key-browser code never issues `KEYS`, `HGETALL`, `SMEMBERS`, or unbo
 
 ## Completion checklist
 
-- [ ] Key browsing exclusively uses bounded `SCAN`.
-- [ ] Empty SCAN batches do not end traversal prematurely.
-- [ ] Metadata commands are pipelined and tolerate expired keys/partial permissions.
-- [ ] Prefix grouping uses only already-scanned keys.
-- [ ] All six supported value types use bounded paging/ranges.
-- [ ] Binary and JSON-looking strings are represented safely.
-- [ ] The `INFO` dashboard degrades gracefully when fields or permissions are missing.
-- [ ] Raw command parsing preserves structured arguments and bounds replies.
-- [ ] Dangerous and read-only command policies are enforced on the server.
-- [ ] Production dangerous commands require typed confirmation and a one-shot override.
+- [x] Key browsing exclusively uses bounded `SCAN`. Asserted against the server's own
+      slow log, with every command it was asked recorded — see
+      `RedisBrowseIntegrationTest`.
+- [x] Empty SCAN batches do not end traversal prematurely.
+- [x] Metadata commands are pipelined and tolerate expired keys/partial permissions.
+- [x] Prefix grouping uses only already-scanned keys. `RedisKeyTree` takes a list and
+      returns a list; it has nothing to call.
+- [x] All six supported value types use bounded paging/ranges.
+- [x] Binary strings are represented safely. **JSON detection is not built** — see the
+      note below.
+- [x] The `INFO` dashboard's *data* degrades gracefully when fields or permissions are
+      missing. The dashboard itself is not built.
+- [x] Raw command parsing preserves structured arguments and bounds replies.
+- [x] Dangerous and read-only command policies are enforced in `:core`.
+- [x] Production dangerous commands require typed confirmation, and consent is an
+      argument rather than a setting — so there is nowhere for a one-shot override to
+      persist.
+
+> **Note, 2026-08-21 — what is built, and what is not.**
+> Work packages 3.1, 3.2, 3.3, 3.5, 3.6, 3.8, 3.9, and 3.10 have landed in `:core`,
+> with 643 tests passing across the module and the Redis integration suites running
+> against a real `redis:7-alpine`. **3.4 and 3.7 — the key browser and the value
+> viewers — are not built.** Their data model is: `RedisKeyTree` is the prefix
+> grouping, tested; `ConnectionService` carries the five Redis operations. What is
+> missing is the Compose rendering, the console's own screen, and the `INFO`
+> dashboard. JSON detection and pretty-printing (§3.6, §3.7) belong with the viewers
+> and went with them; `RedisLimits.jsonBytes` is the threshold reserved for it.
+>
+> What is worth recording about the shape of what did land:
+>
+> - **The connection speaks bytes, not strings.** Every key, field, member, and value
+>   in Redis is a byte sequence, so the client is opened with `ByteArrayCodec`. A
+>   string codec decodes a binary key as UTF-8 and substitutes replacement characters
+>   for what did not fit — and sending *that* back finds nothing, so the key appears
+>   to vanish when clicked. `RedisBytes` decides text-or-bytes once, at the edge, and
+>   the answer travels with the value.
+> - **`SCAN TYPE` is post-filtering, which §3.2 sanctions.** Lettuce's `ScanArgs` has
+>   no `TYPE` option, and `SCAN TYPE` does not make the server's work smaller anyway:
+>   Redis walks the same buckets and discards the misses itself. The metadata pipeline
+>   has already read every key's type for the browser's own display, so the filter
+>   costs one comparison and no extra command.
+> - **The guard's production row is wider than §3.10 asks for.** Dangerous commands
+>   take a typed phrase on production, as specified. So does anything *not* on the
+>   known-read allowlist — because the alternative is an application that makes you
+>   type a phrase to run `FLUSHDB` against production and lets `DEL` through on a
+>   click. It reuses the allowlist the read-only column is already built from, and
+>   dev and staging behave exactly as written. The dangerous list is also longer than
+>   the eight named: `SAVE`, the scripting commands, `REPLICAOF`, `MIGRATE`, and all
+>   of `ACL` are each one of the three things §3.10's closing line says to extend for.
+> - **A top-level error fails the command; a nested one is a value.** An error inside
+>   an `EXEC` array is not the command's failure and raising it would discard a reply
+>   that arrived intact. An error that *is* the reply is the failure, and letting it
+>   through as a value would mean every caller had to remember to look for one —
+>   including the internal reader that pages a stream, where a forgotten check reads
+>   as an empty stream.
+> - **`XRANGE` is dispatched raw.** Lettuce's `StreamMessage` carries an entry's
+>   fields as a `Map`, and a stream entry may repeat a field name — on the one
+>   structure in Redis whose whole purpose is recording exactly what was appended.
+> - **A simple string and a bulk string are only distinguishable over RESP3.** RESP2
+>   delivers both through one driver hook, so `RedisReply.Status` appears only on a
+>   RESP3 connection and callers should ask a reply for its text rather than match on
+>   the case.
+> - **`Redaction` moved to `dev.dbide.core.text`.** It was never PostgreSQL-specific,
+>   and Lettuce is if anything freer with the address than pgjdbc — it writes the URI
+>   it dialled, password included, into most connection failures. A `redis` package
+>   importing scrubbing from a `postgres` one would have been the wrong shape.
+> - **Console commands are not recorded in query history**, unlike M2's statements.
+>   §3.9's reason is one line long: a Redis command's arguments are where its secrets
+>   are — `AUTH`, `CONFIG SET requirepass`, a token being written to a key — and a
+>   history that stored them would be a file of credentials on disk.
 
 ## Exit criterion
 

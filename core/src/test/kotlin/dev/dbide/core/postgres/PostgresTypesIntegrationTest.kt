@@ -6,6 +6,7 @@ import dev.dbide.core.result.Column
 import dev.dbide.core.result.ColumnFormat
 import dev.dbide.core.result.ResultLimits
 import dev.dbide.core.result.Truncation
+import dev.dbide.core.text.Redaction
 import java.math.BigDecimal
 import java.util.TimeZone
 import kotlin.test.assertEquals

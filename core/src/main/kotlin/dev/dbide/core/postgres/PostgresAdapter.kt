@@ -14,6 +14,7 @@ import dev.dbide.core.result.Notice
 import dev.dbide.core.result.QueryResult
 import dev.dbide.core.result.ResultLimits
 import dev.dbide.core.result.Truncation
+import dev.dbide.core.text.Redaction
 import java.sql.Connection
 import java.sql.PreparedStatement
 import java.sql.ResultSet

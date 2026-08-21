@@ -4,6 +4,7 @@ import dev.dbide.core.connections.Secret
 import dev.dbide.core.result.CellValue
 import dev.dbide.core.result.DbError
 import dev.dbide.core.result.DbException
+import dev.dbide.core.text.Redaction
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertIs

@@ -2,6 +2,7 @@ package dev.dbide.core.postgres
 
 import dev.dbide.core.connections.Secret
 import dev.dbide.core.result.DbError
+import dev.dbide.core.text.Redaction
 import java.sql.SQLException
 import java.sql.SQLTimeoutException
 import java.sql.SQLTransientConnectionException

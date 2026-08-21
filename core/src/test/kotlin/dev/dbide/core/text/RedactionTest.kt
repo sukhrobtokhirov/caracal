@@ -1,6 +1,7 @@
-package dev.dbide.core.postgres
+package dev.dbide.core.text
 
 import dev.dbide.core.connections.Secret
+import dev.dbide.core.postgres.PostgresConnectionConfig
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import org.junit.jupiter.api.Test

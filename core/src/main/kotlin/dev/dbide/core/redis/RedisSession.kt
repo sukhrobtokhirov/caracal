@@ -13,11 +13,13 @@ import dev.dbide.core.connections.TestResult
 import dev.dbide.core.connections.TlsMode
 import dev.dbide.core.result.DbError
 import dev.dbide.core.result.DbException
+import dev.dbide.core.text.Redaction
 import io.lettuce.core.ClientOptions
 import io.lettuce.core.RedisClient
 import io.lettuce.core.RedisURI
 import io.lettuce.core.SocketOptions
 import io.lettuce.core.api.StatefulRedisConnection
+import io.lettuce.core.codec.ByteArrayCodec
 import java.time.Duration as JavaDuration
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
@@ -27,13 +29,35 @@ import kotlinx.coroutines.future.await
 import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
 
-/** A live Redis connection, owned by whoever opened it. */
+/**
+ * A live Redis connection, owned by whoever opened it.
+ *
+ * The connection is opened with [ByteArrayCodec], not the string codec, and that is
+ * the decision the rest of M3 rests on. Every key, field, member, and value in Redis
+ * is a byte string: a key can be a packed struct, a value can be a JPEG, and the
+ * server neither knows nor cares. A string codec decodes all of that as UTF-8 and
+ * substitutes a replacement character for whatever did not fit, which produces a key
+ * name that cannot be sent back to fetch the value it names — the failure would look
+ * like the key vanishing, on exactly the keys where it is hardest to guess why.
+ * Deciding what is text is [RedisBytes]'s job, and it happens once, at the edge.
+ */
 class RedisSession private constructor(
     private val client: RedisClient,
-    private val connection: StatefulRedisConnection<String, String>,
+    private val connection: StatefulRedisConnection<ByteArray, ByteArray>,
+    config: ConnectionConfig,
+    password: Secret,
+    limits: RedisLimits,
 ) : AutoCloseable {
 
-    /** One round trip. M3 grows this into SCAN and paged value reads. */
+    /** Everything M3 does with this server. */
+    val adapter: RedisAdapter = RedisAdapter(
+        connection = connection,
+        config = config,
+        redaction = Redaction(secretsOf(config, password)),
+        limits = limits,
+    )
+
+    /** One round trip, used to prove a new connection works. */
     suspend fun ping(): String = command { connection.async().ping().await() }
 
     /**
@@ -56,7 +80,7 @@ class RedisSession private constructor(
     } catch (cancellation: kotlinx.coroutines.CancellationException) {
         throw cancellation
     } catch (failure: Throwable) {
-        throw DbException(RedisErrors.classify(failure), failure)
+        throw DbException(RedisErrors.classify(failure))
     }
 
     companion object {
@@ -72,32 +96,35 @@ class RedisSession private constructor(
          * Opens a client and verifies it can reach the server once. A client that
          * cannot ping is closed here rather than handed back half-alive.
          */
-        suspend fun open(config: ConnectionConfig, password: Secret): RedisSession =
-            withContext(Dispatchers.IO) {
-                val client = RedisClient.create(uri(config, password)).apply {
-                    options = ClientOptions.builder()
-                        .socketOptions(
-                            SocketOptions.builder()
-                                .connectTimeout(JavaDuration.ofMillis(CONNECT_TIMEOUT.inWholeMilliseconds))
-                                .build(),
-                        )
-                        .build()
-                }
-                val connection = try {
-                    client.connect()
-                } catch (failure: Throwable) {
-                    runCatching { client.shutdown() }
-                    throw DbException(RedisErrors.classify(failure), failure)
-                }
-                val session = RedisSession(client, connection)
-                try {
-                    session.ping()
-                } catch (failure: Throwable) {
-                    session.close()
-                    throw failure
-                }
-                session
+        suspend fun open(
+            config: ConnectionConfig,
+            password: Secret,
+            limits: RedisLimits = RedisLimits(),
+        ): RedisSession = withContext(Dispatchers.IO) {
+            val client = RedisClient.create(uri(config, password)).apply {
+                options = ClientOptions.builder()
+                    .socketOptions(
+                        SocketOptions.builder()
+                            .connectTimeout(JavaDuration.ofMillis(CONNECT_TIMEOUT.inWholeMilliseconds))
+                            .build(),
+                    )
+                    .build()
             }
+            val connection = try {
+                client.connect(ByteArrayCodec.INSTANCE)
+            } catch (failure: Throwable) {
+                runCatching { client.shutdown() }
+                throw DbException(RedisErrors.classify(failure))
+            }
+            val session = RedisSession(client, connection, config, password, limits)
+            try {
+                session.ping()
+            } catch (failure: Throwable) {
+                session.close()
+                throw failure
+            }
+            session
+        }
 
         /** Dials, authenticates, reads the server version, and disconnects. */
         suspend fun test(config: ConnectionConfig, password: Secret): TestResult {
@@ -111,6 +138,21 @@ class RedisSession private constructor(
                 )
             }
         }
+
+        /**
+         * The strings that must never survive into a message or a log line.
+         *
+         * The Redis equivalent of `PostgresConnectionConfig.secrets()`, and the same
+         * list for the same reason: Lettuce writes the address it dialled into most of
+         * its connection failures, and the URI it builds carries the password when one
+         * was given.
+         */
+        private fun secretsOf(config: ConnectionConfig, password: Secret): List<String> = listOf(
+            config.host,
+            "${config.host}:${config.port}",
+            config.username,
+            password.expose(),
+        )
 
         private fun uri(config: ConnectionConfig, password: Secret): RedisURI {
             val builder = RedisURI.Builder.redis(config.host, config.port)

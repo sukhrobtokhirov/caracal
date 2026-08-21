@@ -3,6 +3,7 @@ package dev.dbide.core.postgres
 import dev.dbide.core.connections.Engine
 import dev.dbide.core.connections.TestResult
 import dev.dbide.core.result.DbException
+import dev.dbide.core.text.Redaction
 import java.sql.SQLException
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds

@@ -1,5 +1,6 @@
 package dev.dbide.core.postgres
 
+import dev.dbide.core.text.Redaction
 import kotlin.time.Duration
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
