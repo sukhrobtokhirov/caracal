@@ -2,8 +2,10 @@ package dev.dbide.app.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -30,6 +32,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -315,8 +318,25 @@ fun WorkspaceScreen(
             )
             Hairline()
 
-            Row(modifier = Modifier.fillMaxSize()) {
-                if (sidebar) {
+            // §4.9's zoom clause. The two side panes are fixed widths, and at 200%
+            // on a small laptop they are wider than the window: 264 and 288 into 380
+            // leaves the editor — Run, Cancel, and the statement itself — with
+            // nothing, and Compose does not complain, it just lays the pane out past
+            // the right-hand edge where nobody can see it.
+            //
+            // So the panes give way in the order the window can afford to lose them.
+            // The connection list goes first: it is the one whose job is already done
+            // once a connection is chosen, and the switcher chord reaches every one
+            // of them without it. The object browser goes second. The editor never
+            // goes, because it is what the window is for.
+            BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+                val room = maxWidth
+                val browserWidth = if (postgres != null) Sizes.browser else Sizes.keyBrowser
+                val roomForBrowser = room - browserWidth >= Sizes.workbenchMin
+                val showSidebar = sidebar && room - Sizes.sidebar - browserWidth >= Sizes.workbenchMin
+
+                Row(modifier = Modifier.fillMaxSize()) {
+                if (showSidebar) {
                     ConnectionList(
                         connections = viewModel.connections,
                         selectedId = viewModel.selected?.id,
@@ -332,7 +352,7 @@ fun WorkspaceScreen(
                     VerticalHairline()
                 }
 
-                if (postgres != null) {
+                if (postgres != null && roomForBrowser) {
                     SchemaTree(
                         model = tree,
                         actions = TreeActions(
@@ -355,7 +375,7 @@ fun WorkspaceScreen(
                     VerticalHairline()
                 }
 
-                if (redisView != null) {
+                if (redisView != null && roomForBrowser) {
                     RedisKeyBrowser(
                         model = redis.browser,
                         focus = keyFocus,
@@ -460,6 +480,7 @@ fun WorkspaceScreen(
                             }
                         }
                     }
+                }
                 }
             }
         }
@@ -712,10 +733,11 @@ private fun WorkspaceTabs(
                             size = Size(size.width, thickness),
                         )
                     }
-                    .clickable { onSelect(entry) }
+                    .selectable(selected = active, role = Role.Tab) { onSelect(entry) }
                     .handCursor()
                     .padding(horizontal = Space.xl)
-                    .testTag("workspace-tab-${entry.name.lowercase()}"),
+                    .testTag("workspace-tab-${entry.name.lowercase()}")
+                    .arrowsWalkTabs(),
                 contentAlignment = Alignment.Center,
             ) {
                 Row(

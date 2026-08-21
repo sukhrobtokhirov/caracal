@@ -35,6 +35,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import dev.dbide.app.Announcements
 import dev.dbide.app.EditorRun
 import dev.dbide.app.EditorTab
 import dev.dbide.app.EditorViewModel
@@ -175,6 +176,12 @@ private fun ReplaceScriptConfirmation(onConfirm: () -> Unit, onCancel: () -> Uni
 /** What the last run left behind, in whichever of its five states it ended. */
 @Composable
 private fun ResultArea(model: EditorViewModel, export: ExportViewModel, onCopy: (String) -> Unit) {
+    // §4.9. A statement can take a minute, and the pane it finishes in may not be
+    // the one in front. This says how it ended, once, and says nothing about what
+    // came back beyond how much of it there was.
+    Announcement(Announcements.of(model.run), tag = "run-announcement")
+    Announcement(Announcements.of(export.run), tag = "export-announcement")
+
     when (val run = model.run) {
         EditorRun.Idle -> EmptyState(
             title = "No result yet",

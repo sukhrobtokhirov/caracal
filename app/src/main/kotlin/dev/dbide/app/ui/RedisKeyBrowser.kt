@@ -25,6 +25,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.graphics.Color
@@ -239,6 +243,12 @@ private fun KeyRowLine(
             .hoverHighlight()
             .clickable { if (row.expandable) onToggle() else onOpen() }
             .handCursor()
+            // The same four keys the schema tree answers. A keyspace and a catalog
+            // are nothing alike except in this: they are both trees, and a tree is
+            // walked with arrows.
+            .arrowsWalkTree(row.expandable, row.expanded, onToggle)
+            .expansion(row.expandable, row.expanded, onToggle)
+            .semantics { this.selected = selected }
             .testTag(row.describe()),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -328,9 +338,12 @@ private fun GroupDisclosure(row: KeyRow, onToggle: () -> Unit) {
                     Modifier
                         .clip(MaterialTheme.shapes.extraSmall)
                         .hoverHighlight(MaterialTheme.shapes.extraSmall)
-                        .clickable(onClick = onToggle)
+                        .clickable(role = Role.Button, onClick = onToggle)
                         .handCursor()
                         .testTag("${row.describe()}-toggle")
+                        .semantics {
+                            contentDescription = if (row.expanded) "Collapse" else "Expand"
+                        }
                 },
             ),
         contentAlignment = Alignment.Center,

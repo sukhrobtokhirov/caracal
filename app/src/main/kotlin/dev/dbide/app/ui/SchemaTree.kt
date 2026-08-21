@@ -26,11 +26,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTag
 import androidx.compose.ui.text.font.FontFamily
@@ -236,7 +238,9 @@ private fun TreeNode(
                     menuOpen = true
                 }
                 .handCursor()
+                .arrowsWalkTree(row.expandable, row.expanded, onToggle)
                 .padding(start = indent, end = Space.md)
+                .expansion(row.expandable, row.expanded, onToggle)
                 .testTag(row.key.describe()),
             horizontalArrangement = Arrangement.spacedBy(Space.sm),
             verticalAlignment = Alignment.CenterVertically,
@@ -407,9 +411,14 @@ private fun Disclosure(
                     Modifier
                         .clip(MaterialTheme.shapes.extraSmall)
                         .hoverHighlight(MaterialTheme.shapes.extraSmall)
-                        .clickable(onClick = onToggle)
+                        .clickable(role = Role.Button, onClick = onToggle)
                         .handCursor()
                         .testTag(tag)
+                        // `▾` announces as "black down-pointing small triangle",
+                        // which describes the pixels and not the button.
+                        .semantics {
+                            contentDescription = if (expanded) "Collapse" else "Expand"
+                        }
                 },
             ),
         contentAlignment = Alignment.Center,

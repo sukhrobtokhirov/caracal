@@ -33,7 +33,10 @@ no JDK to install: the installer bundles its own trimmed runtime.
 > back. Light, dark, and system are one set of named tokens rather than a colour per
 > component, every readable pair in both of them is held to WCAG AA by a test that
 > does the arithmetic, and the window no longer opens with a frame of white before it
-> remembers it is dark. See
+> remembers it is dark. The keyboard reaches both trees and both tab strips by their
+> arrow keys, a dialog takes the caret when it opens and gives it back when it goes,
+> a query that finishes announces how it ended without reading the result out, and at
+> 200% on a small laptop the panes give way rather than pushing Run off the edge. See
 > [`docs/mvp-steps/`](docs/mvp-steps/README.md).
 
 ## The shape of the product

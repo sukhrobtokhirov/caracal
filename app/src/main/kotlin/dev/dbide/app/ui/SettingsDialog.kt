@@ -24,6 +24,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
@@ -123,6 +124,8 @@ private fun Appearance(theme: ThemeViewModel) {
                     tag = "theme-choice-${mode.wire}",
                     selected = theme.mode == mode,
                     onClick = { theme.select(mode) },
+                    // Three answers to one question, inside a `selectableGroup`.
+                    role = Role.RadioButton,
                     leading = { ThemeSwatch(mode) },
                 )
             }

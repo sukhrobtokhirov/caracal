@@ -250,6 +250,7 @@ private fun EditorTabItem(
                 // it was on the title text, which reads as a label nobody can press.
                 .selectable(selected = active, role = Role.Tab, onClick = onSelect)
                 .testTag("editor-tab-$index")
+                .arrowsWalkTabs()
                 .onSecondaryClick { at -> menu = DpOffset(at.x.dp, 0.dp) }
                 .handCursor()
                 .padding(start = Space.lg, end = Space.sm),

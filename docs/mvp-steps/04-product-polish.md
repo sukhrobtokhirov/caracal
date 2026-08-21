@@ -669,6 +669,100 @@ the section contains today.
 button in the application now sits beside a word saying what it is waiting for, which
 is the thing a contrast ratio was never going to supply.
 
+### 4.9 — accessibility and interaction
+
+**One string was doing two jobs.** `contentDescription` is what a screen reader
+reads out, and all 159 places that set it were setting a test identifier —
+`open-settings`, `theme-choice-light`, `editor-tab-0`. Read aloud, the application
+was slugs. Identity moved to `testTag`, the parameter that carries it is called
+`tag`, and `contentDescription` is now free for the controls that need a name.
+Splitting them immediately showed two controls whose identity was on the wrong node:
+an editor tab's was on its title text, and a history entry's was on its statement —
+both labels nobody can press, sitting inside the thing that is actually the control.
+
+**Roles and states, where there were none.** The application had exactly one `Role`
+in it. Editor tabs and workspace tabs are now `selectable` with `Role.Tab`, so which
+one is in front is a state rather than an underline; the settings rail is `Role.Tab`
+and the theme picker inside it `Role.RadioButton`, which is what three answers to one
+question are; connection rows, switcher rows, and key rows carry `selected`; and both
+trees carry `Expanded`/`Collapsed` along with the `expand`/`collapse` actions, so a
+node can be opened by something that is not a pointer. Every glyph in the application
+already stripped itself from the accessibility tree — `Glyph` has done
+`clearAndSetSemantics` since M2 — but the two disclosure triangles and the tab's `✕`
+were glyphs *as* controls, and they announced as "black right-pointing small
+triangle" and "multiplication sign". They have names now, and naming one also gives
+it a tooltip, so the same fact reaches someone looking at it.
+
+**Compose Desktop binds Tab to focus movement and nothing else.** The arrow keys are
+not wired to it, which is the opposite of what `FocusDirection` suggests and was
+worth finding out rather than assuming — the first version of `KeyboardUiTest`
+asserted that down moved between tree rows, and it failed. Both trees now answer all
+four: up and down walk the rows, right opens a closed node and steps into an open
+one, left closes an open node and goes back up from a closed one. Both tab strips
+answer left and right. Focus moves; selection does not follow it, because a tab that
+activates as it is passed swaps the pane underneath five times on the way to the
+sixth, and each swap here is a schema tree and a result grid.
+
+**Two of the three focus promises were already kept, and the third was not.** A
+Compose Desktop dialog is its own focus scope, so Tab cannot reach the workspace
+behind it, and closing one returns focus to the control that opened it. Both are
+asserted in `DialogFocusUiTest` rather than assumed, because "the framework does it"
+is a claim with a version number attached. What the framework does not do is put
+focus *into* the dialog: every modal in the application opened with the caret still
+on the button behind it, so a keyboard user's first Tab was spent arriving rather
+than moving.
+
+**The live region says how it ended, never what came back.** `Announcements` maps a
+run to one sentence — `Finished. 1,204 rows · 82 ms`, `Cancelled.`, `Failed.` and the
+message the banner is already showing — and `Announcement` publishes it as a polite
+live region drawing nothing. Making the *visible* status line the region would have
+been tidier and wrong: that line changes as a result is scrolled and filtered, and a
+region that speaks whenever something moves is one people switch off. A test asserts
+that a five-thousand-row result still announces in under eighty characters and that
+no cell value appears in it — the sort of regression nothing visual would catch.
+Exports announce too; an export is the one thing here that routinely outlives the
+user's attention.
+
+**The zoom check found a real failure.** The side panes are fixed widths — 264 of
+connection list and 288 of object browser — and at 200% display scale on the 760×480
+minimum window there are 380 in total. Compose does not complain about this; it lays
+the editor out past the right-hand edge, so Run, Cancel, and the statement were
+simply not on screen. The panes now give way in the order the window can afford to
+lose them: the connection list first, because `Cmd/Ctrl+K` reaches every connection
+without it, then the object browser. The editor never goes. `ZoomUiTest` drives the
+small window through the switcher, which is the route that exists precisely because
+the list does not.
+
+**A virtualized cell carries its column with it.** `42` in the middle of a forty-
+column result is a value with no subject once the header has scrolled away, so each
+cell announces as `total, 42` and carries `collectionItemInfo` for the platform
+bridges that use it.
+
+**Reduced motion had nothing to reduce.** The application animates exactly one thing:
+the indeterminate progress spinner. There are no transitions, no crossfades, no
+animated values — the M2 visual pass never added any, and the Redis dashboard
+explicitly declined to animate its counters. WCAG 2.3.3 is about non-essential motion
+from interaction, and a spinner is the status rather than a decoration of it. There
+is also no reduced-motion signal available to a JVM desktop application: AWT exposes
+no desktop property for it on any platform (checked), and the real answers are a
+`defaults read` subprocess on macOS and a native call on Windows. Adding a preference
+of our own would be inventing a setting nobody would know to look for. If a later
+milestone adds real motion, this stops being true and the preference has to arrive
+with it.
+
+**Disabled controls keep Material's alpha.** WCAG exempts an inactive control from
+the contrast floor, and §4.7 already dealt with the complaint underneath the rule:
+every disabled button in the application sits beside a word saying what it is waiting
+for.
+
+**A screen-reader smoke test was not run.** The manual scenario asks for one and this
+machine has no assistive technology configured, so what is claimed here is what the
+semantics tree contains, asserted in `AccessibilityUiTest` — not what VoiceOver or
+Narrator says when it reads it. Compose Multiplatform's desktop accessibility bridge
+is also partial, and how much of this reaches a real screen reader today is not
+something these tests can answer. The tree being right is the half that is ours; it
+is the half that has to be right first either way.
+
 ## Completion checklist
 
 - [x] Query history is bounded, paged, filterable, reopenable, and clearable.
@@ -680,7 +774,7 @@ is the thing a contrast ratio was never going to supply.
 - [x] PostgreSQL error highlighting is accurate and never stale/misleading.
 - [x] Every primary surface has intentional loading and empty states.
 - [x] Light/dark/system themes cover editor, grid, dialogs, and status colors.
-- [ ] Core workflows are keyboard accessible and usable at zoom.
+- [x] Core workflows are keyboard accessible and usable at zoom.
 - [ ] Large normal-use states stay responsive and memory-bounded.
 
 ## Exit criterion

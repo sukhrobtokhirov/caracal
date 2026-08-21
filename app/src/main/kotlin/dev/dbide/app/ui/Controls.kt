@@ -11,6 +11,7 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
@@ -32,10 +33,17 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusDirection
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.collapse
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.expand
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -47,6 +55,7 @@ import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.PointerIcon
@@ -181,6 +190,122 @@ fun ToolButton(
 }
 
 enum class ToolEmphasis { NORMAL, PRIMARY, DANGER }
+
+/**
+ * Left and right move along a strip of tabs.
+ *
+ * §4.9's arrow keys. Compose Desktop binds Tab to focus movement and nothing else —
+ * the arrow keys are not wired to it, which is worth stating because it is the
+ * opposite of what the documentation for `FocusDirection` leads you to expect.
+ *
+ * Focus moves; selection does not follow it. A tab that activates as it is passed
+ * swaps the pane underneath five times on the way to the sixth tab, and each swap
+ * here is a schema tree and a result grid. Enter and space choose one, which is
+ * `selectable`'s own behaviour and needs nothing from this.
+ */
+@Composable
+fun Modifier.arrowsWalkTabs(): Modifier {
+    val focus = LocalFocusManager.current
+    return onKeyEvent { event ->
+        if (event.type != KeyEventType.KeyDown) {
+            false
+        } else {
+            when (event.key) {
+                Key.DirectionRight -> focus.moveFocus(FocusDirection.Next)
+                Key.DirectionLeft -> focus.moveFocus(FocusDirection.Previous)
+                else -> false
+            }
+        }
+    }
+}
+
+/**
+ * The four arrow keys, on a row of a tree.
+ *
+ * Up and down walk the rows. Right opens a closed node and steps into an open one;
+ * left closes an open node and goes back up from a closed one — which is how someone
+ * leaves a schema they opened by mistake without scrolling past everything in it.
+ *
+ * Both of this application's trees get the same four keys from here, because a
+ * keyspace and a catalog are the same shape to a keyboard even though nothing else
+ * about them is alike.
+ *
+ * Enter and space are not handled: they are the row's own click, which is already
+ * what a focusable clickable does with them.
+ */
+@Composable
+fun Modifier.arrowsWalkTree(expandable: Boolean, expanded: Boolean, onToggle: () -> Unit): Modifier {
+    val focus = LocalFocusManager.current
+    return onKeyEvent { event ->
+        if (event.type != KeyEventType.KeyDown) {
+            false
+        } else {
+            when (event.key) {
+                Key.DirectionDown -> focus.moveFocus(FocusDirection.Down)
+                Key.DirectionUp -> focus.moveFocus(FocusDirection.Up)
+                Key.DirectionRight ->
+                    if (expandable && !expanded) {
+                        onToggle()
+                        true
+                    } else {
+                        focus.moveFocus(FocusDirection.Down)
+                    }
+
+                Key.DirectionLeft ->
+                    if (expandable && expanded) {
+                        onToggle()
+                        true
+                    } else {
+                        focus.moveFocus(FocusDirection.Up)
+                    }
+
+                else -> false
+            }
+        }
+    }
+}
+
+/**
+ * Whether a row opens, and whether it is open — for something reading it out.
+ *
+ * The triangle beside the name is stripped from the accessibility tree as
+ * decoration, which is right: it says nothing a word cannot say better. This is the
+ * word.
+ */
+fun Modifier.expansion(expandable: Boolean, expanded: Boolean, onToggle: () -> Unit): Modifier =
+    if (!expandable) this else semantics {
+        stateDescription = if (expanded) "Expanded" else "Collapsed"
+        if (expanded) collapse { onToggle(); true } else expand { onToggle(); true }
+    }
+
+/**
+ * A sentence for someone who is not looking at the pane it belongs to.
+ *
+ * §4.9's live region. It draws nothing: everything it says is already on screen in
+ * a form a sighted user reads without being interrupted, and the point of a live
+ * region is to interrupt. Announcing the visible status line *itself* would have
+ * been tidier and wrong — that line changes as a result is scrolled and filtered,
+ * and a region that speaks every time something moves is one people turn off.
+ *
+ * Polite rather than assertive, deliberately. A query that finished is worth saying
+ * at the next pause; it is not worth cutting the user off mid-word to say.
+ *
+ * Passing `null` removes the node rather than emptying it, so nothing is announced
+ * when a pane goes back to having nothing to report.
+ */
+@Composable
+fun Announcement(text: String?, tag: String) {
+    if (text == null) return
+    Box(
+        modifier = Modifier
+            .size(0.dp)
+            .semantics {
+                liveRegion = LiveRegionMode.Polite
+                contentDescription = text
+            }
+            .testTag(tag),
+    )
+}
 
 /**
  * [content] with [text] under the pointer, or [content] alone when there is nothing

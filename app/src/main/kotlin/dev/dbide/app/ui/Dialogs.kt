@@ -3,6 +3,8 @@ package dev.dbide.app.ui
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.focusGroup
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -24,10 +26,16 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -101,6 +109,24 @@ fun AppDialog(
             usePlatformDefaultWidth = false,
         ),
     ) {
+        // §4.9's focus handling, which turned out to be half done for us and half
+        // not. Compose Desktop puts a dialog in its own focus scope, so Tab already
+        // cycles within it and cannot reach the workspace underneath — that half is
+        // the platform's and `DialogUiTest` asserts it rather than assuming it.
+        //
+        // What the platform does not do is put focus *into* the dialog. Without the
+        // effect below the caret stays on whatever opened the window, so the first
+        // Tab is spent arriving rather than moving, and a keyboard user's first
+        // impression of every dialog in the application is a window that ignored
+        // them.
+        val inside = remember { FocusRequester() }
+        LaunchedEffect(Unit) {
+            // After a frame: the group has nothing to hand focus to until its
+            // content has been composed and placed.
+            withFrameNanos { }
+            runCatching { inside.requestFocus() }
+        }
+
         Surface(
             shape = MaterialTheme.shapes.extraLarge,
             color = MaterialTheme.colorScheme.surface,
@@ -110,6 +136,8 @@ fun AppDialog(
                 .fillMaxHeight(0.9f)
                 .heightIn(max = maxHeight)
                 .border(Sizes.hairline, Dbide.colors.hairline, MaterialTheme.shapes.extraLarge)
+                .focusRequester(inside)
+                .focusGroup()
                 .testTag(tag),
         ) {
             Column(modifier = Modifier.fillMaxSize()) {
@@ -224,6 +252,14 @@ fun RailItem(
     modifier: Modifier = Modifier,
     detail: String? = null,
     enabled: Boolean = true,
+    /**
+     * What one of these is, to something reading the window out.
+     *
+     * A rail is tabs — one of several views of the same window. The same component
+     * draws the theme picker, where the entries are three answers to one question
+     * and `RadioButton` is the honest word for that.
+     */
+    role: Role = Role.Tab,
     leading: (@Composable () -> Unit)? = null,
 ) {
     Row(
@@ -236,7 +272,7 @@ fun RailItem(
                 MaterialTheme.shapes.medium,
             )
             .hoverHighlight(MaterialTheme.shapes.medium, enabled = enabled)
-            .clickable(enabled = enabled, onClick = onClick)
+            .selectable(selected = selected, enabled = enabled, role = role, onClick = onClick)
             .handCursor(enabled)
             .padding(horizontal = Space.md, vertical = Space.md)
             .testTag(tag),

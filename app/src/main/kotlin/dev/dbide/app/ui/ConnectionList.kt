@@ -26,6 +26,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
@@ -221,6 +223,10 @@ private fun ConnectionRow(
                     if (enabled) actions.activate(view)
                 },
             )
+            // The list is single-selection and the row says so. `combinedClickable`
+            // is kept for the double-click that opens a connection, so the state is
+            // declared beside it rather than swapped for `selectable`.
+            .semantics { this.selected = selected }
             .onSecondaryClick { position ->
                 // Right-clicking selects too. A menu that acts on one connection while
                 // the rest of the window describes another is how the wrong database

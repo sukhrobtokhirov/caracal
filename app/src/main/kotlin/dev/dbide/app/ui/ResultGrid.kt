@@ -60,6 +60,11 @@ import androidx.compose.ui.input.pointer.isShiftPressed as pointerShiftPressed
 import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.CollectionInfo
+import androidx.compose.ui.semantics.CollectionItemInfo
+import androidx.compose.ui.semantics.collectionInfo
+import androidx.compose.ui.semantics.collectionItemInfo
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTag
 import androidx.compose.ui.text.TextStyle
@@ -309,7 +314,17 @@ private fun GridRow(
             .height(ROW_HEIGHT)
             .fillMaxWidth()
             .background(background)
-            .hoverHighlight(),
+            .hoverHighlight()
+            // How far through the result this row is, said once per row rather than
+            // once per cell. The count is what the grid actually holds — a result
+            // stopped at a limit says so in its own status line, and repeating that
+            // ten thousand times here would not help anyone.
+            .semantics {
+                collectionInfo = CollectionInfo(
+                    rowCount = state.result.rows.size,
+                    columnCount = state.result.columns.size,
+                )
+            },
     ) {
         RowNumber(state, index, gutter, selected, focus)
         VerticalHairline()
@@ -446,7 +461,25 @@ private fun GridCell(
                 },
             )
             .padding(horizontal = CELL_PADDING)
-            .testTag("grid-cell-$row-$column"),
+            .testTag("grid-cell-$row-$column")
+            // §4.9's row and column context. A cell read on its own is a value with
+            // no subject — "42" tells you nothing about which of forty columns it
+            // came from, and the header is scrolled somewhere off to the left. The
+            // name travels with the value instead.
+            //
+            // `collectionItemInfo` carries the same fact in the structured form the
+            // platform bridges prefer, where they support it; the sentence is the
+            // part that works everywhere.
+            .semantics {
+                contentDescription =
+                    "${state.result.columns[column].name}, ${GridText.preview(value)}"
+                collectionItemInfo = CollectionItemInfo(
+                    rowIndex = row,
+                    rowSpan = 1,
+                    columnIndex = column,
+                    columnSpan = 1,
+                )
+            },
         contentAlignment = if (format.rightAligned) Alignment.CenterEnd else Alignment.CenterStart,
     ) {
         Text(

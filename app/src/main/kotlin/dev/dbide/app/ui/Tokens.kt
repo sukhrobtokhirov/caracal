@@ -94,4 +94,19 @@ object Sizes {
 
     /** A hairline. Compose's dividers default to a heavier rule than a dense UI wants. */
     val hairline = 1.dp
+
+    /**
+     * The least room the editor and its result are allowed to be squeezed into.
+     *
+     * The side panes are fixed widths, and fixed widths do not fit inside every
+     * window: 264 of sidebar and 288 of object browser want 552 before anything is
+     * drawn, and a small laptop at 200% display scale has 380 in total. Past this
+     * line the panes give way rather than pushing Run off the right-hand edge —
+     * which is what they did, silently, because Compose lays a pane out past the
+     * edge without complaining about it.
+     *
+     * 420 is roughly a `select` and its result at a legible width. It is a
+     * judgement, not a measurement, and the two zoom tests are what hold it honest.
+     */
+    val workbenchMin = 420.dp
 }

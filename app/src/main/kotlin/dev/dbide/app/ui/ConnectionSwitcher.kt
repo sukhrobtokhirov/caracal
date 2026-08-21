@@ -2,7 +2,7 @@ package dev.dbide.app.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -228,7 +228,9 @@ private fun SwitcherRow(
                 if (highlighted) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent,
             )
             .hoverHighlight()
-            .clickable(onClick = onClick)
+            // The highlight is what Enter would choose, which is what `selected`
+            // means here: the switcher is a list with a cursor in it.
+            .selectable(selected = highlighted, onClick = onClick)
             .handCursor()
             .padding(horizontal = Space.lg, vertical = Space.md)
             .testTag("switcher-row-$position"),
