@@ -14,8 +14,7 @@ import androidx.compose.ui.test.performMouseInput
 import androidx.compose.ui.test.rightClick
 import androidx.compose.ui.test.v2.runDesktopComposeUiTest
 import dev.dbide.app.ConnectionsViewModel
-import dev.dbide.app.EditorViewModel
-import dev.dbide.app.ExportViewModel
+import dev.dbide.app.EditorTabs
 import dev.dbide.app.HistoryViewModel
 import dev.dbide.app.FakeConnectionService
 import dev.dbide.app.RedisWorkspace
@@ -275,13 +274,12 @@ class SchemaTreeUiTest {
                 val scope = rememberCoroutineScope()
                 val connections = remember { ConnectionsViewModel(service, scope) }
                 val tree = remember { SchemaTreeViewModel(service, scope) }
-                val editor = remember { EditorViewModel(service, scope) }
-                val export = remember { ExportViewModel(service, scope) { null } }
+                val tabs = remember { EditorTabs(service, scope) { null } }
                 val theme = remember { ThemeViewModel(null, scope) }
                 val redis = remember { RedisWorkspace(service, scope) }
                 val history = remember { HistoryViewModel(service, scope) }
                 DbideTheme {
-                WorkspaceScreen(connections, tree, editor, export, redis, history, theme, onLock = {})
+                WorkspaceScreen(connections, tree, tabs, redis, history, theme, onLock = {})
             }
             }
             waitForIdle()
@@ -308,13 +306,12 @@ class SchemaTreeUiTest {
                 val scope = rememberCoroutineScope()
                 val connections = remember { ConnectionsViewModel(service, scope) }
                 val tree = remember { SchemaTreeViewModel(service, scope) }
-                val editor = remember { EditorViewModel(service, scope) }
-                val export = remember { ExportViewModel(service, scope) { null } }
+                val tabs = remember { EditorTabs(service, scope) { null } }
                 val theme = remember { ThemeViewModel(null, scope) }
                 val redis = remember { RedisWorkspace(service, scope) }
                 val history = remember { HistoryViewModel(service, scope) }
                 DbideTheme {
-                WorkspaceScreen(connections, tree, editor, export, redis, history, theme, onLock = {})
+                WorkspaceScreen(connections, tree, tabs, redis, history, theme, onLock = {})
             }
             }
             waitForIdle()

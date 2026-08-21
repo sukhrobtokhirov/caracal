@@ -22,6 +22,7 @@ import androidx.compose.ui.test.v2.runDesktopComposeUiTest
 import androidx.compose.ui.test.withKeyDown
 import androidx.compose.ui.text.TextRange
 import dev.dbide.app.ConnectionsViewModel
+import dev.dbide.app.EditorTabs
 import dev.dbide.app.EditorViewModel
 import dev.dbide.app.ExportViewModel
 import dev.dbide.app.HistoryViewModel
@@ -249,18 +250,17 @@ class SqlEditorUiTest {
                 name = "users",
                 columns = listOf(ColumnInfo(1, "id", "int8", nullable = false)),
             )
-            lateinit var editor: EditorViewModel
+            lateinit var tabs: EditorTabs
             setContent {
                 val scope = rememberCoroutineScope()
                 val connections = remember { ConnectionsViewModel(service, scope) }
                 val tree = remember { SchemaTreeViewModel(service, scope) }
-                editor = remember { EditorViewModel(service, scope) }
-                val export = remember { ExportViewModel(service, scope) { null } }
+                tabs = remember { EditorTabs(service, scope) { null } }
                 val theme = remember { ThemeViewModel(null, scope) }
                 val redis = remember { RedisWorkspace(service, scope) }
                 val history = remember { HistoryViewModel(service, scope) }
                 DbideTheme {
-                WorkspaceScreen(connections, tree, editor, export, redis, history, theme, onLock = {})
+                WorkspaceScreen(connections, tree, tabs, redis, history, theme, onLock = {})
             }
             }
             waitForIdle()
@@ -278,7 +278,7 @@ class SqlEditorUiTest {
             onNodeWithContentDescription("node-object-public-users").performMouseInput { doubleClick() }
             waitForIdle()
 
-            assertEquals("select * from \"public\".\"users\"", editor.text.text)
+            assertEquals("select * from \"public\".\"users\"", tabs.tabs.single().editor.text.text)
         }
 
     @Test
@@ -290,13 +290,12 @@ class SqlEditorUiTest {
                 val scope = rememberCoroutineScope()
                 val connections = remember { ConnectionsViewModel(service, scope) }
                 val tree = remember { SchemaTreeViewModel(service, scope) }
-                val editor = remember { EditorViewModel(service, scope) }
-                val export = remember { ExportViewModel(service, scope) { null } }
+            val tabs = remember { EditorTabs(service, scope) { null } }
                 val theme = remember { ThemeViewModel(null, scope) }
                 val redis = remember { RedisWorkspace(service, scope) }
                 val history = remember { HistoryViewModel(service, scope) }
                 DbideTheme {
-                WorkspaceScreen(connections, tree, editor, export, redis, history, theme, onLock = {})
+                WorkspaceScreen(connections, tree, tabs, redis, history, theme, onLock = {})
             }
             }
             waitForIdle()

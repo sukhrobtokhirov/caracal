@@ -39,17 +39,23 @@ import java.time.ZoneId
 
 /**
  * What the panel can do with an entry, wired by the workspace that owns both it and
- * the editor.
+ * the tabs.
  *
- * [openInEditor] is `null` when there is nowhere to put a statement — no PostgreSQL
- * connection is open, or the entry belongs to a different server than the one the
- * editor is pointed at. Both cases are drawn as a disabled button with the reason
- * beside it rather than as no button at all: an action that appears and disappears
- * teaches the user nothing about why.
+ * [openInEditor] and [openInNewTab] are `null` when there is nowhere to put a
+ * statement — no PostgreSQL connection is open, or the entry belongs to a different
+ * server than the one the workspace has in front of it. Both cases are drawn as a
+ * disabled button with the reason beside it rather than as no button at all: an
+ * action that appears and disappears teaches the user nothing about why.
+ *
+ * The two are §4.2's pair, and the difference between them is whose work is at risk.
+ * Opening in the tab already on screen may replace a script and asks first;
+ * [openInNewTab] cannot lose anything, which is why it is the one that is offered
+ * first.
  */
 class HistoryActions(
     val copy: (String) -> Unit,
     val openInEditor: ((ExecutionRecord) -> Unit)?,
+    val openInNewTab: ((ExecutionRecord) -> Unit)?,
     val editorConnection: ConnectionId?,
 )
 
@@ -353,17 +359,24 @@ private fun EntryRow(
 private fun EntryActions(record: ExecutionRecord, actions: HistoryActions) {
     val sameConnection = record.connectionId == actions.editorConnection
     val open = actions.openInEditor.takeIf { sameConnection }
+    val openTab = actions.openInNewTab.takeIf { sameConnection }
 
     Row(
         horizontalArrangement = Arrangement.spacedBy(Space.sm),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         ToolButton(
-            text = "Open in editor",
+            text = "Open in new tab",
+            onClick = { openTab?.invoke(record) },
+            description = "history-open-tab",
+            enabled = openTab != null,
+            emphasis = ToolEmphasis.PRIMARY,
+        )
+        ToolButton(
+            text = "Open in this tab",
             onClick = { open?.invoke(record) },
             description = "history-open",
             enabled = open != null,
-            emphasis = ToolEmphasis.PRIMARY,
         )
         ToolButton(
             text = "Copy",
@@ -374,7 +387,7 @@ private fun EntryActions(record: ExecutionRecord, actions: HistoryActions) {
             Text(
                 // Named rather than merely refused. "Open the connection this ran on"
                 // is an instruction; a greyed-out button on its own is a puzzle.
-                text = "Open the connection this ran on to put it back in an editor.",
+                text = "Open the connection this ran on to put it back in a tab.",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

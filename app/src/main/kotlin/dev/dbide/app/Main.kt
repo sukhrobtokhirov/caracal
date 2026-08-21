@@ -11,6 +11,7 @@ import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
 import dev.dbide.app.ui.DbideTheme
+import dev.dbide.app.ui.QuitConfirmation
 import dev.dbide.app.ui.VaultScreen
 import dev.dbide.app.ui.VaultUnavailableScreen
 import dev.dbide.app.ui.WorkspaceScreen
@@ -71,8 +72,13 @@ fun main() = application {
     val scope = rememberCoroutineScope()
     val startup = rememberStartup { Application.open() }
 
+    // What the window asks before it closes. It is created out here because
+    // `onCloseRequest` is not a composable and arrives from AWT, and it answers
+    // `false` only while there is a script open that closing would lose.
+    val exit = remember { ExitGuard() }
+
     Window(
-        onCloseRequest = ::exitApplication,
+        onCloseRequest = { if (exit.mayClose()) exitApplication() },
         title = "Database IDE",
         state = rememberWindowState(width = 1100.dp, height = 720.dp),
     ) {
@@ -92,7 +98,13 @@ fun main() = application {
                 // The first frame, before the configuration database has been opened.
                 Startup.Opening -> Unit
                 is Startup.Failed -> VaultUnavailableScreen(VaultUiState.Unavailable(state.failure))
-                is Startup.Ready -> Workspace(state.value.service, theme, scope)
+                is Startup.Ready -> Workspace(
+                    service = state.value.service,
+                    theme = theme,
+                    scope = scope,
+                    exit = exit,
+                    onQuit = ::exitApplication,
+                )
             }
         }
     }
@@ -107,12 +119,13 @@ private fun FrameWindowScope.Workspace(
     service: ConnectionService,
     theme: ThemeViewModel,
     scope: CoroutineScope,
+    exit: ExitGuard,
+    onQuit: () -> Unit,
 ) {
     val connections = remember(service) { ConnectionsViewModel(service, scope) }
     val tree = remember(service) { SchemaTreeViewModel(service, scope) }
-    val editor = remember(service) { EditorViewModel(service, scope) }
     val chooser = rememberCsvFileChooser()
-    val export = remember(service, chooser) { ExportViewModel(service, scope, chooser) }
+    val tabs = remember(service, chooser) { EditorTabs(service, scope, chooser) }
     val redis = remember(service) { RedisWorkspace(service, scope) }
     val history = remember(service) { HistoryViewModel(service, scope) }
     val vault = remember(service) {
@@ -121,6 +134,10 @@ private fun FrameWindowScope.Workspace(
 
     LaunchedEffect(vault) { vault.load() }
 
+    // §4.3's shutdown warning. A closed window cannot ask, so the question is
+    // registered while there is still something to ask about.
+    LaunchedEffect(exit, tabs) { exit.guard { tabs.dirty } }
+
     when (val screen = vault.screen) {
         is VaultUiState.Unavailable -> VaultUnavailableScreen(screen)
         VaultUiState.Loading -> Unit
@@ -128,22 +145,20 @@ private fun FrameWindowScope.Workspace(
         VaultUiState.Unlocked -> WorkspaceScreen(
             viewModel = connections,
             tree = tree,
-            editor = editor,
-            export = export,
+            tabs = tabs,
             redis = redis,
             history = history,
             theme = theme,
             onLock = {
                 connections.clear()
                 // Locking closes every client, so the tree is describing a server this
-                // process can no longer reach and the editor has nowhere to send a
-                // statement — including one that is running right now.
+                // process can no longer reach and every tab has nowhere to send a
+                // statement — including one that is running right now. Their exports go
+                // with them: a running export holds a live pool connection, and locking
+                // has just closed every one of them, so stopping it here is what turns
+                // that into a deleted partial file rather than a failure to read.
                 tree.clear()
-                editor.clear()
-                // A running export holds a live pool connection, and locking has just
-                // closed every one of them. Stopping it here is what turns that into a
-                // deleted partial file rather than a failure the user has to read.
-                export.clear()
+                tabs.clear()
                 // The keyspace, the open value, and the console transcript. The last of
                 // those is the one that matters most: a command's arguments can be a
                 // password, and they must not survive the session that typed them.
@@ -157,6 +172,10 @@ private fun FrameWindowScope.Workspace(
             },
         )
     }
+
+    // Over everything, including the lock screen: a window can be closed from a state
+    // its workspace is not on screen in.
+    if (exit.pending) QuitConfirmation(onConfirm = onQuit, onCancel = exit::dismiss)
 }
 
 /**

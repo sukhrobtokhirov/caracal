@@ -112,6 +112,17 @@ class EditorViewModel(
     var execution: Execution by mutableStateOf(EditorExecution.resolve("", 0, 0))
         private set
 
+    /**
+     * The text this tab last took from somewhere it could be taken from again.
+     *
+     * Empty for a tab that was opened blank, and the statement itself for one opened
+     * from history — which is the whole of what [dirty] needs to know. A script that
+     * still reads exactly as history has it is a script history still has; anything
+     * else in here exists in this process and nowhere else, because §4.3 deliberately
+     * does not persist drafts.
+     */
+    private var baseline: String by mutableStateOf("")
+
     var run: EditorRun by mutableStateOf(EditorRun.Idle)
         private set
 
@@ -137,6 +148,15 @@ class EditorViewModel(
     val target: ExecutionTarget? get() = (execution as? Execution.Ready)?.target
 
     val running: Boolean get() = run is EditorRun.Running
+
+    /**
+     * Whether closing this tab would lose work.
+     *
+     * Not "has been edited": a tab holding a statement reopened from history and left
+     * alone is a tab whose contents can be reopened again, and asking about it would
+     * be asking a question whose answer never matters. Whitespace is not work either.
+     */
+    val dirty: Boolean get() = text.text.isNotBlank() && text.text != baseline
 
     /** Whether Run would do anything if it were pressed. */
     val runnable: Boolean
@@ -245,6 +265,7 @@ class EditorViewModel(
 
     private fun replace(sql: String) {
         edit(TextFieldValue(sql, TextRange(sql.length)))
+        baseline = sql
     }
 
     /**
@@ -338,6 +359,7 @@ class EditorViewModel(
         stop()
         connection = null
         edit(TextFieldValue())
+        baseline = ""
         run = EditorRun.Idle
     }
 

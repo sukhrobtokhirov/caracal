@@ -1,0 +1,284 @@
+package dev.dbide.app.ui
+
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.test.ComposeUiTest
+import androidx.compose.ui.test.ExperimentalTestApi
+import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.assertTextEquals
+import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performMouseInput
+import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.test.rightClick
+import androidx.compose.ui.test.v2.runDesktopComposeUiTest
+import dev.dbide.app.EditorTabs
+import dev.dbide.app.FakeConnectionService
+import dev.dbide.core.connections.ConnectionConfig
+import dev.dbide.core.connections.ConnectionId
+import dev.dbide.core.connections.Engine
+import dev.dbide.core.connections.Environment
+import dev.dbide.core.connections.TlsMode
+import dev.dbide.core.result.CellValue
+import dev.dbide.core.result.Column
+import dev.dbide.core.result.ColumnFormat
+import dev.dbide.core.result.QueryResult
+import dev.dbide.core.vault.VaultState
+import java.time.Instant
+import kotlin.test.assertEquals
+import kotlin.test.assertTrue
+import kotlin.time.Duration.Companion.milliseconds
+import kotlinx.coroutines.CompletableDeferred
+import org.junit.jupiter.api.Test
+
+/**
+ * The tab strip, driven through the real composables.
+ *
+ * The assertions a view-model test cannot make: that the strip says which tab is
+ * still running and which one holds unsaved work, that the pane in front of the user
+ * is the tab they clicked and carries that tab's own result, and that the two ways to
+ * lose a tab — a script and a running statement — both stop and ask.
+ */
+@OptIn(ExperimentalTestApi::class)
+class QueryTabsUiTest {
+
+    private fun connection(id: String = "id-1", name: String = "local") = ConnectionConfig(
+        id = ConnectionId(id),
+        name = name,
+        engine = Engine.POSTGRES,
+        host = "localhost",
+        port = 5432,
+        database = "dbide",
+        username = "dbide",
+        tlsMode = TlsMode.DISABLE,
+        environment = Environment.DEV,
+        readOnly = false,
+        color = null,
+        createdAt = Instant.parse("2026-08-21T10:00:00Z"),
+    )
+
+    private fun service() = FakeConnectionService(VaultState.UNLOCKED).apply {
+        queryResult = QueryResult(
+            columns = listOf(Column("n", "int8", ColumnFormat.NUMBER)),
+            rows = listOf(listOf(CellValue.Integer(7))),
+            duration = 4.milliseconds,
+        )
+    }
+
+    private val local = connection()
+    private val staging = connection(id = "id-2", name = "staging")
+
+    private var movedTo: ConnectionId? = null
+
+    /** The query side of one open connection, with [others] to move a tab to. */
+    private fun ComposeUiTest.workspace(
+        service: FakeConnectionService,
+        others: List<ConnectionConfig> = emptyList(),
+    ): EditorTabs {
+        lateinit var tabs: EditorTabs
+        setContent {
+            val scope = rememberCoroutineScope()
+            tabs = remember { EditorTabs(service, scope) { null }.also { it.show(local) } }
+            DbideTheme {
+                QueryWorkspace(
+                    tabs = tabs,
+                    connection = local,
+                    others = others,
+                    onMoved = { movedTo = it },
+                    onCopy = {},
+                )
+            }
+        }
+        waitForIdle()
+        return tabs
+    }
+
+    private fun ComposeUiTest.type(sql: String) {
+        onNodeWithContentDescription("editor-text").performTextInput(sql)
+        waitForIdle()
+    }
+
+    private fun ComposeUiTest.click(description: String) {
+        onNodeWithContentDescription(description).performClick()
+        waitForIdle()
+    }
+
+    // --- Switching ------------------------------------------------------------
+
+    @Test
+    fun `the strip names each tab by its script, and the pane follows the click`() =
+        runDesktopComposeUiTest(width = 1100, height = 800) {
+            val tabs = workspace(service())
+            type("select invoices;")
+
+            onNodeWithContentDescription("editor-tab-0").assertTextEquals("select invoices")
+
+            click("editor-tab-new")
+            onNodeWithContentDescription("editor-tab-1").assertTextEquals("Untitled")
+            type("select ledger;")
+            onNodeWithContentDescription("editor-tab-1").assertTextEquals("select ledger")
+
+            // Back to the first, which still holds what was typed into it.
+            click("editor-tab-0")
+            assertEquals("select invoices;", tabs.active(local.id)?.editor?.text?.text)
+            onNodeWithContentDescription("editor-text").assertTextEquals("select invoices;")
+        }
+
+    @Test
+    fun `a result belongs to the tab that asked for it`() =
+        runDesktopComposeUiTest(width = 1100, height = 800) {
+            workspace(service())
+            type("select 7;")
+            click("editor-run")
+
+            onNodeWithContentDescription("grid-cell-0-0").assertTextEquals("7")
+
+            click("editor-tab-new")
+            // A fresh tab has run nothing, and shows that rather than the other tab's
+            // grid.
+            onNodeWithContentDescription("query-idle").assertIsDisplayed()
+
+            click("editor-tab-0")
+            onNodeWithContentDescription("grid-cell-0-0").assertTextEquals("7")
+        }
+
+    @Test
+    fun `a statement stays with its tab while another one is in front`() =
+        runDesktopComposeUiTest(width = 1100, height = 800) {
+            val service = service()
+            service.gate = CompletableDeferred()
+            workspace(service)
+            type("select pg_sleep(30);")
+            click("editor-run")
+            onNodeWithContentDescription("query-running").assertIsDisplayed()
+
+            click("editor-tab-new")
+
+            // The tab it belongs to says so from the strip, while the pane in front is
+            // the new tab's own empty one.
+            onNodeWithContentDescription("editor-tab-running-0").assertIsDisplayed()
+            onNodeWithContentDescription("query-idle").assertIsDisplayed()
+
+            click("editor-tab-0")
+            onNodeWithContentDescription("query-running").assertIsDisplayed()
+            click("editor-cancel")
+            onNodeWithContentDescription("query-cancelled").assertIsDisplayed()
+            service.gate?.complete(Unit)
+        }
+
+    @Test
+    fun `an unsaved tab is marked in the strip`() =
+        runDesktopComposeUiTest(width = 1100, height = 800) {
+            workspace(service())
+
+            onNodeWithContentDescription("editor-tab-unsaved-0").assertDoesNotExist()
+            type("select 1;")
+            onNodeWithContentDescription("editor-tab-unsaved-0").assertIsDisplayed()
+        }
+
+    // --- Closing --------------------------------------------------------------
+
+    @Test
+    fun `closing a tab that holds a script asks, and keeping it keeps everything`() =
+        runDesktopComposeUiTest(width = 1100, height = 800) {
+            val tabs = workspace(service())
+            type("select invoices;")
+
+            click("editor-tab-close-0")
+            onNodeWithContentDescription("close-tab-confirmation").assertIsDisplayed()
+
+            click("cancel-close-tab")
+            assertEquals(1, tabs.tabs.size)
+            assertEquals("select invoices;", tabs.active(local.id)?.editor?.text?.text)
+
+            click("editor-tab-close-0")
+            click("confirm-close-tab")
+            assertEquals(emptyList(), tabs.tabs)
+        }
+
+    @Test
+    fun `closing a tab with a statement running offers to cancel it`() =
+        runDesktopComposeUiTest(width = 1100, height = 800) {
+            val service = service()
+            service.gate = CompletableDeferred()
+            val tabs = workspace(service)
+            type("select pg_sleep(30);")
+            click("editor-run")
+
+            click("editor-tab-close-0")
+            onNodeWithContentDescription("close-tab-confirmation").assertIsDisplayed()
+            click("confirm-close-tab")
+
+            assertEquals(emptyList(), tabs.tabs)
+            service.gate?.complete(Unit)
+        }
+
+    @Test
+    fun `the last tab closing leaves somewhere to start again`() =
+        runDesktopComposeUiTest(width = 1100, height = 800) {
+            val tabs = workspace(service())
+
+            click("editor-tab-close-0")
+
+            // Nothing to ask about — the tab was empty — and the pane says what to do
+            // rather than going blank.
+            onNodeWithContentDescription("query-no-tabs").assertIsDisplayed()
+            click("query-new-tab")
+            assertEquals(1, tabs.tabs.size)
+            onNodeWithContentDescription("sql-editor").assertIsDisplayed()
+        }
+
+    // --- The tab's own menu ---------------------------------------------------
+
+    @Test
+    fun `duplicating gives a second tab holding the same script`() =
+        runDesktopComposeUiTest(width = 1100, height = 800) {
+            val tabs = workspace(service())
+            type("select invoices;")
+
+            onNodeWithContentDescription("editor-tab-0").performMouseInput { rightClick() }
+            waitForIdle()
+            click("tab-duplicate")
+
+            assertEquals(
+                listOf("select invoices;", "select invoices;"),
+                tabs.tabs.map { it.editor.text.text },
+            )
+            // The copy is the one in front, and it counts as unsaved from the start.
+            assertTrue(tabs.active(local.id)?.dirty == true)
+        }
+
+    @Test
+    fun `a tab can be moved to another open connection, and the workspace follows it`() =
+        runDesktopComposeUiTest(width = 1100, height = 800) {
+            val tabs = workspace(service(), others = listOf(staging))
+            type("select invoices;")
+
+            onNodeWithContentDescription("editor-tab-0").performMouseInput { rightClick() }
+            waitForIdle()
+            click("tab-move-staging")
+
+            assertEquals(staging.id, tabs.tabs.single().connectionId)
+            assertEquals(staging.id, movedTo)
+            // Gone from this connection's strip, which is why the workspace was asked
+            // to follow it.
+            onNodeWithContentDescription("query-no-tabs").assertIsDisplayed()
+        }
+
+    @Test
+    fun `a tab running a statement is not offered a move`() =
+        runDesktopComposeUiTest(width = 1100, height = 800) {
+            val service = service()
+            service.gate = CompletableDeferred()
+            workspace(service, others = listOf(staging))
+            type("select pg_sleep(30);")
+            click("editor-run")
+
+            onNodeWithContentDescription("editor-tab-0").performMouseInput { rightClick() }
+            waitForIdle()
+
+            onNodeWithContentDescription("tab-move-staging").assertIsNotEnabled()
+            service.gate?.complete(Unit)
+        }
+}

@@ -35,8 +35,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.dbide.app.ConnectionsViewModel
-import dev.dbide.app.EditorViewModel
-import dev.dbide.app.ExportViewModel
+import dev.dbide.app.EditorTabs
 import dev.dbide.app.HistoryViewModel
 import dev.dbide.app.Pane
 import dev.dbide.app.RedisWorkspace
@@ -95,8 +94,7 @@ private fun tabsFor(engine: Engine?): List<WorkspaceTab> = when (engine) {
 fun WorkspaceScreen(
     viewModel: ConnectionsViewModel,
     tree: SchemaTreeViewModel,
-    editor: EditorViewModel,
-    export: ExportViewModel,
+    tabs: EditorTabs,
     redis: RedisWorkspace,
     history: HistoryViewModel,
     theme: ThemeViewModel,
@@ -128,7 +126,9 @@ fun WorkspaceScreen(
     // either has to reach the editor without the connection being reopened.
     LaunchedEffect(postgres?.config) {
         tree.show(postgres?.id)
-        editor.show(postgres?.config)
+        // Every tab already open on this connection, and a first one if it has never
+        // had any. A tab pointed at a different server is left exactly as it is.
+        tabs.show(postgres?.config)
     }
     // The Redis panes take the identifier alone. Their own policy question — whether a
     // console command needs a typed phrase — is asked inside `:core`, against the
@@ -141,8 +141,8 @@ fun WorkspaceScreen(
     // Opening a connection lands on its editor; the connection's own details are one
     // click away and stay there per connection, so switching back and forth does not
     // keep resetting which half is on screen.
-    val tabs = tabsFor(browsing?.config?.engine)
-    var tab: WorkspaceTab by remember(browsing?.id) { mutableStateOf(tabs.first()) }
+    val panes = tabsFor(browsing?.config?.engine)
+    var tab: WorkspaceTab by remember(browsing?.id) { mutableStateOf(panes.first()) }
 
     // The sidebar is a pane, not a fixture. On a laptop beside a terminal the list of
     // connections is read once an hour and the grid is read all day, and 264dp is
@@ -220,7 +220,9 @@ fun WorkspaceScreen(
                             // typed into a pane nobody is looking at has gone nowhere.
                             insert = { sql ->
                                 tab = WorkspaceTab.QUERY
-                                editor.insert(sql)
+                                val config = postgres.config
+                                val target = tabs.active(config.id) ?: tabs.open(config)
+                                target.editor.insert(sql)
                             },
                             copy = copy,
                         ),
@@ -289,10 +291,27 @@ fun WorkspaceScreen(
                         if (browsing?.id != view.id) {
                             detail()
                         } else {
-                            WorkspaceTabs(tabs = tabs, selected = tab, onSelect = { tab = it })
+                            WorkspaceTabs(tabs = panes, selected = tab, onSelect = { tab = it })
                             Hairline()
                             when (tab) {
-                                WorkspaceTab.QUERY -> QueryPane(editor, export, onCopy = copy)
+                                WorkspaceTab.QUERY -> postgres?.let { open ->
+                                    QueryWorkspace(
+                                        tabs = tabs,
+                                        connection = open.config,
+                                        // Only servers this process already has a
+                                        // client for. Moving a tab must not be the
+                                        // thing that dials one.
+                                        others = viewModel.connections
+                                            .filter {
+                                                it.runtime.isOpen &&
+                                                    it.config.engine == Engine.POSTGRES &&
+                                                    it.id != open.id
+                                            }
+                                            .map { it.config },
+                                        onMoved = viewModel::select,
+                                        onCopy = copy,
+                                    )
+                                }
                                 WorkspaceTab.KEY -> RedisValueViewer(redis.value, onCopy = copy)
                                 WorkspaceTab.CONSOLE -> RedisConsole(redis.console)
                                 WorkspaceTab.SERVER -> RedisInfoDashboard(redis.info)
@@ -326,14 +345,22 @@ fun WorkspaceScreen(
             connections = viewModel.connections,
             actions = HistoryActions(
                 copy = copy,
-                // Only where there is an editor pointed at that same server. Opening
-                // the connection first would be this window dialling production
-                // because someone clicked a row to read it.
-                openInEditor = postgres?.let {
+                // Only where there is a connection open on that same server. Opening
+                // it first would be this window dialling production because someone
+                // clicked a row to read it.
+                openInEditor = postgres?.let { open ->
                     { record ->
                         historyOpen = false
                         tab = WorkspaceTab.QUERY
-                        editor.open(record.statement)
+                        val target = tabs.active(open.id) ?: tabs.open(open.config)
+                        target.editor.open(record.statement)
+                    }
+                },
+                openInNewTab = postgres?.let { open ->
+                    { record ->
+                        historyOpen = false
+                        tab = WorkspaceTab.QUERY
+                        tabs.open(open.config, record.statement)
                     }
                 },
                 editorConnection = postgres?.id,
@@ -345,7 +372,13 @@ fun WorkspaceScreen(
     viewModel.pendingDelete?.let { pending ->
         DeleteConfirmation(
             view = pending,
-            onConfirm = { viewModel.delete(pending.id) },
+            onConfirm = {
+                // The tabs go with it. There would be nowhere left to run what is in
+                // them, and the question of whether to keep them has just been
+                // answered by deleting the server they belong to.
+                tabs.forget(pending.id)
+                viewModel.delete(pending.id)
+            },
             onCancel = viewModel::cancelDelete,
         )
     }

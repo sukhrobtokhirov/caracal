@@ -21,7 +21,9 @@ no JDK to install: the installer bundles its own trimmed runtime.
 > and CSV export; a Redis connection opens a bounded `SCAN` key browser with
 > prefix grouping, a paged viewer for each of the six value types, an `INFO`
 > summary, and a command console behind the dangerous-command guard. **M4, polish,
-> is under way** — query history is readable, paged, and reopenable. See
+> is under way** — query history is readable, paged, and reopenable, and SQL work now
+> lives in tabs that keep their own connection, query, and result, and that will not
+> close on unsaved work or a running statement without asking. See
 > [`docs/mvp-steps/`](docs/mvp-steps/README.md).
 
 ## The shape of the product

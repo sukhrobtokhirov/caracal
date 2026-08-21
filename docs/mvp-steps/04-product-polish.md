@@ -345,11 +345,80 @@ that dials production.
 **Search is client-side over the loaded pages,** which the section permits, and the
 box says so beside itself rather than in a tooltip.
 
+**Reopening in a new tab arrived with 4.3,** as that entry said it would. Both of
+§4.2's actions are now offered on every entry: `Open in new tab`, which can lose
+nothing and is therefore the primary one, and `Open in this tab`, which is the
+replacement that asks first.
+
+### 4.3 — query tabs
+
+**The strip belongs to a connection.** `EditorTabs.of(id)` answers with the tabs
+pointed at one server and the query pane draws those. It is the one arrangement in
+which the shell bar above the strip, the object browser beside it, and the tab in
+front of the user all describe the same server — a single strip spanning connections
+would put a tab that runs against production under a shell that is not red, and this
+application spent M2 making that bar impossible to miss.
+
+What the section is actually about survives intact. A tab captures its connection when
+it is opened and never changes it silently; selecting another connection in the
+sidebar shows *that* connection's tabs rather than retargeting the one on screen; and
+`Retarget` is `EditorTabs.retarget`, offered as `Move to …` in the tab's own menu, for
+open PostgreSQL connections only — a menu entry that first opens a connection is a
+menu entry that dials production. Moving takes the workspace with it, because a tab
+that vanished from the strip it was in would look closed. It is refused while that tab
+has a statement running: the query belongs to the server it was sent to.
+
+**Because of that, a tab does not repeat its connection on itself.** The section asks
+for a new tab to show its connection explicitly, and here the shell bar directly above
+the strip is that, always, for every tab in it. A chip inside the editor toolbar would
+be the same fact drawn twice.
+
+**A tab is an `EditorViewModel` plus an identity.** The editor already owned a
+connection, a script, a running query, and one result — which is most of the section's
+list — so `EditorTab` adds the rest: an opaque `TabId` that is never reused, a title,
+and the export. The export is per tab rather than per window because §2.10 makes it a
+second execution of *this* tab's statement; one shared between tabs would report a
+file written from a query the user has since switched away from.
+
+**Timestamps are a counter, not a clock.** The section asks for creation and
+last-activation times. Creation order is the list order, and activation is a monotonic
+`Long`, for the same reason 4.1's keyset is a row id: wall time steps backwards under
+NTP, and "the tab I was last in" then resolves to one nobody has touched in an hour.
+Nothing in the UI shows either as a time, so nothing was lost by not storing one.
+
+**Dirty means "holds something that exists nowhere else",** not "has been edited". The
+editor keeps a baseline — empty for a tab opened blank, the statement itself for one
+opened from history — and a tab is dirty when its text is neither blank nor that. So
+closing a reopened statement that has not been touched asks nothing, and closing a
+duplicate always does: a copy is a second thing to lose.
+
+**Closing asks about the running statement first, and names the script in the same
+breath.** A tab can be both; a dialog that said only "a query is running" and then also
+threw away twenty lines of SQL would have lied by omission.
+
+**Titles are derived live rather than fixed at creation,** which is what makes a strip
+of six readable without a rename command — the first line a person writes is the verb
+and the table. There is no rename, and no `Close others`.
+
+**The first tab is given, the last one is not taken back.** Opening a connection lands
+in an editor exactly as it did before there were tabs, but only the first time in a
+session: someone who closed the last tab asked for the empty state, and reselecting
+the connection is not a request to undo that.
+
+**Deleting a connection takes its tabs without a second question,** which the delete
+confirmation already covers — there would be nowhere left to run what is in them.
+Closing a connection keeps them, and they are there when it is opened again.
+
+**Shutdown is guarded by `ExitGuard`,** which is a plain class rather than anything
+composable: `onCloseRequest` arrives from AWT at a moment that is nobody's
+recomposition. The workspace registers the question, the window asks it, and asking
+twice does not stack two dialogs.
+
 ## Completion checklist
 
 - [x] Query history is bounded, paged, filterable, reopenable, and clearable.
-- [ ] SQL tabs retain their own connection, editor, query, and result state.
-- [ ] Dirty/running tabs cannot be lost silently.
+- [x] SQL tabs retain their own connection, editor, query, and result state.
+- [x] Dirty/running tabs cannot be lost silently.
 - [ ] Required shortcuts work without breaking editor or dialog behavior.
 - [ ] Connection switching preserves production/read-only context.
 - [ ] Errors are normalized and presented at the correct scope.

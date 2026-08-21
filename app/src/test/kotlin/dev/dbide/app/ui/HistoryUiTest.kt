@@ -15,8 +15,7 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.v2.runDesktopComposeUiTest
 import dev.dbide.app.ConnectionsViewModel
-import dev.dbide.app.EditorViewModel
-import dev.dbide.app.ExportViewModel
+import dev.dbide.app.EditorTabs
 import dev.dbide.app.FakeConnectionService
 import dev.dbide.app.HistoryViewModel
 import dev.dbide.app.RedisWorkspace
@@ -63,20 +62,22 @@ class HistoryUiTest {
         id = next++,
     )
 
-    private lateinit var editor: EditorViewModel
+    private lateinit var tabs: EditorTabs
+
+    /** What is in the tab on screen. Every test here works in exactly one. */
+    private val script: String get() = tabs.tabs.single().editor.text.text
 
     private fun ComposeUiTest.workspace(service: FakeConnectionService) {
         setContent {
             val scope = rememberCoroutineScope()
             val connections = remember { ConnectionsViewModel(service, scope) }
             val tree = remember { SchemaTreeViewModel(service, scope) }
-            editor = remember { EditorViewModel(service, scope) }
-            val export = remember { ExportViewModel(service, scope) { null } }
+            tabs = remember { EditorTabs(service, scope) { null } }
             val theme = remember { ThemeViewModel(null, scope) }
             val redis = remember { RedisWorkspace(service, scope) }
             val history = remember { HistoryViewModel(service, scope) }
             DbideTheme {
-                WorkspaceScreen(connections, tree, editor, export, redis, history, theme, onLock = {})
+                WorkspaceScreen(connections, tree, tabs, redis, history, theme, onLock = {})
             }
         }
         waitForIdle()
@@ -153,7 +154,7 @@ class HistoryUiTest {
             onNodeWithContentDescription("history-open").performClick()
             waitForIdle()
 
-            assertEquals("delete from invoices where id = 7", editor.text.text)
+            assertEquals("delete from invoices where id = 7", script)
             // The whole point of the rule: a menu line that fired a `DELETE` at
             // production the moment it was clicked is a line people learn not to
             // click. Run is where that decision lives, and it has not been pressed.
@@ -179,7 +180,8 @@ class HistoryUiTest {
             // editor that silently retargeted would be one server's query sent to
             // another server's database.
             onNodeWithContentDescription("history-open").assertIsNotEnabled()
-            onNode(hasText("Open the connection this ran on to put it back in an editor."))
+            onNodeWithContentDescription("history-open-tab").assertIsNotEnabled()
+            onNode(hasText("Open the connection this ran on to put it back in a tab."))
                 .assertIsDisplayed()
         }
 
@@ -203,12 +205,41 @@ class HistoryUiTest {
             waitForIdle()
 
             onNodeWithContentDescription("replace-script-confirmation").assertIsDisplayed()
-            assertEquals("select 1", editor.text.text)
+            assertEquals("select 1", script)
 
             onNodeWithContentDescription("confirm-replace-script").performClick()
             waitForIdle()
 
-            assertEquals("select now()", editor.text.text)
+            assertEquals("select now()", script)
+        }
+
+    @Test
+    fun `reopening in a new tab asks nothing and leaves the script that was open`() =
+        runDesktopComposeUiTest(width = 1500, height = 1000) {
+            val service = FakeConnectionService(VaultState.UNLOCKED)
+            service.seed(name = "Local", status = RuntimeStatus.OPEN)
+            service.history += record("select now()")
+            workspace(service)
+            onNodeWithContentDescription("connection-Local").performClick()
+            waitForIdle()
+            onNodeWithContentDescription("editor-text").performTextInput("select 1")
+            waitForIdle()
+
+            onNodeWithContentDescription("open-history").performClick()
+            waitForIdle()
+            onNodeWithContentDescription("history-statement").performClick()
+            waitForIdle()
+            onNodeWithContentDescription("history-open-tab").performClick()
+            waitForIdle()
+
+            // Nothing to ask about: the second tab is where the statement went, and
+            // the first one still holds what was being written in it.
+            onNodeWithContentDescription("replace-script-confirmation").assertDoesNotExist()
+            assertEquals(
+                listOf("select 1", "select now()"),
+                tabs.tabs.map { it.editor.text.text },
+            )
+            assertEquals(emptyList(), service.executed)
         }
 
     @Test

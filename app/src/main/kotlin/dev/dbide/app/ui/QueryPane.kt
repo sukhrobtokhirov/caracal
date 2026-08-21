@@ -23,6 +23,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -36,6 +37,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.dbide.app.EditorRun
+import dev.dbide.app.EditorTab
 import dev.dbide.app.EditorViewModel
 import dev.dbide.app.ExportRun
 import dev.dbide.app.ExportText
@@ -44,10 +46,18 @@ import dev.dbide.core.export.ExportEligibility
 import java.awt.Cursor
 
 /**
- * The query workspace: the editor above, whatever the last run produced below.
+ * One tab's pane: the editor above, whatever its last run produced below.
  *
- * One editor and one result, as §2.3's scope says — multiple result grids for one
- * script are M4's problem, along with the tabs that would hold them.
+ * The tab owns both halves — §4.3's rule that a result belongs to the tab that asked
+ * for it, and that switching tabs while a query runs does not move the query.
+ */
+@Composable
+fun QueryPane(tab: EditorTab, onCopy: (String) -> Unit, modifier: Modifier = Modifier) {
+    QueryPane(tab.editor, tab.export, onCopy, modifier)
+}
+
+/**
+ * The query workspace: the editor above, whatever the last run produced below.
  *
  * The divider between the two is draggable, because which half matters depends
  * entirely on what you are doing: writing a query wants text, reading forty columns
@@ -65,8 +75,17 @@ fun QueryPane(
     // A report naming a file written from a different query is a sentence about
     // something that is no longer on screen. An export still streaming is left to
     // finish: running a new query is not a request to abandon it.
+    //
+    // A *new* result, and not merely a pane arriving on screen: coming back to a tab
+    // is not a reason to forget what its export said before the user switched away.
     val grid = (model.run as? EditorRun.Done)?.grid
-    LaunchedEffect(grid) { export.forget() }
+    var reported by remember { mutableStateOf(grid) }
+    LaunchedEffect(grid) {
+        if (grid !== reported) {
+            export.forget()
+            reported = grid
+        }
+    }
 
     BoxWithConstraints(modifier = modifier.fillMaxSize()) {
         val height = constraints.maxHeight.toFloat()
