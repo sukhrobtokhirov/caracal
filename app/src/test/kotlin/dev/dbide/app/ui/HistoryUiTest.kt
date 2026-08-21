@@ -8,8 +8,8 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.hasText
-import androidx.compose.ui.test.onAllNodesWithContentDescription
-import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onAllNodesWithTag
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
@@ -86,9 +86,9 @@ class HistoryUiTest {
     /** Opens the window on a connection that is selected and open. */
     private fun ComposeUiTest.openHistory(service: FakeConnectionService, connection: String = "Local") {
         workspace(service)
-        onNodeWithContentDescription("connection-$connection").performClick()
+        onNodeWithTag("connection-$connection").performClick()
         waitForIdle()
-        onNodeWithContentDescription("open-history").performClick()
+        onNodeWithTag("open-history").performClick()
         waitForIdle()
     }
 
@@ -106,13 +106,13 @@ class HistoryUiTest {
 
             openHistory(service)
 
-            onNodeWithContentDescription("history-window").assertIsDisplayed()
+            onNodeWithTag("history-window").assertIsDisplayed()
             // Filtered to the connection the user was looking at, so the other
             // server's statement is not on screen.
             onNodeWithText("select count(*) from customers").assertIsDisplayed()
             onNodeWithText("select from other").assertDoesNotExist()
             // Two days, two headings.
-            assertEquals(2, onAllNodesWithContentDescription("history-day").fetchSemanticsNodes().size)
+            assertEquals(2, onAllNodesWithTag("history-day").fetchSemanticsNodes().size)
         }
 
     @Test
@@ -128,16 +128,16 @@ class HistoryUiTest {
 
             openHistory(service)
             // Collapsed, the preview is one line: the newlines are gone.
-            onNodeWithContentDescription("history-statement")
+            onNodeWithTag("history-statement", useUnmergedTree = true)
                 .assertTextContains("select * from invoice")
-            onNodeWithContentDescription("history-statement").performClick()
+            onNodeWithTag("history-entry-0").performClick()
             waitForIdle()
 
             // Expanded, it is the statement exactly as it was submitted — which is
             // the form someone is about to compare against what is in their editor.
-            onNodeWithContentDescription("history-statement")
+            onNodeWithTag("history-statement", useUnmergedTree = true)
                 .assertTextContains("select *\nfrom invoice")
-            onNodeWithContentDescription("history-error")
+            onNodeWithTag("history-error", useUnmergedTree = true)
                 .assertTextContains("relation \"invoice\" does not exist")
         }
 
@@ -149,9 +149,9 @@ class HistoryUiTest {
             service.history += record("delete from invoices where id = 7")
 
             openHistory(service)
-            onNodeWithContentDescription("history-statement").performClick()
+            onNodeWithTag("history-entry-0").performClick()
             waitForIdle()
-            onNodeWithContentDescription("history-open").performClick()
+            onNodeWithTag("history-open").performClick()
             waitForIdle()
 
             assertEquals("delete from invoices where id = 7", script)
@@ -159,7 +159,7 @@ class HistoryUiTest {
             // production the moment it was clicked is a line people learn not to
             // click. Run is where that decision lives, and it has not been pressed.
             assertEquals(emptyList(), service.executed)
-            onNodeWithContentDescription("history-window").assertDoesNotExist()
+            onNodeWithTag("history-window").assertDoesNotExist()
         }
 
     @Test
@@ -171,16 +171,16 @@ class HistoryUiTest {
             service.history += record("select * from ledger", connection = "id-2")
 
             openHistory(service)
-            onNodeWithContentDescription("history-filter-all").performClick()
+            onNodeWithTag("history-filter-all").performClick()
             waitForIdle()
-            onNodeWithContentDescription("history-statement").performClick()
+            onNodeWithTag("history-entry-0").performClick()
             waitForIdle()
 
             // Refused, and the row says which connection would have to be open. An
             // editor that silently retargeted would be one server's query sent to
             // another server's database.
-            onNodeWithContentDescription("history-open").assertIsNotEnabled()
-            onNodeWithContentDescription("history-open-tab").assertIsNotEnabled()
+            onNodeWithTag("history-open").assertIsNotEnabled()
+            onNodeWithTag("history-open-tab").assertIsNotEnabled()
             onNode(hasText("Open the connection this ran on to put it back in a tab."))
                 .assertIsDisplayed()
         }
@@ -192,22 +192,22 @@ class HistoryUiTest {
             service.seed(name = "Local", status = RuntimeStatus.OPEN)
             service.history += record("select now()")
             workspace(service)
-            onNodeWithContentDescription("connection-Local").performClick()
+            onNodeWithTag("connection-Local").performClick()
             waitForIdle()
-            onNodeWithContentDescription("editor-text").performTextInput("select 1")
-            waitForIdle()
-
-            onNodeWithContentDescription("open-history").performClick()
-            waitForIdle()
-            onNodeWithContentDescription("history-statement").performClick()
-            waitForIdle()
-            onNodeWithContentDescription("history-open").performClick()
+            onNodeWithTag("editor-text").performTextInput("select 1")
             waitForIdle()
 
-            onNodeWithContentDescription("replace-script-confirmation").assertIsDisplayed()
+            onNodeWithTag("open-history").performClick()
+            waitForIdle()
+            onNodeWithTag("history-entry-0").performClick()
+            waitForIdle()
+            onNodeWithTag("history-open").performClick()
+            waitForIdle()
+
+            onNodeWithTag("replace-script-confirmation").assertIsDisplayed()
             assertEquals("select 1", script)
 
-            onNodeWithContentDescription("confirm-replace-script").performClick()
+            onNodeWithTag("confirm-replace-script").performClick()
             waitForIdle()
 
             assertEquals("select now()", script)
@@ -220,21 +220,21 @@ class HistoryUiTest {
             service.seed(name = "Local", status = RuntimeStatus.OPEN)
             service.history += record("select now()")
             workspace(service)
-            onNodeWithContentDescription("connection-Local").performClick()
+            onNodeWithTag("connection-Local").performClick()
             waitForIdle()
-            onNodeWithContentDescription("editor-text").performTextInput("select 1")
+            onNodeWithTag("editor-text").performTextInput("select 1")
             waitForIdle()
 
-            onNodeWithContentDescription("open-history").performClick()
+            onNodeWithTag("open-history").performClick()
             waitForIdle()
-            onNodeWithContentDescription("history-statement").performClick()
+            onNodeWithTag("history-entry-0").performClick()
             waitForIdle()
-            onNodeWithContentDescription("history-open-tab").performClick()
+            onNodeWithTag("history-open-tab").performClick()
             waitForIdle()
 
             // Nothing to ask about: the second tab is where the statement went, and
             // the first one still holds what was being written in it.
-            onNodeWithContentDescription("replace-script-confirmation").assertDoesNotExist()
+            onNodeWithTag("replace-script-confirmation").assertDoesNotExist()
             assertEquals(
                 listOf("select 1", "select now()"),
                 tabs.tabs.map { it.editor.text.text },
@@ -250,17 +250,17 @@ class HistoryUiTest {
             service.history += record("select now()")
 
             openHistory(service)
-            onNodeWithContentDescription("history-clear-connection").performClick()
+            onNodeWithTag("history-clear-connection").performClick()
             waitForIdle()
 
             onNode(hasText("Clear the history for \"Local\"?")).assertIsDisplayed()
-            onNodeWithContentDescription("confirm-clear-history").performClick()
+            onNodeWithTag("confirm-clear-history").performClick()
             waitForIdle()
 
             assertEquals(emptyList(), service.history)
-            onNodeWithContentDescription("history-empty").assertIsDisplayed()
+            onNodeWithTag("history-empty").assertIsDisplayed()
             // The connection itself is untouched, and is still in the sidebar.
-            onNodeWithContentDescription("connection-Local").assertIsDisplayed()
+            onNodeWithTag("connection-Local").assertIsDisplayed()
         }
 
     @Test
@@ -271,14 +271,14 @@ class HistoryUiTest {
             service.history += record("select now()")
 
             openHistory(service)
-            onNodeWithContentDescription("history-search").performTextInput("invoices")
+            onNodeWithTag("history-search").performTextInput("invoices")
             waitForIdle()
 
             // Not "no history yet". The user has just typed something; telling them
             // their queries will appear here once they run some is how a panel
             // teaches someone to stop reading it.
-            onNodeWithContentDescription("history-empty-search").assertIsDisplayed()
-            onNodeWithContentDescription("history-empty").assertDoesNotExist()
+            onNodeWithTag("history-empty-search").assertIsDisplayed()
+            onNodeWithTag("history-empty").assertDoesNotExist()
         }
 
     @Test
@@ -292,6 +292,6 @@ class HistoryUiTest {
             // A connection with no history is not a filter that needs changing: it is
             // the ordinary "nothing has been run yet", and it gets the sentence that
             // says where history lives.
-            onNodeWithContentDescription("history-empty").assertIsDisplayed()
+            onNodeWithTag("history-empty").assertIsDisplayed()
         }
 }

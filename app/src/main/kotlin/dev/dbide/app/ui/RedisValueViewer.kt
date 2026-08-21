@@ -24,9 +24,10 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -57,14 +58,14 @@ fun RedisValueViewer(
     onCopy: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Column(modifier = modifier.fillMaxSize().semantics { contentDescription = "redis-value" }) {
+    Column(modifier = modifier.fillMaxSize().testTag("redis-value")) {
         PaneHeader(title = "Value", glyph = Glyphs.VALUE) {
             val string = (model.state as? ValueState.Ready)?.value as? LoadedValue.Text
             if (string != null && model.json != null) {
                 ToolButton(
                     text = "Raw",
                     onClick = model::showRaw,
-                    description = "value-raw",
+                    tag = "value-raw",
                     emphasis = if (model.textView == TextView.RAW) {
                         ToolEmphasis.PRIMARY
                     } else {
@@ -74,7 +75,7 @@ fun RedisValueViewer(
                 ToolButton(
                     text = "JSON",
                     onClick = model::showJson,
-                    description = "value-json",
+                    tag = "value-json",
                     emphasis = if (model.textView == TextView.JSON) {
                         ToolEmphasis.PRIMARY
                     } else {
@@ -83,7 +84,7 @@ fun RedisValueViewer(
                 )
             }
             if (model.key != null) {
-                ToolButton(text = "Refresh", onClick = model::refresh, description = "value-refresh")
+                ToolButton(text = "Refresh", onClick = model::refresh, tag = "value-refresh")
             }
         }
         Hairline()
@@ -92,7 +93,7 @@ fun RedisValueViewer(
             ValueState.Idle -> EmptyState(
                 title = "No key selected",
                 detail = "Choose a key in the browser to read its value.",
-                description = "value-idle",
+                tag = "value-idle",
             )
 
             ValueState.Loading -> Loading()
@@ -102,12 +103,12 @@ fun RedisValueViewer(
             is ValueState.Missing -> EmptyState(
                 title = "That key is not there.",
                 detail = "It expired or was deleted. The rest of the browser is unaffected.",
-                description = "value-missing",
+                tag = "value-missing",
                 action = {
                     ToolButton(
                         text = "Look again",
                         onClick = model::refresh,
-                        description = "value-retry",
+                        tag = "value-retry",
                     )
                 },
             )
@@ -115,7 +116,7 @@ fun RedisValueViewer(
             is ValueState.Unsupported -> EmptyState(
                 title = "No viewer for a ${state.reported}.",
                 detail = "This build reads strings, hashes, lists, sets, sorted sets, and streams.",
-                description = "value-unsupported",
+                tag = "value-unsupported",
             )
 
             is ValueState.Failed -> Box(
@@ -170,7 +171,7 @@ private fun KeyHeader(metadata: KeyMetadata, onCopy: (String) -> Unit) {
                     color = MaterialTheme.colorScheme.onSurface,
                     maxLines = 3,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.semantics { contentDescription = "value-key-name" },
+                    modifier = Modifier.testTag("value-key-name"),
                 )
             }
             // Only for a name that is text. There is no honest string form of a binary
@@ -180,7 +181,7 @@ private fun KeyHeader(metadata: KeyMetadata, onCopy: (String) -> Unit) {
                 ToolButton(
                     text = "Copy key",
                     onClick = { onCopy(name) },
-                    description = "value-copy-key",
+                    tag = "value-copy-key",
                 )
             }
         }
@@ -196,12 +197,12 @@ private fun KeyHeader(metadata: KeyMetadata, onCopy: (String) -> Unit) {
 }
 
 @Composable
-private fun Detail(text: String, description: String) {
+private fun Detail(text: String, tag: String) {
     Text(
         text = text,
         style = MaterialTheme.typography.labelSmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier.semantics { contentDescription = description },
+        modifier = Modifier.testTag(tag),
     )
 }
 
@@ -220,9 +221,9 @@ private fun NoticeStrip(notice: String, onDismiss: () -> Unit) {
             text = notice,
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onTertiaryContainer,
-            modifier = Modifier.weight(1f).semantics { contentDescription = "value-notice" },
+            modifier = Modifier.weight(1f).testTag("value-notice"),
         )
-        ToolButton(text = "Dismiss", onClick = onDismiss, description = "value-notice-dismiss")
+        ToolButton(text = "Dismiss", onClick = onDismiss, tag = "value-notice-dismiss")
     }
 }
 
@@ -235,7 +236,7 @@ private fun ValueBody(value: LoadedValue, textView: TextView, json: String?) {
         is LoadedValue.Fields -> PairTable(
             left = "field",
             right = "value",
-            description = "value-hash",
+            tag = "value-hash",
             rows = value.entries.size,
         ) { index ->
             val entry: FieldEntry = value.entries[index]
@@ -245,7 +246,7 @@ private fun ValueBody(value: LoadedValue, textView: TextView, json: String?) {
         is LoadedValue.Members -> PairTable(
             left = "member",
             right = "",
-            description = "value-set",
+            tag = "value-set",
             rows = value.members.size,
         ) { index ->
             PairRow(RedisFormat.text(value.members[index]), null, index)
@@ -256,7 +257,7 @@ private fun ValueBody(value: LoadedValue, textView: TextView, json: String?) {
             // Redis's own formatting of the score, never a reparsed double: this is
             // the number the ordering is by, and it is being read because it matters.
             right = "score",
-            description = "value-zset",
+            tag = "value-zset",
             rows = value.members.size,
         ) { index ->
             val member = value.members[index]
@@ -266,7 +267,7 @@ private fun ValueBody(value: LoadedValue, textView: TextView, json: String?) {
         is LoadedValue.Elements -> PairTable(
             left = "index",
             right = "value",
-            description = "value-list",
+            tag = "value-list",
             rows = value.elements.size,
         ) { index ->
             val element = value.elements[index]
@@ -292,7 +293,7 @@ private fun StringBody(value: LoadedValue.Text, textView: TextView, json: String
         EmptyState(
             title = "Empty string.",
             detail = "The key is there and holds zero bytes.",
-            description = "value-empty-string",
+            tag = "value-empty-string",
         )
         return
     }
@@ -312,7 +313,7 @@ private fun StringBody(value: LoadedValue.Text, textView: TextView, json: String
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = Space.lg, vertical = Space.sm)
-                    .semantics { contentDescription = "value-binary" },
+                    .testTag("value-binary"),
             )
         }
         Box(
@@ -328,7 +329,7 @@ private fun StringBody(value: LoadedValue.Text, textView: TextView, json: String
                 fontFamily = FontFamily.Monospace,
                 color = MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier.semantics {
-                    contentDescription = if (textView == TextView.JSON) "value-json-text" else "value-text"
+                    testTag = if (textView == TextView.JSON) "value-json-text" else "value-text"
                 },
             )
         }
@@ -347,12 +348,12 @@ private fun StreamBody(value: LoadedValue.Entries) {
         EmptyState(
             title = "Empty stream.",
             detail = "The key is there and holds no entries.",
-            description = "value-empty-stream",
+            tag = "value-empty-stream",
         )
         return
     }
     LazyColumn(
-        modifier = Modifier.fillMaxSize().semantics { contentDescription = "value-stream" },
+        modifier = Modifier.fillMaxSize().testTag("value-stream"),
         contentPadding = PaddingValues(vertical = Space.sm),
     ) {
         itemsIndexed(value.entries) { index, entry ->
@@ -371,7 +372,7 @@ private fun StreamBody(value: LoadedValue.Entries) {
                     style = MaterialTheme.typography.labelSmall,
                     fontFamily = FontFamily.Monospace,
                     color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.semantics { contentDescription = "stream-entry-$index" },
+                    modifier = Modifier.testTag("stream-entry-$index"),
                 )
                 entry.fields.forEach { field ->
                     Row(horizontalArrangement = Arrangement.spacedBy(Space.md)) {
@@ -394,7 +395,7 @@ private fun StreamBody(value: LoadedValue.Entries) {
 private fun PairTable(
     left: String,
     right: String,
-    description: String,
+    tag: String,
     rows: Int,
     row: @Composable (Int) -> Unit,
 ) {
@@ -402,7 +403,7 @@ private fun PairTable(
         EmptyState(
             title = "Empty collection.",
             detail = "The key is there and holds no entries.",
-            description = "value-empty-collection",
+            tag = "value-empty-collection",
         )
         return
     }
@@ -430,7 +431,7 @@ private fun PairTable(
             }
         }
         LazyColumn(
-            modifier = Modifier.fillMaxSize().semantics { contentDescription = description },
+            modifier = Modifier.fillMaxSize().testTag(tag),
         ) {
             items(rows) { index -> row(index) }
         }
@@ -446,7 +447,7 @@ private fun PairRow(left: String, right: String?, index: Int) {
             .background(if (index % 2 == 1) Dbide.colors.stripe else Color.Transparent)
             .heightIn(min = Sizes.gridRow)
             .padding(horizontal = Space.lg, vertical = Space.xs)
-            .semantics { contentDescription = "value-row-$index" },
+            .testTag("value-row-$index"),
         horizontalArrangement = Arrangement.spacedBy(Space.md),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -501,14 +502,14 @@ private fun ValueFooter(state: ValueState.Ready, onMore: () -> Unit, onCopy: (St
             if (state.paging) {
                 CircularProgressIndicator(
                     strokeWidth = 1.5.dp,
-                    modifier = Modifier.size(10.dp).semantics { contentDescription = "value-paging" },
+                    modifier = Modifier.size(10.dp).testTag("value-paging"),
                 )
             }
             Text(
                 text = value.extent(),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.weight(1f).semantics { contentDescription = "value-extent" },
+                modifier = Modifier.weight(1f).testTag("value-extent"),
             )
             (value as? LoadedValue.Text)?.text?.let { text ->
                 ToolButton(
@@ -516,14 +517,14 @@ private fun ValueFooter(state: ValueState.Ready, onMore: () -> Unit, onCopy: (St
                     // a copy is of what Redis holds, not of what this pane drew.
                     text = "Copy value",
                     onClick = { onCopy(text) },
-                    description = "value-copy",
+                    tag = "value-copy",
                 )
             }
             if (value.hasMore) {
                 ToolButton(
                     text = "Show more",
                     onClick = onMore,
-                    description = "value-more",
+                    tag = "value-more",
                     enabled = !state.paging,
                     emphasis = ToolEmphasis.PRIMARY,
                 )
@@ -534,7 +535,7 @@ private fun ValueFooter(state: ValueState.Ready, onMore: () -> Unit, onCopy: (St
                 text = warning,
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.error,
-                modifier = Modifier.semantics { contentDescription = "value-warning" },
+                modifier = Modifier.testTag("value-warning"),
             )
         }
         (value as? LoadedValue.Scored)?.let { RankingNote() }
@@ -579,7 +580,7 @@ private fun RankingNote() {
             "and so can be seen twice or missed.",
         style = MaterialTheme.typography.labelSmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f),
-        modifier = Modifier.semantics { contentDescription = "value-rank-note" },
+        modifier = Modifier.testTag("value-rank-note"),
     )
 }
 
@@ -590,7 +591,7 @@ private fun OrderNote() {
             "and can change.",
         style = MaterialTheme.typography.labelSmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f),
-        modifier = Modifier.semantics { contentDescription = "value-order-note" },
+        modifier = Modifier.testTag("value-order-note"),
     )
 }
 
@@ -599,7 +600,7 @@ private fun Loading() {
     Row(
         modifier = Modifier
             .fillMaxSize()
-            .semantics { contentDescription = "value-loading" },
+            .testTag("value-loading"),
         horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically,
     ) {

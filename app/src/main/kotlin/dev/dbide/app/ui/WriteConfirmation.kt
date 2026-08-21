@@ -23,11 +23,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
@@ -76,7 +75,7 @@ fun WriteConfirmation(
                 Text(
                     text = explanation(clearance.kind, clearance.connectionName, production),
                     style = MaterialTheme.typography.bodyMedium,
-                    modifier = Modifier.semantics { contentDescription = "write-explanation" },
+                    modifier = Modifier.testTag("write-explanation"),
                 )
 
                 // The statement itself, because a confirmation that does not show what
@@ -98,7 +97,7 @@ fun WriteConfirmation(
             TextButton(
                 onClick = { onConfirm(typed) },
                 enabled = satisfied,
-                modifier = Modifier.semantics { contentDescription = "confirm-write" },
+                modifier = Modifier.testTag("confirm-write"),
             ) {
                 Text(
                     text = "Run it",
@@ -113,12 +112,12 @@ fun WriteConfirmation(
         dismissButton = {
             TextButton(
                 onClick = onCancel,
-                modifier = Modifier.semantics { contentDescription = "cancel-write" },
+                modifier = Modifier.testTag("cancel-write"),
             ) {
                 Text("Cancel")
             }
         },
-        modifier = Modifier.semantics { contentDescription = "write-confirmation" },
+        modifier = Modifier.testTag("write-confirmation"),
     )
 }
 
@@ -131,7 +130,7 @@ private fun ProductionBanner(connectionName: String) {
             .clip(MaterialTheme.shapes.medium)
             .background(MaterialTheme.colorScheme.errorContainer)
             .padding(horizontal = Space.lg, vertical = Space.lg)
-            .semantics { contentDescription = "write-prod-banner" },
+            .testTag("write-prod-banner"),
         horizontalArrangement = Arrangement.spacedBy(Space.md),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -158,7 +157,7 @@ private fun StatementPreview(sql: String) {
             .background(MaterialTheme.colorScheme.surfaceVariant)
             .border(Sizes.hairline, Dbide.colors.hairline, MaterialTheme.shapes.medium)
             .padding(Space.lg)
-            .semantics { contentDescription = "write-statement" },
+            .testTag("write-statement"),
     )
 }
 
@@ -190,7 +189,7 @@ private fun TypedAcknowledgement(
             modifier = Modifier
                 .fillMaxWidth()
                 .focusRequester(focus)
-                .semantics { contentDescription = "write-acknowledgement" },
+                .testTag("write-acknowledgement"),
         )
     }
 }

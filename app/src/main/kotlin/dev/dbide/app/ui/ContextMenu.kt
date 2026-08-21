@@ -12,13 +12,12 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.isSecondaryPressed
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 
@@ -34,12 +33,12 @@ import androidx.compose.ui.unit.dp
 /**
  * One line of a context menu.
  *
- * [description] is what the accessibility tree and the tests call it — the label is
+ * [tag] is what the accessibility tree and the tests call it — the label is
  * for the person reading it, and the two are allowed to drift.
  */
 data class MenuAction(
     val label: String,
-    val description: String,
+    val tag: String,
     val enabled: Boolean = true,
     /** Drawn in the error colour, and set apart from what is above it. */
     val danger: Boolean = false,
@@ -80,7 +79,7 @@ fun ContextMenu(
     at: DpOffset,
     actions: List<MenuAction>,
     onDismiss: () -> Unit,
-    description: String,
+    tag: String,
 ) {
     DropdownMenu(
         expanded = expanded,
@@ -88,7 +87,7 @@ fun ContextMenu(
         offset = at,
         modifier = Modifier
             .widthIn(min = 176.dp)
-            .semantics { contentDescription = description },
+            .testTag(tag),
     ) {
         actions.forEach { action ->
             if (action.danger) Hairline(modifier = Modifier.padding(vertical = Space.xs))
@@ -118,7 +117,7 @@ private fun MenuRow(action: MenuAction, onDismiss: () -> Unit) {
             }
             .handCursor(action.enabled)
             .padding(horizontal = Space.lg, vertical = Space.md)
-            .semantics { contentDescription = action.description },
+            .testTag(action.tag),
         contentAlignment = Alignment.CenterStart,
     ) {
         Text(text = action.label, style = MaterialTheme.typography.bodySmall, color = color)

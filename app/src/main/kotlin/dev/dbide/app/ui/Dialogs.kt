@@ -26,10 +26,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -60,7 +59,7 @@ import androidx.compose.ui.window.DialogProperties
 @Composable
 fun AppDialog(
     title: String,
-    description: String,
+    tag: String,
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
     subtitle: String? = null,
@@ -111,7 +110,7 @@ fun AppDialog(
                 .fillMaxHeight(0.9f)
                 .heightIn(max = maxHeight)
                 .border(Sizes.hairline, Dbide.colors.hairline, MaterialTheme.shapes.extraLarge)
-                .semantics { contentDescription = description },
+                .testTag(tag),
         ) {
             Column(modifier = Modifier.fillMaxSize()) {
                 DialogHeader(title = title, subtitle = subtitle, icon = icon, onDismiss = onDismiss)
@@ -205,7 +204,7 @@ private fun DialogHeader(
                 )
             }
         }
-        ToolButton(text = "✕", onClick = onDismiss, description = "close-dialog")
+        ToolButton(text = "✕", onClick = onDismiss, tag = "close-dialog")
     }
 }
 
@@ -219,7 +218,7 @@ private fun DialogHeader(
 @Composable
 fun RailItem(
     label: String,
-    description: String,
+    tag: String,
     selected: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
@@ -240,7 +239,7 @@ fun RailItem(
             .clickable(enabled = enabled, onClick = onClick)
             .handCursor(enabled)
             .padding(horizontal = Space.md, vertical = Space.md)
-            .semantics { contentDescription = description },
+            .testTag(tag),
         horizontalArrangement = Arrangement.spacedBy(Space.md),
         verticalAlignment = Alignment.CenterVertically,
     ) {

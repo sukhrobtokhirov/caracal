@@ -10,7 +10,7 @@ import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.doubleClick
-import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performMouseInput
@@ -95,8 +95,8 @@ class ConnectionUiTest {
             onNodeWithText("Choose a master password").assertIsDisplayed()
             onNodeWithText("It encrypts every database password you save.", substring = true)
                 .assertIsDisplayed()
-            onNodeWithContentDescription("confirm-master-password").assertIsDisplayed()
-            onNodeWithContentDescription("vault-submit").assertIsNotEnabled()
+            onNodeWithTag("confirm-master-password").assertIsDisplayed()
+            onNodeWithTag("vault-submit").assertIsNotEnabled()
         }
 
     @Test
@@ -104,7 +104,7 @@ class ConnectionUiTest {
         vaultScreen(FakeConnectionService(VaultState.LOCKED))
 
         onNodeWithText("Unlock Database IDE").assertIsDisplayed()
-        onNodeWithContentDescription("confirm-master-password").assertDoesNotExist()
+        onNodeWithTag("confirm-master-password").assertDoesNotExist()
     }
 
     @Test
@@ -112,9 +112,9 @@ class ConnectionUiTest {
         val service = FakeConnectionService(VaultState.SETUP_REQUIRED)
         vaultScreen(service)
 
-        onNodeWithContentDescription("master-password").performTextInput("correct-horse")
-        onNodeWithContentDescription("confirm-master-password").performTextInput("correct-horse")
-        onNodeWithContentDescription("vault-submit").performClick()
+        onNodeWithTag("master-password").performTextInput("correct-horse")
+        onNodeWithTag("confirm-master-password").performTextInput("correct-horse")
+        onNodeWithTag("vault-submit").performClick()
         waitUntil { service.calls.contains("setUp") }
         waitForIdle()
 
@@ -126,12 +126,12 @@ class ConnectionUiTest {
         val service = FakeConnectionService(VaultState.LOCKED)
         vaultScreen(service)
 
-        onNodeWithContentDescription("master-password").performTextInput("not-the-password")
-        onNodeWithContentDescription("vault-submit").performClick()
+        onNodeWithTag("master-password").performTextInput("not-the-password")
+        onNodeWithTag("vault-submit").performClick()
         waitUntil { service.calls.contains("unlock") }
         waitForIdle()
 
-        onNodeWithContentDescription("failure-wrong_password").assertIsDisplayed()
+        onNodeWithTag("failure-wrong_password").assertIsDisplayed()
         onNodeWithText("Unlock Database IDE").assertIsDisplayed()
     }
 
@@ -141,15 +141,15 @@ class ConnectionUiTest {
     fun `an empty workspace explains what to do next`() = runDesktopComposeUiTest(width = 1400, height = 1600) {
         workspace(FakeConnectionService(VaultState.UNLOCKED))
 
-        onNodeWithContentDescription("connections-empty").assertIsDisplayed()
-        onNodeWithContentDescription("workspace-empty").assertIsDisplayed()
+        onNodeWithTag("connections-empty").assertIsDisplayed()
+        onNodeWithTag("workspace-empty").assertIsDisplayed()
 
         // §4.7: an empty state that only describes the situation leaves the user to
         // find the way out of it. This one is the way out.
-        onNodeWithContentDescription("workspace-empty-create").performClick()
+        onNodeWithTag("workspace-empty-create").performClick()
         waitForIdle()
 
-        onNodeWithContentDescription("new-connection-dialog").assertExists()
+        onNodeWithTag("new-connection-dialog").assertExists()
     }
 
     @Test
@@ -160,10 +160,10 @@ class ConnectionUiTest {
             val model = workspace(service)
             waitUntil { model.connections.isNotEmpty() }
 
-            onNodeWithContentDescription("connection-prod-db").assertIsDisplayed()
+            onNodeWithTag("connection-prod-db").assertIsDisplayed()
             // The badge is a word, so it survives a colour-blind user and a screenshot.
-            onNodeWithContentDescription("environment-prod").assertExists()
-            onNodeWithContentDescription("read-only").assertExists()
+            onNodeWithTag("environment-prod", useUnmergedTree = true).assertExists()
+            onNodeWithTag("read-only", useUnmergedTree = true).assertExists()
         }
 
     @Test
@@ -174,13 +174,13 @@ class ConnectionUiTest {
             val model = workspace(service)
             waitUntil { model.connections.isNotEmpty() }
 
-            onNodeWithContentDescription("shell-normal").assertExists()
+            onNodeWithTag("shell-normal").assertExists()
 
-            onNodeWithContentDescription("connection-prod-db").performClick()
+            onNodeWithTag("connection-prod-db").performClick()
             waitForIdle()
 
             // The warning lives in the shell, so it cannot scroll away.
-            onNodeWithContentDescription("shell-prod").assertExists()
+            onNodeWithTag("shell-prod").assertExists()
             assertEquals(saved.id, model.selected?.id)
         }
 
@@ -192,16 +192,16 @@ class ConnectionUiTest {
             val model = workspace(service)
             waitUntil { model.connections.isNotEmpty() }
 
-            onNodeWithContentDescription("collapse-sidebar").performClick()
+            onNodeWithTag("collapse-sidebar").performClick()
             waitForIdle()
 
-            onNodeWithContentDescription("connection-Local").assertDoesNotExist()
+            onNodeWithTag("connection-Local").assertDoesNotExist()
 
             // The pane is gone; the way back to it is not.
-            onNodeWithContentDescription("toggle-sidebar").performClick()
+            onNodeWithTag("toggle-sidebar").performClick()
             waitForIdle()
 
-            onNodeWithContentDescription("connection-Local").assertIsDisplayed()
+            onNodeWithTag("connection-Local").assertIsDisplayed()
         }
 
     @Test
@@ -211,13 +211,13 @@ class ConnectionUiTest {
         val model = workspace(service)
         waitUntil { model.connections.isNotEmpty() }
 
-        onNodeWithContentDescription("connection-Local").performMouseInput { doubleClick() }
+        onNodeWithTag("connection-Local").performMouseInput { doubleClick() }
         waitUntil { model.connections.single().runtime.status == RuntimeStatus.OPEN }
         waitForIdle()
 
         // Opened, and selected: the shell has to be naming the server that was opened.
         assertEquals(saved.id, model.selected?.id)
-        onNodeWithContentDescription("sql-editor").assertIsDisplayed()
+        onNodeWithTag("sql-editor").assertIsDisplayed()
     }
 
     @Test
@@ -228,25 +228,25 @@ class ConnectionUiTest {
             val model = workspace(service)
             waitUntil { model.connections.isNotEmpty() }
 
-            onNodeWithContentDescription("connection-Local").performMouseInput { rightClick() }
+            onNodeWithTag("connection-Local").performMouseInput { rightClick() }
             waitForIdle()
 
             // Right-clicking selects, so the menu and the rest of the window agree
             // about which connection is being acted on.
             assertEquals(saved.id, model.selected?.id)
-            onNodeWithContentDescription("menu-test").assertIsDisplayed()
-            onNodeWithContentDescription("menu-delete").assertIsDisplayed()
+            onNodeWithTag("menu-test").assertIsDisplayed()
+            onNodeWithTag("menu-delete").assertIsDisplayed()
 
-            onNodeWithContentDescription("menu-open").performClick()
+            onNodeWithTag("menu-open").performClick()
             waitUntil { model.connections.single().runtime.status == RuntimeStatus.OPEN }
             waitForIdle()
 
             // The menu closes behind the action, and now offers the other half of it.
-            onNodeWithContentDescription("menu-open").assertDoesNotExist()
-            onNodeWithContentDescription("connection-Local").performMouseInput { rightClick() }
+            onNodeWithTag("menu-open").assertDoesNotExist()
+            onNodeWithTag("connection-Local").performMouseInput { rightClick() }
             waitForIdle()
 
-            onNodeWithContentDescription("menu-close").assertIsDisplayed()
+            onNodeWithTag("menu-close").assertIsDisplayed()
         }
 
     @Test
@@ -256,12 +256,12 @@ class ConnectionUiTest {
         val model = workspace(service)
         waitUntil { model.connections.isNotEmpty() }
 
-        onNodeWithContentDescription("connection-prod-db").performMouseInput { rightClick() }
-        onNodeWithContentDescription("menu-delete").performClick()
+        onNodeWithTag("connection-prod-db").performMouseInput { rightClick() }
+        onNodeWithTag("menu-delete").performClick()
         waitForIdle()
 
         assertFalse(service.calls.contains("delete"))
-        onNodeWithContentDescription("delete-confirmation").assertExists()
+        onNodeWithTag("delete-confirmation").assertExists()
         onNodeWithText("This is a PROD connection.").assertIsDisplayed()
     }
 
@@ -275,18 +275,18 @@ class ConnectionUiTest {
             val model = workspace(service)
             waitUntil { model.connections.isNotEmpty() }
 
-            onNodeWithContentDescription("new-connection").performClick()
+            onNodeWithTag("new-connection").performClick()
             waitForIdle()
 
-            onNodeWithContentDescription("new-connection-dialog").assertExists()
+            onNodeWithTag("new-connection-dialog").assertExists()
             // The window is over the workspace, not instead of it: the sidebar the
             // user was reading is still there behind it.
-            onNodeWithContentDescription("connection-Local").assertIsDisplayed()
+            onNodeWithTag("connection-Local").assertIsDisplayed()
 
-            onNodeWithContentDescription("cancel-form").performClick()
+            onNodeWithTag("cancel-form").performClick()
             waitForIdle()
 
-            onNodeWithContentDescription("new-connection-dialog").assertDoesNotExist()
+            onNodeWithTag("new-connection-dialog").assertDoesNotExist()
             assertTrue(service.drafts.isEmpty())
         }
 
@@ -298,18 +298,18 @@ class ConnectionUiTest {
             val model = workspace(service)
             waitUntil { model.connections.isNotEmpty() }
 
-            onNodeWithContentDescription("connection-Local").performMouseInput { doubleClick() }
+            onNodeWithTag("connection-Local").performMouseInput { doubleClick() }
             waitUntil { model.connections.single().runtime.status == RuntimeStatus.OPEN }
             waitForIdle()
 
-            onNodeWithContentDescription("new-connection").performClick()
+            onNodeWithTag("new-connection").performClick()
             waitForIdle()
 
             // Nothing is selected while a new connection is being created, and the
             // editor the user was working in stays on screen regardless.
-            onNodeWithContentDescription("new-connection-dialog").assertExists()
-            onNodeWithContentDescription("sql-editor").assertIsDisplayed()
-            onNodeWithContentDescription("schema-tree").assertIsDisplayed()
+            onNodeWithTag("new-connection-dialog").assertExists()
+            onNodeWithTag("sql-editor").assertIsDisplayed()
+            onNodeWithTag("schema-tree").assertIsDisplayed()
         }
 
     @Test
@@ -318,15 +318,15 @@ class ConnectionUiTest {
             val service = FakeConnectionService(VaultState.UNLOCKED)
             val model = workspace(service)
 
-            onNodeWithContentDescription("new-connection").performClick()
-            onNodeWithContentDescription("field-name").performTextInput("Cache")
-            onNodeWithContentDescription("field-host").performTextInput("localhost")
-            onNodeWithContentDescription("engine-choice-redis").performClick()
+            onNodeWithTag("new-connection").performClick()
+            onNodeWithTag("field-name").performTextInput("Cache")
+            onNodeWithTag("field-host").performTextInput("localhost")
+            onNodeWithTag("engine-choice-redis", useUnmergedTree = true).performClick()
             waitForIdle()
 
             // Choosing the engine is what fills in its port and its database index,
             // so the one click is the whole decision.
-            onNodeWithContentDescription("save-connection").performClick()
+            onNodeWithTag("save-connection").performClick()
             waitUntil { model.connections.isNotEmpty() }
 
             val draft = service.drafts.single()
@@ -343,14 +343,14 @@ class ConnectionUiTest {
             val model = workspace(service)
             waitUntil { model.connections.isNotEmpty() }
 
-            onNodeWithContentDescription("connection-Local").performClick()
-            onNodeWithContentDescription("edit-connection").performClick()
+            onNodeWithTag("connection-Local").performClick()
+            onNodeWithTag("edit-connection").performClick()
             waitForIdle()
 
-            onNodeWithContentDescription("edit-connection-dialog").assertExists()
+            onNodeWithTag("edit-connection-dialog").assertExists()
             // The detail pane underneath is still the one being edited, so the window
             // is a question about something the user can still see.
-            onNodeWithContentDescription("test-connection").assertIsDisplayed()
+            onNodeWithTag("test-connection").assertIsDisplayed()
         }
 
     @Test
@@ -374,20 +374,20 @@ class ConnectionUiTest {
 
             assertEquals(ThemeMode.DARK, theme.mode)
 
-            onNodeWithContentDescription("open-settings").performClick()
+            onNodeWithTag("open-settings").performClick()
             waitForIdle()
-            onNodeWithContentDescription("settings-dialog").assertExists()
+            onNodeWithTag("settings-dialog").assertExists()
 
-            onNodeWithContentDescription("theme-choice-light").performClick()
+            onNodeWithTag("theme-choice-light").performClick()
             waitForIdle()
 
             // Named rather than cycled: the click lands on the theme that was wanted.
             assertEquals(ThemeMode.LIGHT, theme.mode)
 
-            onNodeWithContentDescription("settings-done").performClick()
+            onNodeWithTag("settings-done").performClick()
             waitForIdle()
 
-            onNodeWithContentDescription("settings-dialog").assertDoesNotExist()
+            onNodeWithTag("settings-dialog").assertDoesNotExist()
         }
 
     // --- Creating ------------------------------------------------------------
@@ -397,12 +397,12 @@ class ConnectionUiTest {
         val service = FakeConnectionService(VaultState.UNLOCKED)
         val model = workspace(service)
 
-        onNodeWithContentDescription("new-connection").performClick()
-        onNodeWithContentDescription("field-name").performTextInput("Local")
-        onNodeWithContentDescription("field-host").performTextInput("localhost")
-        onNodeWithContentDescription("field-database").performTextInput("dbide")
-        onNodeWithContentDescription("field-password").performTextInput("hunter2")
-        onNodeWithContentDescription("save-connection").performClick()
+        onNodeWithTag("new-connection").performClick()
+        onNodeWithTag("field-name").performTextInput("Local")
+        onNodeWithTag("field-host").performTextInput("localhost")
+        onNodeWithTag("field-database").performTextInput("dbide")
+        onNodeWithTag("field-password").performTextInput("hunter2")
+        onNodeWithTag("save-connection").performClick()
         waitUntil { model.connections.isNotEmpty() }
 
         val draft = service.drafts.single()
@@ -416,8 +416,8 @@ class ConnectionUiTest {
         val service = FakeConnectionService(VaultState.UNLOCKED)
         workspace(service)
 
-        onNodeWithContentDescription("new-connection").performClick()
-        onNodeWithContentDescription("save-connection").performClick()
+        onNodeWithTag("new-connection").performClick()
+        onNodeWithTag("save-connection").performClick()
         waitForIdle()
 
         assertFalse(service.calls.contains("create"))
@@ -429,25 +429,25 @@ class ConnectionUiTest {
     fun `choosing Redis offers only the TLS modes Redis has`() = runDesktopComposeUiTest(width = 1400, height = 1600) {
         workspace(FakeConnectionService(VaultState.UNLOCKED))
 
-        onNodeWithContentDescription("new-connection").performClick()
-        onNodeWithContentDescription("tls-choice-verify-full").assertExists()
+        onNodeWithTag("new-connection").performClick()
+        onNodeWithTag("tls-choice-verify-full").assertExists()
 
-        onNodeWithContentDescription("engine-choice-redis").performClick()
+        onNodeWithTag("engine-choice-redis", useUnmergedTree = true).performClick()
         waitForIdle()
 
-        onNodeWithContentDescription("tls-choice-verify-full").assertDoesNotExist()
-        onNodeWithContentDescription("tls-choice-require").assertExists()
+        onNodeWithTag("tls-choice-verify-full").assertDoesNotExist()
+        onNodeWithTag("tls-choice-require").assertExists()
     }
 
     @Test
     fun `marking a connection production warns before it is even saved`() = runDesktopComposeUiTest(width = 1400, height = 1600) {
         workspace(FakeConnectionService(VaultState.UNLOCKED))
 
-        onNodeWithContentDescription("new-connection").performClick()
-        onNodeWithContentDescription("environment-choice-prod").performClick()
+        onNodeWithTag("new-connection").performClick()
+        onNodeWithTag("environment-choice-prod", useUnmergedTree = true).performClick()
         waitForIdle()
 
-        onNodeWithContentDescription("prod-warning").assertIsDisplayed()
+        onNodeWithTag("prod-warning").assertIsDisplayed()
     }
 
     // --- Editing -------------------------------------------------------------
@@ -460,13 +460,13 @@ class ConnectionUiTest {
             val model = workspace(service)
             waitUntil { model.connections.isNotEmpty() }
 
-            onNodeWithContentDescription("connection-Local").performClick()
-            onNodeWithContentDescription("edit-connection").performClick()
+            onNodeWithTag("connection-Local").performClick()
+            onNodeWithTag("edit-connection").performClick()
             waitForIdle()
 
             onNodeWithText("Leave saved password unchanged").assertIsDisplayed()
             // There is no password field at all until the user asks for one.
-            onNodeWithContentDescription("field-password").assertDoesNotExist()
+            onNodeWithTag("field-password").assertDoesNotExist()
         }
 
     @Test
@@ -476,10 +476,10 @@ class ConnectionUiTest {
         val model = workspace(service)
         waitUntil { model.connections.isNotEmpty() }
 
-        onNodeWithContentDescription("connection-Local").performClick()
-        onNodeWithContentDescription("edit-connection").performClick()
-        onNodeWithContentDescription("field-color").performTextInput("#ff8800")
-        onNodeWithContentDescription("save-connection").performClick()
+        onNodeWithTag("connection-Local").performClick()
+        onNodeWithTag("edit-connection").performClick()
+        onNodeWithTag("field-color").performTextInput("#ff8800")
+        onNodeWithTag("save-connection").performClick()
         waitUntil { service.calls.contains("update") }
 
         assertEquals(SecretUpdate.Unchanged, service.drafts.single().secret)
@@ -494,12 +494,12 @@ class ConnectionUiTest {
             val model = workspace(service)
             waitUntil { model.connections.isNotEmpty() }
 
-            onNodeWithContentDescription("connection-Local").performClick()
-            onNodeWithContentDescription("edit-connection").performClick()
-            onNodeWithContentDescription("replace-password").performClick()
+            onNodeWithTag("connection-Local").performClick()
+            onNodeWithTag("edit-connection").performClick()
+            onNodeWithTag("replace-password").performClick()
             waitForIdle()
 
-            onNodeWithContentDescription("field-password").assertIsDisplayed()
+            onNodeWithTag("field-password").assertIsDisplayed()
             onNodeWithText("Leave this empty to remove the saved password.").assertIsDisplayed()
         }
 
@@ -512,7 +512,7 @@ class ConnectionUiTest {
         val model = workspace(service)
         waitUntil { model.connections.isNotEmpty() }
 
-        onNodeWithContentDescription("connection-Local").performClick()
+        onNodeWithTag("connection-Local").performClick()
         waitForIdle()
 
         onNodeWithText("Saved").assertIsDisplayed()
@@ -526,12 +526,12 @@ class ConnectionUiTest {
         val model = workspace(service)
         waitUntil { model.connections.isNotEmpty() }
 
-        onNodeWithContentDescription("connection-Local").performClick()
-        onNodeWithContentDescription("test-connection").performClick()
+        onNodeWithTag("connection-Local").performClick()
+        onNodeWithTag("test-connection").performClick()
         waitUntil { model.testResult != null }
         waitForIdle()
 
-        onNodeWithContentDescription("test-succeeded").assertIsDisplayed()
+        onNodeWithTag("test-succeeded").assertIsDisplayed()
         onNodeWithText("Connected in 12 ms.").assertIsDisplayed()
     }
 
@@ -542,18 +542,18 @@ class ConnectionUiTest {
         val model = workspace(service)
         waitUntil { model.connections.isNotEmpty() }
 
-        onNodeWithContentDescription("connection-Local").performClick()
-        onNodeWithContentDescription("open-connection").performClick()
+        onNodeWithTag("connection-Local").performClick()
+        onNodeWithTag("open-connection").performClick()
         waitUntil { model.connections.single().runtime.status == RuntimeStatus.OPEN }
         waitForIdle()
 
         // An open connection lands on its editor, and its details are one tab away.
-        onNodeWithContentDescription("sql-editor").assertIsDisplayed()
-        onNodeWithContentDescription("workspace-tab-connection").performClick()
+        onNodeWithTag("sql-editor").assertIsDisplayed()
+        onNodeWithTag("workspace-tab-connection").performClick()
         waitForIdle()
 
-        onNodeWithContentDescription("close-connection").assertIsDisplayed()
-        onNodeWithContentDescription("open-connection").assertDoesNotExist()
+        onNodeWithTag("close-connection").assertIsDisplayed()
+        onNodeWithTag("open-connection").assertDoesNotExist()
     }
 
     @Test
@@ -563,13 +563,13 @@ class ConnectionUiTest {
         val model = workspace(service)
         waitUntil { model.connections.isNotEmpty() }
 
-        onNodeWithContentDescription("connection-Local").performClick()
-        onNodeWithContentDescription("delete-connection").performClick()
+        onNodeWithTag("connection-Local").performClick()
+        onNodeWithTag("delete-connection").performClick()
         waitForIdle()
 
-        onNodeWithContentDescription("delete-confirmation").assertExists()
+        onNodeWithTag("delete-confirmation").assertExists()
 
-        onNodeWithContentDescription("cancel-delete").performClick()
+        onNodeWithTag("cancel-delete").performClick()
         waitForIdle()
 
         assertFalse(service.calls.contains("delete"))
@@ -583,9 +583,9 @@ class ConnectionUiTest {
         val model = workspace(service)
         waitUntil { model.connections.isNotEmpty() }
 
-        onNodeWithContentDescription("connection-Local").performClick()
-        onNodeWithContentDescription("delete-connection").performClick()
-        onNodeWithContentDescription("confirm-delete").performClick()
+        onNodeWithTag("connection-Local").performClick()
+        onNodeWithTag("delete-connection").performClick()
+        onNodeWithTag("confirm-delete").performClick()
         waitUntil { model.connections.isEmpty() }
 
         assertTrue(service.calls.contains("delete"))
@@ -598,8 +598,8 @@ class ConnectionUiTest {
         val model = workspace(service)
         waitUntil { model.connections.isNotEmpty() }
 
-        onNodeWithContentDescription("connection-prod-db").performClick()
-        onNodeWithContentDescription("delete-connection").performClick()
+        onNodeWithTag("connection-prod-db").performClick()
+        onNodeWithTag("delete-connection").performClick()
         waitForIdle()
 
         onNodeWithText("This is a PROD connection.").assertIsDisplayed()
@@ -613,7 +613,7 @@ class ConnectionUiTest {
             val model = workspace(service)
             waitUntil { model.connections.isNotEmpty() }
 
-            onNodeWithContentDescription("connection-Cache").performClick()
+            onNodeWithTag("connection-Cache").performClick()
             waitForIdle()
 
             onNodeWithText("Database index").assertIsDisplayed()

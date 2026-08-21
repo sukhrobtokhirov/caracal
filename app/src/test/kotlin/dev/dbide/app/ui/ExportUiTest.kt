@@ -8,7 +8,7 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertTextEquals
-import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.v2.runDesktopComposeUiTest
@@ -100,8 +100,8 @@ class ExportUiTest {
     )
 
     private fun ComposeUiTest.run(sql: String) {
-        onNodeWithContentDescription("editor-text").performTextInput(sql)
-        onNodeWithContentDescription("editor-run").performClick()
+        onNodeWithTag("editor-text").performTextInput(sql)
+        onNodeWithTag("editor-run").performClick()
         waitForIdle()
     }
 
@@ -111,8 +111,8 @@ class ExportUiTest {
             pane(service(), destination)
             run("select total from invoices")
 
-            onNodeWithContentDescription("export-start").assertIsEnabled()
-            onNodeWithContentDescription("export-status").assertTextEquals(ExportText.RERUN)
+            onNodeWithTag("export-start").assertIsEnabled()
+            onNodeWithTag("export-status").assertTextEquals(ExportText.RERUN)
         }
 
     @Test
@@ -122,12 +122,12 @@ class ExportUiTest {
             pane(service, destination)
             run("select total from invoices")
 
-            onNodeWithContentDescription("export-start").performClick()
+            onNodeWithTag("export-start").performClick()
             waitForIdle()
 
             assertEquals(listOf("select total from invoices" to destination), service.exports)
             assertEquals("total\r\n42\r\n", destination.readText())
-            onNodeWithContentDescription("export-status")
+            onNodeWithTag("export-status")
                 .assertTextEquals("Wrote 1 row to Local.csv.")
         }
 
@@ -138,11 +138,11 @@ class ExportUiTest {
             pane(service, chosen = null)
             run("select total from invoices")
 
-            onNodeWithContentDescription("export-start").performClick()
+            onNodeWithTag("export-start").performClick()
             waitForIdle()
 
             assertTrue(service.exports.isEmpty())
-            onNodeWithContentDescription("export-status").assertTextEquals(ExportText.RERUN)
+            onNodeWithTag("export-status").assertTextEquals(ExportText.RERUN)
         }
 
     @Test
@@ -154,17 +154,17 @@ class ExportUiTest {
 
             val gate = CompletableDeferred<Unit>()
             service.gate = gate
-            onNodeWithContentDescription("export-start").performClick()
+            onNodeWithTag("export-start").performClick()
             waitForIdle()
 
-            onNodeWithContentDescription("export-start").assertIsNotEnabled()
-            onNodeWithContentDescription("export-status").assertTextEquals("Exporting to Local.csv…")
+            onNodeWithTag("export-start").assertIsNotEnabled()
+            onNodeWithTag("export-status").assertTextEquals("Exporting to Local.csv…")
 
-            onNodeWithContentDescription("export-stop").performClick()
+            onNodeWithTag("export-stop").performClick()
             gate.complete(Unit)
             waitForIdle()
 
-            onNodeWithContentDescription("export-status")
+            onNodeWithTag("export-status")
                 .assertTextEquals("Export cancelled. No file was written.")
             assertTrue(!destination.exists(), "a cancelled export completed anyway")
         }
@@ -177,11 +177,11 @@ class ExportUiTest {
             pane(service(), destination, readOnly = false)
             run("insert into invoices (total) values (1) returning total")
             // The dialog the write confirmation raises has to be agreed to first.
-            onNodeWithContentDescription("confirm-write").performClick()
+            onNodeWithTag("confirm-write").performClick()
             waitForIdle()
 
-            onNodeWithContentDescription("export-start").assertIsNotEnabled()
-            onNodeWithContentDescription("export-status")
+            onNodeWithTag("export-start").assertIsNotEnabled()
+            onNodeWithTag("export-status")
                 .assertTextEquals(ExportRefusal.MODIFIES_DATA.message)
         }
 
@@ -197,11 +197,11 @@ class ExportUiTest {
             )
             pane(service, destination, readOnly = false)
             run("update invoices set total = total")
-            onNodeWithContentDescription("confirm-write").performClick()
+            onNodeWithTag("confirm-write").performClick()
             waitForIdle()
 
-            onNodeWithContentDescription("grid-command").assertIsDisplayed()
-            onNodeWithContentDescription("export-start").assertDoesNotExist()
+            onNodeWithTag("grid-command").assertIsDisplayed()
+            onNodeWithTag("export-start").assertDoesNotExist()
         }
 
     @Test
@@ -209,15 +209,15 @@ class ExportUiTest {
         runDesktopComposeUiTest(width = 1100, height = 800) {
             pane(service(), destination)
             run("select total from invoices")
-            onNodeWithContentDescription("export-start").performClick()
+            onNodeWithTag("export-start").performClick()
             waitForIdle()
-            onNodeWithContentDescription("export-status")
+            onNodeWithTag("export-status")
                 .assertTextEquals("Wrote 1 row to Local.csv.")
 
-            onNodeWithContentDescription("editor-run").performClick()
+            onNodeWithTag("editor-run").performClick()
             waitForIdle()
 
             // A file written from the previous run is not a sentence about this one.
-            onNodeWithContentDescription("export-status").assertTextEquals(ExportText.RERUN)
+            onNodeWithTag("export-status").assertTextEquals(ExportText.RERUN)
         }
 }

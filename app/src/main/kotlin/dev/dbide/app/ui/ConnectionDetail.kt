@@ -21,9 +21,10 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import dev.dbide.app.Activity
@@ -93,7 +94,7 @@ fun ConnectionDetail(
                 message,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.error,
-                modifier = Modifier.semantics { contentDescription = "runtime-error" },
+                modifier = Modifier.testTag("runtime-error"),
             )
         }
 
@@ -127,7 +128,7 @@ fun ConnectionDetail(
                 shape = MaterialTheme.shapes.small,
                 onClick = onTest,
                 enabled = !busy,
-                modifier = Modifier.semantics { contentDescription = "test-connection" },
+                modifier = Modifier.testTag("test-connection"),
             ) {
                 Text("Test")
             }
@@ -136,7 +137,7 @@ fun ConnectionDetail(
                     shape = MaterialTheme.shapes.small,
                     onClick = onClose,
                     enabled = !busy,
-                    modifier = Modifier.semantics { contentDescription = "close-connection" },
+                    modifier = Modifier.testTag("close-connection"),
                 ) {
                     Text("Close")
                 }
@@ -145,7 +146,7 @@ fun ConnectionDetail(
                     shape = MaterialTheme.shapes.small,
                     onClick = onOpen,
                     enabled = !busy,
-                    modifier = Modifier.semantics { contentDescription = "open-connection" },
+                    modifier = Modifier.testTag("open-connection"),
                 ) {
                     Text("Open")
                 }
@@ -154,7 +155,7 @@ fun ConnectionDetail(
                 shape = MaterialTheme.shapes.small,
                 onClick = onEdit,
                 enabled = !busy,
-                modifier = Modifier.semantics { contentDescription = "edit-connection" },
+                modifier = Modifier.testTag("edit-connection"),
             ) {
                 Text("Edit")
             }
@@ -168,7 +169,7 @@ fun ConnectionDetail(
                     // by accident.
                     contentColor = MaterialTheme.colorScheme.error,
                 ),
-                modifier = Modifier.semantics { contentDescription = "delete-connection" },
+                modifier = Modifier.testTag("delete-connection"),
             ) {
                 Text("Delete")
             }
@@ -176,7 +177,7 @@ fun ConnectionDetail(
                 CircularProgressIndicator(
                     strokeWidth = 2.dp,
                     modifier = Modifier.size(16.dp).semantics {
-                        contentDescription = "busy-${activity.name.lowercase()}"
+                        testTag = "busy-${activity.name.lowercase()}"
                     },
                 )
                 // §4.7: a spinner beside five buttons that have all gone grey says
@@ -186,7 +187,7 @@ fun ConnectionDetail(
                     text = activity.describe(),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.semantics { contentDescription = "busy-label" },
+                    modifier = Modifier.testTag("busy-label"),
                 )
             }
         }
@@ -225,7 +226,7 @@ fun DeleteConfirmation(view: ConnectionView, onConfirm: () -> Unit, onCancel: ()
         confirmButton = {
             TextButton(
                 onClick = onConfirm,
-                modifier = Modifier.semantics { contentDescription = "confirm-delete" },
+                modifier = Modifier.testTag("confirm-delete"),
             ) {
                 Text("Delete", color = MaterialTheme.colorScheme.error)
             }
@@ -233,12 +234,12 @@ fun DeleteConfirmation(view: ConnectionView, onConfirm: () -> Unit, onCancel: ()
         dismissButton = {
             TextButton(
                 onClick = onCancel,
-                modifier = Modifier.semantics { contentDescription = "cancel-delete" },
+                modifier = Modifier.testTag("cancel-delete"),
             ) {
                 Text("Cancel")
             }
         },
-        modifier = Modifier.semantics { contentDescription = "delete-confirmation" },
+        modifier = Modifier.testTag("delete-confirmation"),
     )
 }
 

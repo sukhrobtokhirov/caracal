@@ -23,11 +23,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
@@ -81,7 +80,7 @@ fun CommandConfirmation(
                     // knowing that SWAPDB exchanges two whole databases might.
                     text = clearance.warning,
                     style = MaterialTheme.typography.bodyMedium,
-                    modifier = Modifier.semantics { contentDescription = "command-warning" },
+                    modifier = Modifier.testTag("command-warning"),
                 )
 
                 CommandPreview(clearance.command)
@@ -91,7 +90,7 @@ fun CommandConfirmation(
                         "and the next one is asked again.",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.semantics { contentDescription = "command-single-use" },
+                    modifier = Modifier.testTag("command-single-use"),
                 )
 
                 if (clearance.acknowledgement == Acknowledgement.TYPED) {
@@ -110,7 +109,7 @@ fun CommandConfirmation(
             TextButton(
                 onClick = { onConfirm(typed) },
                 enabled = satisfied,
-                modifier = Modifier.semantics { contentDescription = "confirm-command" },
+                modifier = Modifier.testTag("confirm-command"),
             ) {
                 Text(
                     text = "Run it",
@@ -125,12 +124,12 @@ fun CommandConfirmation(
         dismissButton = {
             TextButton(
                 onClick = onCancel,
-                modifier = Modifier.semantics { contentDescription = "cancel-command" },
+                modifier = Modifier.testTag("cancel-command"),
             ) {
                 Text("Cancel")
             }
         },
-        modifier = Modifier.semantics { contentDescription = "command-confirmation" },
+        modifier = Modifier.testTag("command-confirmation"),
     )
 }
 
@@ -143,7 +142,7 @@ private fun ProductionRow(connectionName: String) {
             .clip(MaterialTheme.shapes.medium)
             .background(MaterialTheme.colorScheme.errorContainer)
             .padding(Space.lg)
-            .semantics { contentDescription = "command-prod-banner" },
+            .testTag("command-prod-banner"),
         horizontalArrangement = Arrangement.spacedBy(Space.md),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -176,7 +175,7 @@ private fun CommandPreview(command: String) {
             .background(MaterialTheme.colorScheme.surfaceVariant)
             .border(Sizes.hairline, Dbide.colors.hairline, MaterialTheme.shapes.medium)
             .padding(Space.lg)
-            .semantics { contentDescription = "command-name" },
+            .testTag("command-name"),
     )
 }
 
@@ -207,7 +206,7 @@ private fun TypedPhrase(
             modifier = Modifier
                 .fillMaxWidth()
                 .focusRequester(focus)
-                .semantics { contentDescription = "command-acknowledgement" },
+                .testTag("command-acknowledgement"),
         )
     }
 }

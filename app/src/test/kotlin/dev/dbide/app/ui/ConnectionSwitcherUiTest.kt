@@ -7,7 +7,7 @@ import androidx.compose.ui.test.ComposeUiTest
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertTextEquals
-import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performKeyInput
@@ -66,14 +66,14 @@ class ConnectionSwitcherUiTest {
     }
 
     private fun ComposeUiTest.type(text: String) {
-        onNodeWithContentDescription("switcher-search").performTextInput(text)
+        onNodeWithTag("switcher-search").performTextInput(text)
         waitForIdle()
     }
 
     private fun ComposeUiTest.press(key: Key) {
-        onNodeWithContentDescription("switcher-search").requestFocus()
+        onNodeWithTag("switcher-search").requestFocus()
         waitForIdle()
-        onNodeWithContentDescription("switcher-search").performKeyInput { pressKey(key) }
+        onNodeWithTag("switcher-search").performKeyInput { pressKey(key) }
         waitForIdle()
     }
 
@@ -89,12 +89,12 @@ class ConnectionSwitcherUiTest {
 
             // Colour is never the only signal, here least of all: this is the control
             // that makes switching to production take one second.
-            onNodeWithContentDescription("environment-prod").assertIsDisplayed()
-            onNodeWithContentDescription("read-only").assertIsDisplayed()
+            onNodeWithTag("environment-prod", useUnmergedTree = true).assertIsDisplayed()
+            onNodeWithTag("read-only", useUnmergedTree = true).assertIsDisplayed()
             // And whether there is a client open, which is what decides whether
             // choosing it dials a server or simply goes there.
-            onNodeWithContentDescription("status-open").assertIsDisplayed()
-            onNodeWithContentDescription("status-closed").assertIsDisplayed()
+            onNodeWithTag("status-open", useUnmergedTree = true).assertIsDisplayed()
+            onNodeWithTag("status-closed", useUnmergedTree = true).assertIsDisplayed()
         }
 
     // --- Narrowing ------------------------------------------------------------
@@ -110,8 +110,8 @@ class ConnectionSwitcherUiTest {
             type("stag")
 
             onNodeWithText("Staging").assertIsDisplayed()
-            onNodeWithContentDescription("switcher-row-0").assertIsDisplayed()
-            onNodeWithContentDescription("switcher-row-1").assertDoesNotExist()
+            onNodeWithTag("switcher-row-0").assertIsDisplayed()
+            onNodeWithTag("switcher-row-1").assertDoesNotExist()
         }
 
     @Test
@@ -122,7 +122,7 @@ class ConnectionSwitcherUiTest {
 
             type("mysql")
 
-            onNodeWithContentDescription("switcher-no-match").assertIsDisplayed()
+            onNodeWithTag("switcher-no-match").assertIsDisplayed()
         }
 
     // --- The keyboard ---------------------------------------------------------
@@ -197,7 +197,7 @@ class ConnectionSwitcherUiTest {
             // nothing would look broken without the line that explains it.
             press(Key.Enter)
             assertEquals(emptyList(), chosen)
-            onNodeWithContentDescription("switcher-legend")
+            onNodeWithTag("switcher-legend")
                 .assertTextEquals("Type a name, or use ↑↓ · Esc to close")
 
             press(Key.DirectionDown)
@@ -213,7 +213,7 @@ class ConnectionSwitcherUiTest {
             val staging = service.seed(name = "Staging")
             val chosen = switcher(listOf(live, staging))
 
-            onNodeWithContentDescription("switcher-row-1").performClick()
+            onNodeWithTag("switcher-row-1").performClick()
             waitForIdle()
 
             assertEquals(listOf(staging.id), chosen)
@@ -254,14 +254,14 @@ class ConnectionSwitcherUiTest {
                 }
             }
             waitForIdle()
-            onNodeWithContentDescription("connection-Local").performClick()
+            onNodeWithTag("connection-Local").performClick()
             waitForIdle()
-            onNodeWithContentDescription("editor-text").performTextInput("select invoices;")
+            onNodeWithTag("editor-text").performTextInput("select invoices;")
             waitForIdle()
 
-            onNodeWithContentDescription("editor-text").requestFocus()
+            onNodeWithTag("editor-text").requestFocus()
             waitForIdle()
-            onNodeWithContentDescription("editor-text").performKeyInput {
+            onNodeWithTag("editor-text").performKeyInput {
                 withKeyDown(Key.MetaLeft) { pressKey(Key.K) }
             }
             waitForIdle()
@@ -270,7 +270,7 @@ class ConnectionSwitcherUiTest {
 
             assertTrue(service.calls.contains("open"), "the closed connection was not dialled")
             // The whole point of the red bar: it followed the switch.
-            onNodeWithContentDescription("shell-prod").assertIsDisplayed()
+            onNodeWithTag("shell-prod").assertIsDisplayed()
 
             // §4.3's rule survives §4.5. The tab that was pointed at Local is still
             // pointed at Local and still holds what was typed into it — switching is

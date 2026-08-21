@@ -8,7 +8,7 @@ import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
-import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
@@ -77,12 +77,12 @@ class RedisConsoleUiTest {
     }
 
     private fun ComposeUiTest.type(text: String) {
-        onNodeWithContentDescription("console-input").performTextInput(text)
+        onNodeWithTag("console-input").performTextInput(text)
         waitForIdle()
     }
 
     private fun ComposeUiTest.run() {
-        onNodeWithContentDescription("console-run").performClick()
+        onNodeWithTag("console-run").performClick()
         waitForIdle()
     }
 
@@ -92,15 +92,15 @@ class RedisConsoleUiTest {
             val service = service()
             console(service)
 
-            onNodeWithContentDescription("console-empty").assertIsDisplayed()
+            onNodeWithTag("console-empty").assertIsDisplayed()
             // Said permanently rather than once: it is the reason this console has no
             // history file, and the moment to read it is before typing an AUTH.
-            onNodeWithContentDescription("console-privacy-note").assertIsDisplayed()
+            onNodeWithTag("console-privacy-note").assertIsDisplayed()
 
             type("PING")
             run()
 
-            onNodeWithContentDescription("console-entry-1").assertIsDisplayed()
+            onNodeWithTag("console-entry-1").assertIsDisplayed()
             onNodeWithText("PONG").assertIsDisplayed()
         }
 
@@ -111,7 +111,7 @@ class RedisConsoleUiTest {
 
             type("""SET greeting "hello world"""")
 
-            onNodeWithContentDescription("console-parse-preview").assertIsDisplayed()
+            onNodeWithTag("console-parse-preview").assertIsDisplayed()
         }
 
     @Test
@@ -121,8 +121,8 @@ class RedisConsoleUiTest {
 
             type("""SET k "oops""")
 
-            onNodeWithContentDescription("console-parse-error").assertIsDisplayed()
-            onNodeWithContentDescription("console-run").assertIsNotEnabled()
+            onNodeWithTag("console-parse-error").assertIsDisplayed()
+            onNodeWithTag("console-run").assertIsNotEnabled()
         }
 
     @Test
@@ -135,21 +135,21 @@ class RedisConsoleUiTest {
             type("FLUSHDB")
             run()
 
-            onNodeWithContentDescription("command-confirmation").assertIsDisplayed()
+            onNodeWithTag("command-confirmation").assertIsDisplayed()
             // The guard's own sentence about what the command does — which is the
             // reason this dialog is worth reading rather than dismissing.
-            onNodeWithContentDescription("command-warning").assertIsDisplayed()
-            onNodeWithContentDescription("command-single-use").assertIsDisplayed()
-            onNodeWithContentDescription("console-entry-1").assertDoesNotExist()
+            onNodeWithTag("command-warning").assertIsDisplayed()
+            onNodeWithTag("command-single-use").assertIsDisplayed()
+            onNodeWithTag("console-entry-1").assertDoesNotExist()
 
-            onNodeWithContentDescription("confirm-command").performClick()
+            onNodeWithTag("confirm-command").performClick()
             waitForIdle()
 
             assertEquals(
                 listOf(CommandConsent.None, CommandConsent.Given("")),
                 service.consents,
             )
-            onNodeWithContentDescription("console-entry-1").assertIsDisplayed()
+            onNodeWithTag("console-entry-1").assertIsDisplayed()
         }
 
     @Test
@@ -163,20 +163,20 @@ class RedisConsoleUiTest {
             type("FLUSHALL")
             run()
 
-            onNodeWithContentDescription("command-prod-banner").assertIsDisplayed()
-            onNodeWithContentDescription("confirm-command").assertIsNotEnabled()
+            onNodeWithTag("command-prod-banner").assertIsDisplayed()
+            onNodeWithTag("confirm-command").assertIsNotEnabled()
 
-            onNodeWithContentDescription("command-acknowledgement").performTextInput("cache")
+            onNodeWithTag("command-acknowledgement").performTextInput("cache")
             waitForIdle()
             // The connection's name alone is what a user retypes by rote. The command
             // is the half that differs between the flush they meant and the one they
             // did not.
-            onNodeWithContentDescription("confirm-command").assertIsNotEnabled()
+            onNodeWithTag("confirm-command").assertIsNotEnabled()
 
-            onNodeWithContentDescription("command-acknowledgement").performTextInput(" FLUSHALL")
+            onNodeWithTag("command-acknowledgement").performTextInput(" FLUSHALL")
             waitForIdle()
-            onNodeWithContentDescription("confirm-command").assertIsEnabled()
-            onNodeWithContentDescription("confirm-command").performClick()
+            onNodeWithTag("confirm-command").assertIsEnabled()
+            onNodeWithTag("confirm-command").performClick()
             waitForIdle()
 
             assertEquals(CommandConsent.Given("cache FLUSHALL"), service.consents.last())
@@ -191,10 +191,10 @@ class RedisConsoleUiTest {
 
             type("KEYS *")
             run()
-            onNodeWithContentDescription("cancel-command").performClick()
+            onNodeWithTag("cancel-command").performClick()
             waitForIdle()
 
-            onNodeWithContentDescription("command-confirmation").assertDoesNotExist()
+            onNodeWithTag("command-confirmation").assertDoesNotExist()
             assertEquals(listOf<CommandConsent>(CommandConsent.None), service.consents)
         }
 
@@ -215,9 +215,9 @@ class RedisConsoleUiTest {
             type("DEL user:42")
             run()
 
-            onNodeWithContentDescription("console-failure").assertIsDisplayed()
+            onNodeWithTag("console-failure").assertIsDisplayed()
             // A button that could do nothing is worse than no button.
-            onNodeWithContentDescription("command-confirmation").assertDoesNotExist()
+            onNodeWithTag("command-confirmation").assertDoesNotExist()
         }
 
     @Test
@@ -246,7 +246,7 @@ class RedisConsoleUiTest {
             // An error inside an array is not the command's failure: the reply arrived
             // intact and one of its elements is an error.
             onNodeWithText("2) (error) WRONGTYPE Operation against a key").assertIsDisplayed()
-            onNodeWithContentDescription("console-failure").assertDoesNotExist()
-            onNodeWithContentDescription("console-truncated").assertIsDisplayed()
+            onNodeWithTag("console-failure").assertDoesNotExist()
+            onNodeWithTag("console-truncated").assertIsDisplayed()
         }
 }

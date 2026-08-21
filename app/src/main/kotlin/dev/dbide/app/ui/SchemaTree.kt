@@ -26,12 +26,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.DpOffset
@@ -79,7 +80,7 @@ fun SchemaTree(
     // answer the same question — "did that land?" — and the pane is 320dp wide.
     var echo: String? by remember(model.connectionId) { mutableStateOf(null) }
 
-    Column(modifier = modifier.fillMaxSize().semantics { contentDescription = "schema-tree" }) {
+    Column(modifier = modifier.fillMaxSize().testTag("schema-tree")) {
         TreeHeader(
             showSystemSchemas = model.showSystemSchemas,
             reloading = model.reloading,
@@ -149,7 +150,7 @@ fun SchemaTree(
                 .fillMaxWidth()
                 .background(Dbide.colors.paneHeader)
                 .padding(horizontal = Space.lg, vertical = Space.md)
-                .semantics { contentDescription = "tree-hint" },
+                .testTag("tree-hint"),
         )
     }
 }
@@ -165,7 +166,7 @@ private fun TreeHeader(
         ToolButton(
             text = if (showSystemSchemas) "Hide system" else "System",
             onClick = onToggleSystem,
-            description = "tree-system-schemas",
+            tag = "tree-system-schemas",
             // Lit while the system schemas are showing, because that is a mode the
             // tree is in and not merely a button that was pressed once.
             emphasis = if (showSystemSchemas) ToolEmphasis.PRIMARY else ToolEmphasis.NORMAL,
@@ -176,7 +177,7 @@ private fun TreeHeader(
         ToolButton(
             text = if (reloading) "Refreshing…" else "Refresh",
             onClick = onRefresh,
-            description = "tree-refresh",
+            tag = "tree-refresh",
             enabled = !reloading,
         )
     }
@@ -236,14 +237,14 @@ private fun TreeNode(
                 }
                 .handCursor()
                 .padding(start = indent, end = Space.md)
-                .semantics { contentDescription = row.key.describe() },
+                .testTag(row.key.describe()),
             horizontalArrangement = Arrangement.spacedBy(Space.sm),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Disclosure(
                 expandable = row.expandable,
                 expanded = row.expanded,
-                description = "${row.key.describe()}-toggle",
+                tag = "${row.key.describe()}-toggle",
                 onToggle = onToggle,
             )
             // What this row is, before its name is read. A tree of forty monospace
@@ -283,7 +284,7 @@ private fun TreeNode(
             if (row.loading) {
                 CircularProgressIndicator(
                     strokeWidth = 1.5.dp,
-                    modifier = Modifier.size(10.dp).semantics { contentDescription = "node-loading" },
+                    modifier = Modifier.size(10.dp).testTag("node-loading"),
                 )
             }
         }
@@ -301,10 +302,10 @@ private fun TreeNode(
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.error,
                     modifier = Modifier.weight(1f, fill = false).semantics {
-                        contentDescription = "node-error"
+                        testTag = "node-error"
                     },
                 )
-                ToolButton(text = "Retry", onClick = onRefresh, description = "node-retry")
+                ToolButton(text = "Retry", onClick = onRefresh, tag = "node-retry")
             }
         }
 
@@ -315,7 +316,7 @@ private fun TreeNode(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier
                     .padding(start = indent + Space.xl, end = Space.md, bottom = Space.xs)
-                    .semantics { contentDescription = "node-note" },
+                    .testTag("node-note"),
             )
         }
 
@@ -323,7 +324,7 @@ private fun TreeNode(
             expanded = menuOpen,
             at = menuAt,
             onDismiss = { menuOpen = false },
-            description = "node-menu",
+            tag = "node-menu",
             actions = nodeActions(row, onRefresh, onInsert, onCopy, onSelectRows),
         )
     }
@@ -370,7 +371,7 @@ private fun nodeActions(
         add(
             MenuAction(
                 label = if (queryable) "Refresh columns" else "Refresh",
-                description = "menu-refresh",
+                tag = "menu-refresh",
             ) { onRefresh() },
         )
     }
@@ -393,7 +394,7 @@ private fun nodeActions(
 private fun Disclosure(
     expandable: Boolean,
     expanded: Boolean,
-    description: String,
+    tag: String,
     onToggle: () -> Unit,
 ) {
     Box(
@@ -408,7 +409,7 @@ private fun Disclosure(
                         .hoverHighlight(MaterialTheme.shapes.extraSmall)
                         .clickable(onClick = onToggle)
                         .handCursor()
-                        .semantics { contentDescription = description }
+                        .testTag(tag)
                 },
             ),
         contentAlignment = Alignment.Center,
@@ -443,12 +444,12 @@ private fun TreeFlag(text: String) {
 }
 
 @Composable
-private fun TreeMessage(text: String, description: String) {
+private fun TreeMessage(text: String, tag: String) {
     Text(
         text = text,
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier.padding(Space.lg).semantics { contentDescription = description },
+        modifier = Modifier.padding(Space.lg).testTag(tag),
     )
 }
 
@@ -462,9 +463,9 @@ private fun TreeFailure(message: String, onRetry: () -> Unit) {
             text = message,
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.error,
-            modifier = Modifier.semantics { contentDescription = "tree-error" },
+            modifier = Modifier.testTag("tree-error"),
         )
-        ToolButton(text = "Retry", onClick = onRetry, description = "tree-retry")
+        ToolButton(text = "Retry", onClick = onRetry, tag = "tree-retry")
     }
 }
 

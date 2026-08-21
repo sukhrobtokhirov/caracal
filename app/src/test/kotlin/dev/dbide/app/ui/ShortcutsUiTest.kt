@@ -9,7 +9,7 @@ import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.assertTextEquals
-import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performKeyInput
@@ -97,7 +97,7 @@ class ShortcutsUiTest {
             }
         }
         waitForIdle()
-        onNodeWithContentDescription("connection-Live").performClick()
+        onNodeWithTag("connection-Live").performClick()
         waitForIdle()
         return tabs
     }
@@ -116,9 +116,9 @@ class ShortcutsUiTest {
         shift: Boolean = false,
     ) {
         val command = if (platform == Platform.MAC) Key.MetaLeft else Key.CtrlLeft
-        onNodeWithContentDescription(at).requestFocus()
+        onNodeWithTag(at).requestFocus()
         waitForIdle()
-        onNodeWithContentDescription(at).performKeyInput {
+        onNodeWithTag(at).performKeyInput {
             withKeyDown(command) {
                 if (shift) withKeyDown(Key.ShiftLeft) { pressKey(key) } else pressKey(key)
             }
@@ -137,20 +137,20 @@ class ShortcutsUiTest {
             chord(Key.T)
 
             assertEquals(2, tabs.tabs.size)
-            onNodeWithContentDescription("editor-tab-1").assertIsDisplayed()
+            onNodeWithTag("editor-tab-1").assertIsDisplayed()
         }
 
     @Test
     fun `the close chord still asks about a script it would lose`() =
         runDesktopComposeUiTest(width = 1500, height = 900) {
             val tabs = workspace(service())
-            onNodeWithContentDescription("editor-text").performTextInput("select invoices;")
+            onNodeWithTag("editor-text").performTextInput("select invoices;")
             waitForIdle()
 
             chord(Key.W)
 
             // The chord is the same request the ✕ makes, so it gets the same question.
-            onNodeWithContentDescription("close-tab-confirmation").assertIsDisplayed()
+            onNodeWithTag("close-tab-confirmation").assertIsDisplayed()
             assertEquals(1, tabs.tabs.size)
         }
 
@@ -160,12 +160,12 @@ class ShortcutsUiTest {
     fun `the run chord runs the statement instead of typing a newline`() =
         runDesktopComposeUiTest(width = 1500, height = 900) {
             val tabs = workspace(service())
-            onNodeWithContentDescription("editor-text").performTextInput("select 7;")
+            onNodeWithTag("editor-text").performTextInput("select 7;")
             waitForIdle()
 
             chord(Key.Enter)
 
-            onNodeWithContentDescription("grid-cell-0-0").assertTextEquals("7")
+            onNodeWithTag("grid-cell-0-0").assertTextEquals("7")
             assertEquals("select 7;", tabs.tabs.single().editor.text.text)
         }
 
@@ -174,17 +174,17 @@ class ShortcutsUiTest {
         runDesktopComposeUiTest(width = 1500, height = 900) {
             val service = service()
             workspace(service)
-            onNodeWithContentDescription("editor-text").performTextInput("select pg_sleep(30);")
+            onNodeWithTag("editor-text").performTextInput("select pg_sleep(30);")
             waitForIdle()
             // Held open only now: gating it any earlier would stop the connection list
             // from ever being read, and there would be nothing to select.
             service.gate = CompletableDeferred()
             chord(Key.Enter)
-            onNodeWithContentDescription("query-running").assertIsDisplayed()
+            onNodeWithTag("query-running").assertIsDisplayed()
 
             chord(Key.Period)
 
-            onNodeWithContentDescription("query-cancelled").assertIsDisplayed()
+            onNodeWithTag("query-cancelled").assertIsDisplayed()
             service.gate?.complete(Unit)
         }
 
@@ -197,7 +197,7 @@ class ShortcutsUiTest {
 
             chord(Key.K)
 
-            onNodeWithContentDescription("connection-switcher").assertIsDisplayed()
+            onNodeWithTag("connection-switcher").assertIsDisplayed()
         }
 
     @Test
@@ -207,8 +207,8 @@ class ShortcutsUiTest {
 
             chord(Key.Slash)
 
-            onNodeWithContentDescription("shortcuts-window").assertIsDisplayed()
-            onNodeWithContentDescription("shortcut-switch").assertIsDisplayed()
+            onNodeWithTag("shortcuts-window").assertIsDisplayed()
+            onNodeWithTag("shortcut-switch").assertIsDisplayed()
         }
 
     @Test
@@ -218,12 +218,12 @@ class ShortcutsUiTest {
             // The console's command line, which is a text field in a different pane —
             // so the assertion is that the chord moved the caret, not that it left it
             // where it already was.
-            onNodeWithContentDescription("workspace-tab-console").performClick()
+            onNodeWithTag("workspace-tab-console").performClick()
             waitForIdle()
 
             chord(Key.F, at = "console-input", shift = true)
 
-            onNodeWithContentDescription("keys-pattern").assertIsFocused()
+            onNodeWithTag("keys-pattern").assertIsFocused()
         }
 
     @Test
@@ -237,14 +237,14 @@ class ShortcutsUiTest {
             onNodeWithText("⌘↵").assertIsDisplayed()
             onNodeWithText("Run the statement").assertIsDisplayed()
 
-            onNodeWithContentDescription("shortcuts-search").performTextInput("query tab")
+            onNodeWithTag("shortcuts-search").performTextInput("query tab")
             waitForIdle()
-            onNodeWithContentDescription("shortcut-new_tab").assertIsDisplayed()
-            onNodeWithContentDescription("shortcut-run").assertDoesNotExist()
+            onNodeWithTag("shortcut-new_tab").assertIsDisplayed()
+            onNodeWithTag("shortcut-run").assertDoesNotExist()
 
-            onNodeWithContentDescription("shortcuts-search").performTextInput("zzz")
+            onNodeWithTag("shortcuts-search").performTextInput("zzz")
             waitForIdle()
-            onNodeWithContentDescription("shortcuts-no-match").assertIsDisplayed()
+            onNodeWithTag("shortcuts-no-match").assertIsDisplayed()
         }
 
     // --- What must not fire ---------------------------------------------------
@@ -254,14 +254,14 @@ class ShortcutsUiTest {
         runDesktopComposeUiTest(width = 1500, height = 900) {
             val tabs = workspace(service())
             chord(Key.K)
-            onNodeWithContentDescription("connection-switcher").assertIsDisplayed()
+            onNodeWithTag("connection-switcher").assertIsDisplayed()
 
             // §4.4: the keyboard belongs to the window on top. A second chord must not
             // open a tab behind a palette the user is still reading.
             chord(Key.T, at = "switcher-search")
 
             assertEquals(1, tabs.tabs.size)
-            onNodeWithContentDescription("connection-switcher").assertIsDisplayed()
+            onNodeWithTag("connection-switcher").assertIsDisplayed()
         }
 
     @Test
@@ -311,7 +311,7 @@ class ShortcutsUiTest {
         runDesktopComposeUiTest(width = 1500, height = 900) {
             val tabs = workspace(service())
 
-            onNodeWithContentDescription("editor-text").performKeyInput { pressKey(Key.T) }
+            onNodeWithTag("editor-text").performKeyInput { pressKey(Key.T) }
             waitForIdle()
 
             assertEquals(1, tabs.tabs.size)
@@ -326,7 +326,7 @@ class ShortcutsUiTest {
             // application answered it as well, the user would get whichever won.
             chord(Key.K, platform = Platform.OTHER)
 
-            onNodeWithContentDescription("connection-switcher").assertDoesNotExist()
+            onNodeWithTag("connection-switcher").assertDoesNotExist()
             assertEquals(1, tabs.tabs.size)
         }
 

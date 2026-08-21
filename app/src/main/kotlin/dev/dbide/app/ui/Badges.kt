@@ -13,10 +13,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -53,7 +52,7 @@ fun EnvironmentBadge(
         text = environment.wire.uppercase(),
         background = if (inverted) colors.onContainer else colors.container,
         foreground = if (inverted) colors.container else colors.onContainer,
-        description = "environment-${environment.wire}",
+        tag = "environment-${environment.wire}",
         modifier = modifier,
     )
 }
@@ -64,7 +63,7 @@ fun ReadOnlyBadge(modifier: Modifier = Modifier) {
         text = "READ ONLY",
         background = MaterialTheme.colorScheme.secondaryContainer,
         foreground = MaterialTheme.colorScheme.onSecondaryContainer,
-        description = "read-only",
+        tag = "read-only",
         modifier = modifier,
     )
 }
@@ -86,7 +85,7 @@ fun EngineBadge(engine: Engine, modifier: Modifier = Modifier) {
             .clip(MaterialTheme.shapes.extraSmall)
             .border(Sizes.hairline, Dbide.colors.hairline, MaterialTheme.shapes.extraSmall)
             .padding(horizontal = Space.sm, vertical = 1.dp)
-            .semantics { contentDescription = "engine-${engine.wire}" },
+            .testTag("engine-${engine.wire}"),
     )
 }
 
@@ -102,7 +101,7 @@ fun StatusBadge(state: RuntimeState, modifier: Modifier = Modifier) {
     Row(
         horizontalArrangement = Arrangement.spacedBy(Space.sm),
         verticalAlignment = Alignment.CenterVertically,
-        modifier = modifier.semantics { contentDescription = "status-${label.lowercase()}" },
+        modifier = modifier.testTag("status-${label.lowercase()}"),
     ) {
         Box(
             modifier = Modifier.size(7.dp).clip(CircleShape).background(statusColor(state.status)),
@@ -135,7 +134,7 @@ fun KeyTypeBadge(type: KeyType, modifier: Modifier = Modifier) {
             .clip(MaterialTheme.shapes.extraSmall)
             .border(Sizes.hairline, Dbide.colors.hairline, MaterialTheme.shapes.extraSmall)
             .padding(horizontal = Space.sm, vertical = 1.dp)
-            .semantics { contentDescription = "key-type-${type.wire}" },
+            .testTag("key-type-${type.wire}"),
     )
 }
 
@@ -164,7 +163,7 @@ fun OutcomeBadge(outcome: ExecutionOutcome, modifier: Modifier = Modifier) {
         text = HistoryFormat.outcome(outcome).uppercase(),
         background = background,
         foreground = foreground,
-        description = "outcome-${outcome.stored}",
+        tag = "outcome-${outcome.stored}",
         modifier = modifier,
     )
 }
@@ -187,7 +186,7 @@ private fun Badge(
     text: String,
     background: Color,
     foreground: Color,
-    description: String,
+    tag: String,
     modifier: Modifier = Modifier,
 ) {
     Text(
@@ -200,7 +199,7 @@ private fun Badge(
             .clip(MaterialTheme.shapes.extraSmall)
             .background(background)
             .padding(horizontal = Space.sm, vertical = 1.dp)
-            .semantics { contentDescription = description },
+            .testTag(tag),
     )
 }
 

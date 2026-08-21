@@ -11,7 +11,7 @@ import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.doubleClick
-import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performKeyInput
 import androidx.compose.ui.test.performMouseInput
@@ -128,7 +128,7 @@ class SqlEditorUiTest {
     }
 
     private fun ComposeUiTest.type(sql: String) {
-        onNodeWithContentDescription("editor-text").performTextInput(sql)
+        onNodeWithTag("editor-text").performTextInput(sql)
         waitForIdle()
     }
 
@@ -141,15 +141,15 @@ class SqlEditorUiTest {
             pane(service)
             type("select total from invoices;")
 
-            onNodeWithContentDescription("editor-run-label").assertTextEquals(
+            onNodeWithTag("editor-run-label").assertTextEquals(
                 "Runs the statement at the caret.",
             )
-            onNodeWithContentDescription("editor-run").performClick()
+            onNodeWithTag("editor-run").performClick()
             waitForIdle()
 
             assertEquals(listOf("select total from invoices;"), service.executed)
-            onNodeWithContentDescription("result-grid").assertIsDisplayed()
-            onNodeWithContentDescription("grid-cell-0-0").assertTextEquals("42")
+            onNodeWithTag("result-grid").assertIsDisplayed()
+            onNodeWithTag("grid-cell-0-0").assertTextEquals("42")
         }
 
     @Test
@@ -159,7 +159,7 @@ class SqlEditorUiTest {
             val model = pane(service, platform = Platform.MAC)
             type("select 1;")
 
-            onNodeWithContentDescription("editor-text").performKeyInput {
+            onNodeWithTag("editor-text").performKeyInput {
                 withKeyDown(Key.MetaLeft) { pressKey(Key.Enter) }
             }
             waitForIdle()
@@ -179,13 +179,13 @@ class SqlEditorUiTest {
             // Meta is the foreign modifier here. It must not run anything — and,
             // because the editor declines it, the field is free to do whatever it
             // would normally do with it.
-            onNodeWithContentDescription("editor-text").performKeyInput {
+            onNodeWithTag("editor-text").performKeyInput {
                 withKeyDown(Key.MetaLeft) { pressKey(Key.Enter) }
             }
             waitForIdle()
             assertEquals(emptyList(), service.executed)
 
-            onNodeWithContentDescription("editor-text").performKeyInput {
+            onNodeWithTag("editor-text").performKeyInput {
                 withKeyDown(Key.CtrlLeft) { pressKey(Key.Enter) }
             }
             waitForIdle()
@@ -198,15 +198,15 @@ class SqlEditorUiTest {
         runDesktopComposeUiTest(width = 1000, height = 800) {
             pane(service())
 
-            onNodeWithContentDescription("query-idle").assertIsDisplayed()
-            onNodeWithContentDescription("editor-run").assertIsNotEnabled()
+            onNodeWithTag("query-idle").assertIsDisplayed()
+            onNodeWithTag("editor-run").assertIsNotEnabled()
 
             type("-- a note, and no statement")
-            onNodeWithContentDescription("editor-run").assertIsNotEnabled()
-            onNodeWithContentDescription("editor-run-label").assertTextEquals("There is nothing to run.")
+            onNodeWithTag("editor-run").assertIsNotEnabled()
+            onNodeWithTag("editor-run-label").assertTextEquals("There is nothing to run.")
 
             type("\nselect 1;")
-            onNodeWithContentDescription("editor-run").assertIsEnabled()
+            onNodeWithTag("editor-run").assertIsEnabled()
         }
 
     @Test
@@ -216,11 +216,11 @@ class SqlEditorUiTest {
             pane(service)
             type("select 1; select 2;")
 
-            onNodeWithContentDescription("editor-text").performTextInputSelection(TextRange(0, 19))
+            onNodeWithTag("editor-text").performTextInputSelection(TextRange(0, 19))
             waitForIdle()
 
-            onNodeWithContentDescription("editor-run").assertIsNotEnabled()
-            onNodeWithContentDescription("editor-run-label").assertTextEquals(
+            onNodeWithTag("editor-run").assertIsNotEnabled()
+            onNodeWithTag("editor-run-label").assertTextEquals(
                 "The selection holds more than one statement. Select one of them, or put the caret in it.",
             )
             assertEquals(emptyList(), service.executed)
@@ -234,8 +234,8 @@ class SqlEditorUiTest {
 
             // Capturing forces a real draw pass, which is the only way the gutter's
             // canvas and the styled text are exercised rather than merely composed.
-            onNodeWithContentDescription("editor-gutter").captureToImage()
-            onNodeWithContentDescription("sql-editor").captureToImage()
+            onNodeWithTag("editor-gutter").captureToImage()
+            onNodeWithTag("sql-editor").captureToImage()
         }
 
     // --- Cancelling -----------------------------------------------------------
@@ -248,17 +248,17 @@ class SqlEditorUiTest {
             pane(service)
             type("select pg_sleep(30);")
 
-            onNodeWithContentDescription("editor-run").performClick()
+            onNodeWithTag("editor-run").performClick()
             waitForIdle()
-            onNodeWithContentDescription("query-running").assertIsDisplayed()
-            onNodeWithContentDescription("editor-run").assertIsNotEnabled()
+            onNodeWithTag("query-running").assertIsDisplayed()
+            onNodeWithTag("editor-run").assertIsNotEnabled()
 
-            onNodeWithContentDescription("editor-cancel").performClick()
+            onNodeWithTag("editor-cancel").performClick()
             waitForIdle()
 
             // Cancelled says so plainly, and is not drawn as a failure.
-            onNodeWithContentDescription("query-cancelled").assertIsDisplayed()
-            onNodeWithContentDescription("editor-run").assertIsEnabled()
+            onNodeWithTag("query-cancelled").assertIsDisplayed()
+            onNodeWithTag("editor-run").assertIsEnabled()
             service.gate?.complete(Unit)
         }
 
@@ -274,10 +274,10 @@ class SqlEditorUiTest {
             // reply and not the dialog. §2.4's gate has its own file.
             type("select nope;")
 
-            onNodeWithContentDescription("editor-run").performClick()
+            onNodeWithTag("editor-run").performClick()
             waitForIdle()
 
-            onNodeWithContentDescription("failure-query_failed").assertIsDisplayed()
+            onNodeWithTag("failure-query_failed").assertIsDisplayed()
         }
 
     @Test
@@ -290,24 +290,24 @@ class SqlEditorUiTest {
             pane(service)
             type("select totl from invoices;")
 
-            onNodeWithContentDescription("editor-run").performClick()
+            onNodeWithTag("editor-run").performClick()
             waitForIdle()
 
             // While the script still reads as it was sent, the banner says only what
             // the server said — the editor is doing the pointing.
-            onNodeWithContentDescription("failure-query_failed").assertIsDisplayed()
-            onNodeWithContentDescription("error-note").assertDoesNotExist()
+            onNodeWithTag("failure-query_failed").assertIsDisplayed()
+            onNodeWithTag("error-note").assertDoesNotExist()
 
             // Fixing the column moves every character after it. The underline goes,
             // and the reason it went is on screen rather than left to be inferred.
-            onNodeWithContentDescription("editor-text").performTextInputSelection(
+            onNodeWithTag("editor-text").performTextInputSelection(
                 TextRange("select ".length, "select totl".length),
             )
-            onNodeWithContentDescription("editor-text").performTextInput("total")
+            onNodeWithTag("editor-text").performTextInput("total")
             waitForIdle()
 
-            onNodeWithContentDescription("failure-query_failed").assertIsDisplayed()
-            onNodeWithContentDescription("error-note").assertIsDisplayed()
+            onNodeWithTag("failure-query_failed").assertIsDisplayed()
+            onNodeWithTag("error-note").assertIsDisplayed()
         }
 
     // --- With the rest of the workspace ---------------------------------------
@@ -337,17 +337,17 @@ class SqlEditorUiTest {
             }
             waitForIdle()
 
-            onNodeWithContentDescription("connection-Live").performClick()
+            onNodeWithTag("connection-Live").performClick()
             waitForIdle()
             // The editor is the pane an open connection lands on.
-            onNodeWithContentDescription("sql-editor").assertIsDisplayed()
+            onNodeWithTag("sql-editor").assertIsDisplayed()
 
-            onNodeWithContentDescription("editor-text").performTextInput("select * from")
-            onNodeWithContentDescription("node-schema-public").performClick()
+            onNodeWithTag("editor-text").performTextInput("select * from")
+            onNodeWithTag("node-schema-public").performClick()
             waitForIdle()
-            onNodeWithContentDescription("node-folder-public-table").performClick()
+            onNodeWithTag("node-folder-public-table").performClick()
             waitForIdle()
-            onNodeWithContentDescription("node-object-public-users").performMouseInput { doubleClick() }
+            onNodeWithTag("node-object-public-users").performMouseInput { doubleClick() }
             waitForIdle()
 
             assertEquals("select * from \"public\".\"users\"", tabs.tabs.single().editor.text.text)
@@ -372,10 +372,10 @@ class SqlEditorUiTest {
             }
             waitForIdle()
 
-            onNodeWithContentDescription("connection-Closed").performClick()
+            onNodeWithTag("connection-Closed").performClick()
             waitForIdle()
 
-            onNodeWithContentDescription("sql-editor").assertDoesNotExist()
+            onNodeWithTag("sql-editor").assertDoesNotExist()
         }
 
     @Test
@@ -399,9 +399,9 @@ class SqlEditorUiTest {
             }
             waitForIdle()
 
-            onNodeWithContentDescription("connection-Live").performClick()
+            onNodeWithTag("connection-Live").performClick()
             waitForIdle()
-            onNodeWithContentDescription("editor-text").performTextInput("select 1")
+            onNodeWithTag("editor-text").performTextInput("select 1")
             waitForIdle()
 
             connections.close(view.id)
@@ -409,15 +409,15 @@ class SqlEditorUiTest {
 
             // §4.7: not a page of connection settings. The pane says what happened,
             // says the work is still here, and offers the one action that undoes it.
-            onNodeWithContentDescription("workspace-disconnected").assertIsDisplayed()
-            onNodeWithContentDescription("workspace-reconnect").assertIsEnabled()
+            onNodeWithTag("workspace-disconnected").assertIsDisplayed()
+            onNodeWithTag("workspace-reconnect").assertIsEnabled()
             // The claim the pane is making, checked against the thing itself.
             assertEquals("select 1", tabs.tabs.single().editor.text.text)
 
-            onNodeWithContentDescription("workspace-reconnect").performClick()
+            onNodeWithTag("workspace-reconnect").performClick()
             waitForIdle()
 
-            onNodeWithContentDescription("sql-editor").assertIsDisplayed()
+            onNodeWithTag("sql-editor").assertIsDisplayed()
             assertEquals("select 1", tabs.tabs.single().editor.text.text)
         }
 }

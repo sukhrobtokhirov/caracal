@@ -7,7 +7,7 @@ import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertTextEquals
-import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performMouseInput
 import androidx.compose.ui.test.performTextInput
@@ -95,12 +95,12 @@ class QueryTabsUiTest {
     }
 
     private fun ComposeUiTest.type(sql: String) {
-        onNodeWithContentDescription("editor-text").performTextInput(sql)
+        onNodeWithTag("editor-text").performTextInput(sql)
         waitForIdle()
     }
 
-    private fun ComposeUiTest.click(description: String) {
-        onNodeWithContentDescription(description).performClick()
+    private fun ComposeUiTest.click(tag: String) {
+        onNodeWithTag(tag).performClick()
         waitForIdle()
     }
 
@@ -112,17 +112,17 @@ class QueryTabsUiTest {
             val tabs = workspace(service())
             type("select invoices;")
 
-            onNodeWithContentDescription("editor-tab-0").assertTextEquals("select invoices")
+            onNodeWithTag("editor-tab-0").assertTextEquals("select invoices")
 
             click("editor-tab-new")
-            onNodeWithContentDescription("editor-tab-1").assertTextEquals("Untitled")
+            onNodeWithTag("editor-tab-1").assertTextEquals("Untitled")
             type("select ledger;")
-            onNodeWithContentDescription("editor-tab-1").assertTextEquals("select ledger")
+            onNodeWithTag("editor-tab-1").assertTextEquals("select ledger")
 
             // Back to the first, which still holds what was typed into it.
             click("editor-tab-0")
             assertEquals("select invoices;", tabs.active(local.id)?.editor?.text?.text)
-            onNodeWithContentDescription("editor-text").assertTextEquals("select invoices;")
+            onNodeWithTag("editor-text").assertTextEquals("select invoices;")
         }
 
     @Test
@@ -132,15 +132,15 @@ class QueryTabsUiTest {
             type("select 7;")
             click("editor-run")
 
-            onNodeWithContentDescription("grid-cell-0-0").assertTextEquals("7")
+            onNodeWithTag("grid-cell-0-0").assertTextEquals("7")
 
             click("editor-tab-new")
             // A fresh tab has run nothing, and shows that rather than the other tab's
             // grid.
-            onNodeWithContentDescription("query-idle").assertIsDisplayed()
+            onNodeWithTag("query-idle").assertIsDisplayed()
 
             click("editor-tab-0")
-            onNodeWithContentDescription("grid-cell-0-0").assertTextEquals("7")
+            onNodeWithTag("grid-cell-0-0").assertTextEquals("7")
         }
 
     @Test
@@ -151,19 +151,19 @@ class QueryTabsUiTest {
             workspace(service)
             type("select pg_sleep(30);")
             click("editor-run")
-            onNodeWithContentDescription("query-running").assertIsDisplayed()
+            onNodeWithTag("query-running").assertIsDisplayed()
 
             click("editor-tab-new")
 
             // The tab it belongs to says so from the strip, while the pane in front is
             // the new tab's own empty one.
-            onNodeWithContentDescription("editor-tab-running-0").assertIsDisplayed()
-            onNodeWithContentDescription("query-idle").assertIsDisplayed()
+            onNodeWithTag("editor-tab-running-0").assertIsDisplayed()
+            onNodeWithTag("query-idle").assertIsDisplayed()
 
             click("editor-tab-0")
-            onNodeWithContentDescription("query-running").assertIsDisplayed()
+            onNodeWithTag("query-running").assertIsDisplayed()
             click("editor-cancel")
-            onNodeWithContentDescription("query-cancelled").assertIsDisplayed()
+            onNodeWithTag("query-cancelled").assertIsDisplayed()
             service.gate?.complete(Unit)
         }
 
@@ -172,9 +172,9 @@ class QueryTabsUiTest {
         runDesktopComposeUiTest(width = 1100, height = 800) {
             workspace(service())
 
-            onNodeWithContentDescription("editor-tab-unsaved-0").assertDoesNotExist()
+            onNodeWithTag("editor-tab-unsaved-0", useUnmergedTree = true).assertDoesNotExist()
             type("select 1;")
-            onNodeWithContentDescription("editor-tab-unsaved-0").assertIsDisplayed()
+            onNodeWithTag("editor-tab-unsaved-0", useUnmergedTree = true).assertIsDisplayed()
         }
 
     // --- Closing --------------------------------------------------------------
@@ -186,7 +186,7 @@ class QueryTabsUiTest {
             type("select invoices;")
 
             click("editor-tab-close-0")
-            onNodeWithContentDescription("close-tab-confirmation").assertIsDisplayed()
+            onNodeWithTag("close-tab-confirmation").assertIsDisplayed()
 
             click("cancel-close-tab")
             assertEquals(1, tabs.tabs.size)
@@ -207,7 +207,7 @@ class QueryTabsUiTest {
             click("editor-run")
 
             click("editor-tab-close-0")
-            onNodeWithContentDescription("close-tab-confirmation").assertIsDisplayed()
+            onNodeWithTag("close-tab-confirmation").assertIsDisplayed()
             click("confirm-close-tab")
 
             assertEquals(emptyList(), tabs.tabs)
@@ -223,10 +223,10 @@ class QueryTabsUiTest {
 
             // Nothing to ask about — the tab was empty — and the pane says what to do
             // rather than going blank.
-            onNodeWithContentDescription("query-no-tabs").assertIsDisplayed()
+            onNodeWithTag("query-no-tabs").assertIsDisplayed()
             click("query-new-tab")
             assertEquals(1, tabs.tabs.size)
-            onNodeWithContentDescription("sql-editor").assertIsDisplayed()
+            onNodeWithTag("sql-editor").assertIsDisplayed()
         }
 
     // --- The tab's own menu ---------------------------------------------------
@@ -237,7 +237,7 @@ class QueryTabsUiTest {
             val tabs = workspace(service())
             type("select invoices;")
 
-            onNodeWithContentDescription("editor-tab-0").performMouseInput { rightClick() }
+            onNodeWithTag("editor-tab-0").performMouseInput { rightClick() }
             waitForIdle()
             click("tab-duplicate")
 
@@ -255,7 +255,7 @@ class QueryTabsUiTest {
             val tabs = workspace(service(), others = listOf(staging))
             type("select invoices;")
 
-            onNodeWithContentDescription("editor-tab-0").performMouseInput { rightClick() }
+            onNodeWithTag("editor-tab-0").performMouseInput { rightClick() }
             waitForIdle()
             click("tab-move-staging")
 
@@ -263,7 +263,7 @@ class QueryTabsUiTest {
             assertEquals(staging.id, movedTo)
             // Gone from this connection's strip, which is why the workspace was asked
             // to follow it.
-            onNodeWithContentDescription("query-no-tabs").assertIsDisplayed()
+            onNodeWithTag("query-no-tabs").assertIsDisplayed()
         }
 
     @Test
@@ -275,10 +275,10 @@ class QueryTabsUiTest {
             type("select pg_sleep(30);")
             click("editor-run")
 
-            onNodeWithContentDescription("editor-tab-0").performMouseInput { rightClick() }
+            onNodeWithTag("editor-tab-0").performMouseInput { rightClick() }
             waitForIdle()
 
-            onNodeWithContentDescription("tab-move-staging").assertIsNotEnabled()
+            onNodeWithTag("tab-move-staging").assertIsNotEnabled()
             service.gate?.complete(Unit)
         }
 }

@@ -5,7 +5,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.test.ComposeUiTest
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertIsDisplayed
-import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.v2.runDesktopComposeUiTest
 import dev.dbide.app.ConnectionsViewModel
@@ -91,15 +91,15 @@ class RedisWorkspaceUiTest {
             service.seed(name = "Cache", engine = Engine.REDIS, status = RuntimeStatus.OPEN)
             workspace(service)
 
-            onNodeWithContentDescription("connection-Cache").performClick()
+            onNodeWithTag("connection-Cache").performClick()
             waitForIdle()
 
-            onNodeWithContentDescription("redis-browser").assertIsDisplayed()
-            onNodeWithContentDescription("workspace-tab-console").assertIsDisplayed()
-            onNodeWithContentDescription("workspace-tab-server").assertIsDisplayed()
+            onNodeWithTag("redis-browser").assertIsDisplayed()
+            onNodeWithTag("workspace-tab-console").assertIsDisplayed()
+            onNodeWithTag("workspace-tab-server").assertIsDisplayed()
             // Neither pane exists for this engine, and neither is offered.
-            onNodeWithContentDescription("workspace-tab-query").assertDoesNotExist()
-            onNodeWithContentDescription("schema-tree").assertDoesNotExist()
+            onNodeWithTag("workspace-tab-query").assertDoesNotExist()
+            onNodeWithTag("schema-tree").assertDoesNotExist()
         }
 
     @Test
@@ -108,16 +108,16 @@ class RedisWorkspaceUiTest {
             val service = service()
             service.seed(name = "Cache", engine = Engine.REDIS, status = RuntimeStatus.OPEN)
             workspace(service)
-            onNodeWithContentDescription("connection-Cache").performClick()
+            onNodeWithTag("connection-Cache").performClick()
             waitForIdle()
 
-            onNodeWithContentDescription("redis-group-user").performClick()
+            onNodeWithTag("redis-group-user").performClick()
             waitForIdle()
-            onNodeWithContentDescription("redis-key-42").performClick()
+            onNodeWithTag("redis-key-42").performClick()
             waitForIdle()
 
-            onNodeWithContentDescription("value-key-name").assertIsDisplayed()
-            onNodeWithContentDescription("value-text").assertIsDisplayed()
+            onNodeWithTag("value-key-name").assertIsDisplayed()
+            onNodeWithTag("value-text").assertIsDisplayed()
         }
 
     @Test
@@ -126,16 +126,16 @@ class RedisWorkspaceUiTest {
             val service = service()
             service.seed(name = "Cache", engine = Engine.REDIS, status = RuntimeStatus.OPEN)
             workspace(service)
-            onNodeWithContentDescription("connection-Cache").performClick()
+            onNodeWithTag("connection-Cache").performClick()
             waitForIdle()
 
-            onNodeWithContentDescription("workspace-tab-console").performClick()
+            onNodeWithTag("workspace-tab-console").performClick()
             waitForIdle()
-            onNodeWithContentDescription("redis-console").assertIsDisplayed()
+            onNodeWithTag("redis-console").assertIsDisplayed()
 
-            onNodeWithContentDescription("workspace-tab-server").performClick()
+            onNodeWithTag("workspace-tab-server").performClick()
             waitForIdle()
-            onNodeWithContentDescription("redis-info").assertIsDisplayed()
+            onNodeWithTag("redis-info").assertIsDisplayed()
         }
 
     @Test
@@ -145,11 +145,11 @@ class RedisWorkspaceUiTest {
             service.seed(name = "Cache", engine = Engine.REDIS, status = RuntimeStatus.CLOSED)
             workspace(service)
 
-            onNodeWithContentDescription("connection-Cache").performClick()
+            onNodeWithTag("connection-Cache").performClick()
             waitForIdle()
 
             // A closed connection is not reopened to fill a panel: the user closed it.
-            onNodeWithContentDescription("redis-browser").assertDoesNotExist()
+            onNodeWithTag("redis-browser").assertDoesNotExist()
             assert(service.calls.none { it.startsWith("redisScan") })
         }
 }

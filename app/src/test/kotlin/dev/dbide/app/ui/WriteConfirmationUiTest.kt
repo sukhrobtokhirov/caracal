@@ -8,7 +8,7 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertTextContains
-import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.v2.runDesktopComposeUiTest
@@ -56,12 +56,12 @@ class WriteConfirmationUiTest {
     }
 
     private fun ComposeUiTest.type(sql: String) {
-        onNodeWithContentDescription("editor-text").performTextInput(sql)
+        onNodeWithTag("editor-text").performTextInput(sql)
         waitForIdle()
     }
 
     private fun ComposeUiTest.run() {
-        onNodeWithContentDescription("editor-run").performClick()
+        onNodeWithTag("editor-run").performClick()
         waitForIdle()
     }
 
@@ -76,10 +76,10 @@ class WriteConfirmationUiTest {
 
             run()
 
-            onNodeWithContentDescription("write-confirmation").assertIsDisplayed()
+            onNodeWithTag("write-confirmation").assertIsDisplayed()
             // What is about to run, on screen. A confirmation that does not show its
             // statement is asking the user to trust their memory of where the caret was.
-            onNodeWithContentDescription("write-statement")
+            onNodeWithTag("write-statement")
                 .assertTextContains("delete from invoices;")
             assertEquals(emptyList(), service.executed)
         }
@@ -92,7 +92,7 @@ class WriteConfirmationUiTest {
             type("delete from invoices;")
             run()
 
-            onNodeWithContentDescription("confirm-write").performClick()
+            onNodeWithTag("confirm-write").performClick()
             waitForIdle()
 
             assertEquals(listOf("delete from invoices;"), service.executed)
@@ -106,13 +106,13 @@ class WriteConfirmationUiTest {
             type("drop table invoices;")
             run()
 
-            onNodeWithContentDescription("cancel-write").performClick()
+            onNodeWithTag("cancel-write").performClick()
             waitForIdle()
 
             assertEquals(emptyList(), service.executed)
             assertEquals(null, model.pending)
             // Back to a usable editor, not a stuck one.
-            onNodeWithContentDescription("editor-run").assertIsEnabled()
+            onNodeWithTag("editor-run").assertIsEnabled()
         }
 
     @Test
@@ -124,7 +124,7 @@ class WriteConfirmationUiTest {
 
             run()
 
-            onNodeWithContentDescription("write-explanation")
+            onNodeWithTag("write-explanation")
                 .assertTextContains("not recognized", substring = true)
         }
 
@@ -139,16 +139,16 @@ class WriteConfirmationUiTest {
             run()
 
             // The banner is inside the dialog, because the shell's one is behind a scrim.
-            onNodeWithContentDescription("write-prod-banner").assertIsDisplayed()
-            onNodeWithContentDescription("confirm-write").assertIsNotEnabled()
+            onNodeWithTag("write-prod-banner").assertIsDisplayed()
+            onNodeWithTag("confirm-write").assertIsNotEnabled()
 
-            onNodeWithContentDescription("write-acknowledgement").performTextInput("payments")
+            onNodeWithTag("write-acknowledgement").performTextInput("payments")
             waitForIdle()
-            onNodeWithContentDescription("confirm-write").assertIsNotEnabled()
+            onNodeWithTag("confirm-write").assertIsNotEnabled()
 
-            onNodeWithContentDescription("write-acknowledgement").performTextInput("-prod")
+            onNodeWithTag("write-acknowledgement").performTextInput("-prod")
             waitForIdle()
-            onNodeWithContentDescription("confirm-write").assertIsEnabled()
+            onNodeWithTag("confirm-write").assertIsEnabled()
 
             assertEquals(emptyList(), service.executed)
         }
@@ -161,9 +161,9 @@ class WriteConfirmationUiTest {
             type("update invoices set total = 0;")
             run()
 
-            onNodeWithContentDescription("write-acknowledgement").performTextInput("payments-prod")
+            onNodeWithTag("write-acknowledgement").performTextInput("payments-prod")
             waitForIdle()
-            onNodeWithContentDescription("confirm-write").performClick()
+            onNodeWithTag("confirm-write").performClick()
             waitForIdle()
 
             assertEquals(listOf("update invoices set total = 0;"), service.executed)
@@ -177,7 +177,7 @@ class WriteConfirmationUiTest {
             type("delete from invoices;")
             run()
 
-            onNodeWithContentDescription("confirm-write").assertIsEnabled()
+            onNodeWithTag("confirm-write").assertIsEnabled()
         }
 
     // --- Read-only: no dialog at all ------------------------------------------
@@ -193,7 +193,7 @@ class WriteConfirmationUiTest {
 
             // No dialog: there is nothing for a confirmation to unlock, and offering
             // one would be offering something the pool would refuse anyway.
-            onNodeWithContentDescription("failure-read_only_connection").assertIsDisplayed()
+            onNodeWithTag("failure-read_only_connection").assertIsDisplayed()
             assertEquals(emptyList(), service.executed)
         }
 

@@ -32,6 +32,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -47,8 +51,6 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.PointerIcon
 import androidx.compose.ui.input.pointer.pointerHoverIcon
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.DpOffset
@@ -133,16 +135,25 @@ fun PaneHeader(
  * belongs to. It is offered rather than mandatory because most of these buttons have
  * no chord, and a tooltip that repeats the label is a tooltip that teaches the user
  * to ignore tooltips.
+ *
+ * [name] is §4.9's, and is for the handful of buttons whose [text] is a glyph. `✕`
+ * announces as "multiplication sign" and `▾` as "black down-pointing triangle";
+ * neither is what pressing it does. Giving one a name also gives it a tooltip, if it
+ * has not asked for a different one — the section wants an icon-only action to be
+ * legible to someone who is looking at it as well as to someone who is not, and
+ * requiring the caller to say the same thing twice is how one of them ends up
+ * missing.
  */
 @Composable
 fun ToolButton(
     text: String,
     onClick: () -> Unit,
-    description: String,
+    tag: String,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
     emphasis: ToolEmphasis = ToolEmphasis.NORMAL,
     tooltip: String? = null,
+    name: String? = null,
 ) {
     val color = when {
         !enabled -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
@@ -151,15 +162,18 @@ fun ToolButton(
         else -> MaterialTheme.colorScheme.onSurfaceVariant
     }
 
-    Tip(tooltip) {
+    Tip(tooltip ?: name) {
         Box(
             modifier = modifier
                 .clip(MaterialTheme.shapes.small)
                 .hoverHighlight(MaterialTheme.shapes.small, enabled = enabled)
-                .clickable(enabled = enabled, onClick = onClick)
+                .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
                 .handCursor(enabled)
                 .padding(horizontal = Space.md, vertical = Space.sm)
-                .semantics { contentDescription = description },
+                .testTag(tag)
+                // Set on the button rather than on the glyph, so it replaces what the
+                // glyph would have been read as instead of being read out after it.
+                .then(if (name == null) Modifier else Modifier.semantics { contentDescription = name }),
         ) {
             Text(text = text, style = MaterialTheme.typography.labelMedium, color = color)
         }
@@ -226,7 +240,7 @@ fun ThemeToggle(mode: ThemeMode, onCycle: () -> Unit, modifier: Modifier = Modif
             .clickable(onClick = onCycle)
             .handCursor()
             .padding(horizontal = Space.md, vertical = Space.sm)
-            .semantics { contentDescription = "theme-toggle" },
+            .testTag("theme-toggle"),
     ) {
         Text(
             // The word rather than a glyph: a sun and a moon are two more characters
@@ -248,7 +262,7 @@ fun ThemeToggle(mode: ThemeMode, onCycle: () -> Unit, modifier: Modifier = Modif
 @Composable
 fun EmptyState(
     title: String,
-    description: String,
+    tag: String,
     modifier: Modifier = Modifier,
     detail: String? = null,
     action: @Composable (() -> Unit)? = null,
@@ -264,7 +278,7 @@ fun EmptyState(
                 style = MaterialTheme.typography.titleSmall,
                 color = MaterialTheme.colorScheme.onSurface,
                 textAlign = TextAlign.Center,
-                modifier = Modifier.semantics { contentDescription = description },
+                modifier = Modifier.testTag(tag),
             )
             detail?.let {
                 Text(
@@ -317,7 +331,7 @@ fun Modifier.handCursor(enabled: Boolean = true): Modifier =
 fun InlineField(
     value: String,
     onValueChange: (String) -> Unit,
-    description: String,
+    tag: String,
     modifier: Modifier = Modifier,
     placeholder: String = "",
     enabled: Boolean = true,
@@ -364,7 +378,7 @@ fun InlineField(
                     onSubmit()
                     true
                 }
-                .semantics { contentDescription = description },
+                .testTag(tag),
         )
     }
 }
@@ -378,7 +392,7 @@ fun InlineField(
 @Composable
 fun MenuButton(
     text: String,
-    description: String,
+    tag: String,
     actions: List<MenuAction>,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
@@ -388,7 +402,7 @@ fun MenuButton(
         ToolButton(
             text = "$text ▾",
             onClick = { open = true },
-            description = description,
+            tag = tag,
             enabled = enabled,
         )
         ContextMenu(
@@ -396,7 +410,7 @@ fun MenuButton(
             at = DpOffset.Zero,
             actions = actions,
             onDismiss = { open = false },
-            description = "$description-menu",
+            tag = "$tag-menu",
         )
     }
 }

@@ -10,7 +10,7 @@ import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.captureToImage
-import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.v2.runDesktopComposeUiTest
 import dev.dbide.app.ConnectionsViewModel
@@ -129,11 +129,11 @@ class ThemeUiTest {
         waitForIdle()
         assertEquals(DarkScheme.surface, shell.surface)
 
-        onNodeWithContentDescription("open-settings").performClick()
+        onNodeWithTag("open-settings").performClick()
         waitForIdle()
-        onNodeWithContentDescription("settings-dialog").assertIsDisplayed()
+        onNodeWithTag("settings-dialog").assertIsDisplayed()
 
-        onNodeWithContentDescription("theme-choice-light").performClick()
+        onNodeWithTag("theme-choice-light").performClick()
         waitForIdle()
 
         assertEquals(ThemeMode.LIGHT, theme.mode)
@@ -143,8 +143,8 @@ class ThemeUiTest {
         // The dialog is still open and still on the light palette: the point of
         // applying on the click rather than on a Save is that the window you are
         // choosing in is one of the windows that changes.
-        onNodeWithContentDescription("settings-dialog").assertIsDisplayed()
-        onNodeWithContentDescription("theme-choice-dark").assertIsDisplayed()
+        onNodeWithTag("settings-dialog").assertIsDisplayed()
+        onNodeWithTag("theme-choice-dark").assertIsDisplayed()
 
         waitUntil { store.written == "light" }
         assertTrue(store.written == "light", "the choice was not persisted")
@@ -169,7 +169,7 @@ class ThemeUiTest {
                     setContent { DbideTheme(mode) { AppSurface { } } }
                     waitForIdle()
 
-                    val painted = onNodeWithContentDescription("app-surface")
+                    val painted = onNodeWithTag("app-surface")
                         .captureToImage()
                         .toPixelMap()
 

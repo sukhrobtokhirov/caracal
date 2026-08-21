@@ -2,6 +2,7 @@ package dev.dbide.app.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -29,12 +30,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
@@ -118,7 +119,7 @@ private fun tabActions(
     add(
         MenuAction(
             label = "Duplicate",
-            description = "tab-duplicate",
+            tag = "tab-duplicate",
             onClick = { tabs.duplicate(tab) },
         ),
     )
@@ -126,7 +127,7 @@ private fun tabActions(
         add(
             MenuAction(
                 label = "Move to ${config.name}",
-                description = "tab-move-${config.name}",
+                tag = "tab-move-${config.name}",
                 // The query on the server belongs to the connection that is running
                 // it. Moving the tab out from under it would leave nothing to cancel.
                 enabled = !tab.running,
@@ -140,7 +141,7 @@ private fun tabActions(
     add(
         MenuAction(
             label = "Close",
-            description = "tab-close",
+            tag = "tab-close",
             danger = true,
             onClick = { tabs.requestClose(tab) },
         ),
@@ -169,7 +170,7 @@ private fun EditorTabStrip(
             .fillMaxWidth()
             .height(Sizes.paneHeader)
             .background(Dbide.colors.paneHeader)
-            .semantics { contentDescription = "editor-tab-strip" },
+            .testTag("editor-tab-strip"),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Row(
@@ -197,7 +198,7 @@ private fun EditorTabStrip(
         ToolButton(
             text = "＋ New",
             onClick = onNew,
-            description = "editor-tab-new",
+            tag = "editor-tab-new",
             tooltip = "${Shortcut.NEW_TAB.action}  ${shortcuts.chord(Shortcut.NEW_TAB)}",
             modifier = Modifier.padding(horizontal = Space.sm),
         )
@@ -243,7 +244,12 @@ private fun EditorTabItem(
                         size = Size(size.width, thickness),
                     )
                 }
-                .clickable(onClick = onSelect)
+                // `selectable` rather than `clickable`: this is one of a set, and
+                // which one is in front is a state a screen reader has a word for.
+                // The tag rides on the same node, because the tab *is* the control —
+                // it was on the title text, which reads as a label nobody can press.
+                .selectable(selected = active, role = Role.Tab, onClick = onSelect)
+                .testTag("editor-tab-$index")
                 .onSecondaryClick { at -> menu = DpOffset(at.x.dp, 0.dp) }
                 .handCursor()
                 .padding(start = Space.lg, end = Space.sm),
@@ -254,7 +260,7 @@ private fun EditorTabItem(
                 tab.running -> CircularProgressIndicator(
                     modifier = Modifier
                         .size(10.dp)
-                        .semantics { contentDescription = "editor-tab-running-$index" },
+                        .testTag("editor-tab-running-$index"),
                     strokeWidth = 1.5.dp,
                 )
 
@@ -263,7 +269,7 @@ private fun EditorTabItem(
                         .size(6.dp)
                         .clip(CircleShape)
                         .background(MaterialTheme.colorScheme.primary)
-                        .semantics { contentDescription = "editor-tab-unsaved-$index" },
+                        .testTag("editor-tab-unsaved-$index"),
                 )
             }
             Text(
@@ -276,14 +282,15 @@ private fun EditorTabItem(
                 },
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
-                modifier = Modifier
-                    .weight(1f, fill = false)
-                    .semantics { contentDescription = "editor-tab-$index" },
+                modifier = Modifier.weight(1f, fill = false),
             )
             ToolButton(
                 text = "✕",
                 onClick = onClose,
-                description = "editor-tab-close-$index",
+                tag = "editor-tab-close-$index",
+                // The one glyph in the strip with no word beside it. `✕` is read out
+                // as "multiplication sign", which is not what pressing it does.
+                name = "Close ${tab.title}",
                 tooltip = closeTip,
             )
         }
@@ -292,7 +299,7 @@ private fun EditorTabItem(
             at = menu ?: DpOffset.Zero,
             actions = actions(),
             onDismiss = { menu = null },
-            description = "editor-tab-menu-$index",
+            tag = "editor-tab-menu-$index",
         )
     }
 }
@@ -303,12 +310,12 @@ private fun NoTabs(onNew: () -> Unit) {
     EmptyState(
         title = "No query open",
         detail = "Open a tab to write SQL against this connection, or reopen a statement from history.",
-        description = "query-no-tabs",
+        tag = "query-no-tabs",
         action = {
             ToolButton(
                 text = "New query",
                 onClick = onNew,
-                description = "query-new-tab",
+                tag = "query-new-tab",
                 emphasis = ToolEmphasis.PRIMARY,
             )
         },
@@ -360,7 +367,7 @@ private fun CloseTabConfirmation(
         confirmButton = {
             TextButton(
                 onClick = onConfirm,
-                modifier = Modifier.semantics { contentDescription = "confirm-close-tab" },
+                modifier = Modifier.testTag("confirm-close-tab"),
             ) {
                 Text(
                     text = if (running) "Cancel and close" else "Close",
@@ -371,12 +378,12 @@ private fun CloseTabConfirmation(
         dismissButton = {
             TextButton(
                 onClick = onCancel,
-                modifier = Modifier.semantics { contentDescription = "cancel-close-tab" },
+                modifier = Modifier.testTag("cancel-close-tab"),
             ) {
                 Text(if (running) "Keep open" else "Keep it")
             }
         },
-        modifier = Modifier.semantics { contentDescription = "close-tab-confirmation" },
+        modifier = Modifier.testTag("close-tab-confirmation"),
     )
 }
 
@@ -401,7 +408,7 @@ fun QuitConfirmation(onConfirm: () -> Unit, onCancel: () -> Unit) {
         confirmButton = {
             TextButton(
                 onClick = onConfirm,
-                modifier = Modifier.semantics { contentDescription = "confirm-quit" },
+                modifier = Modifier.testTag("confirm-quit"),
             ) {
                 Text("Quit anyway", color = MaterialTheme.colorScheme.error)
             }
@@ -409,11 +416,11 @@ fun QuitConfirmation(onConfirm: () -> Unit, onCancel: () -> Unit) {
         dismissButton = {
             TextButton(
                 onClick = onCancel,
-                modifier = Modifier.semantics { contentDescription = "cancel-quit" },
+                modifier = Modifier.testTag("cancel-quit"),
             ) {
                 Text("Keep working")
             }
         },
-        modifier = Modifier.semantics { contentDescription = "quit-confirmation" },
+        modifier = Modifier.testTag("quit-confirmation"),
     )
 }

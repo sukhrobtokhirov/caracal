@@ -21,8 +21,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -88,7 +89,7 @@ fun HistoryWindow(
     AppDialog(
         title = "Query history",
         subtitle = "Kept on this machine only, and never sent anywhere.",
-        description = "history-window",
+        tag = "history-window",
         icon = { Glyph(Glyphs.HISTORY, size = 18) },
         onDismiss = onDismiss,
         scrolling = false,
@@ -97,7 +98,7 @@ fun HistoryWindow(
             RailItem(
                 label = "All connections",
                 detail = "Everything this machine has run.",
-                description = "history-filter-all",
+                tag = "history-filter-all",
                 selected = model.connectionId == null,
                 onClick = { model.showConnection(null) },
             )
@@ -105,7 +106,7 @@ fun HistoryWindow(
                 RailItem(
                     label = view.config.name,
                     detail = view.config.environment.wire,
-                    description = "history-filter-${view.id.value}",
+                    tag = "history-filter-${view.id.value}",
                     selected = model.connectionId == view.id,
                     onClick = { model.showConnection(view.id) },
                     leading = { EngineLogo(view.config.engine, size = 13.dp, described = false) },
@@ -116,18 +117,18 @@ fun HistoryWindow(
             ToolButton(
                 text = "Clear this connection…",
                 onClick = { scoped?.let { model.askClear(HistoryScope.OneConnection(it.id)) } },
-                description = "history-clear-connection",
+                tag = "history-clear-connection",
                 enabled = scoped != null,
                 emphasis = ToolEmphasis.DANGER,
             )
             ToolButton(
                 text = "Clear all…",
                 onClick = { model.askClear(HistoryScope.Everything) },
-                description = "history-clear-all",
+                tag = "history-clear-all",
                 emphasis = ToolEmphasis.DANGER,
             )
             Box(modifier = Modifier.weight(1f))
-            ToolButton(text = "Close", onClick = onDismiss, description = "history-close")
+            ToolButton(text = "Close", onClick = onDismiss, tag = "history-close")
         },
     ) {
         FilterStrip(model)
@@ -170,12 +171,12 @@ private fun FilterStrip(model: HistoryViewModel) {
     ) {
         MenuButton(
             text = model.outcome?.let(HistoryFormat::outcome) ?: "Any outcome",
-            description = "history-outcome-filter",
+            tag = "history-outcome-filter",
             actions = buildList {
                 add(
                     MenuAction(
                         label = "Any outcome",
-                        description = "history-outcome-any",
+                        tag = "history-outcome-any",
                         onClick = { model.showOutcome(null) },
                     ),
                 )
@@ -183,7 +184,7 @@ private fun FilterStrip(model: HistoryViewModel) {
                     add(
                         MenuAction(
                             label = HistoryFormat.outcome(outcome),
-                            description = "history-outcome-${outcome.stored}",
+                            tag = "history-outcome-${outcome.stored}",
                             onClick = { model.showOutcome(outcome) },
                         ),
                     )
@@ -193,13 +194,13 @@ private fun FilterStrip(model: HistoryViewModel) {
         InlineField(
             value = model.search,
             onValueChange = model::searchFor,
-            description = "history-search",
+            tag = "history-search",
             placeholder = "Search loaded entries",
             monospace = false,
             modifier = Modifier.width(240.dp),
         )
         Text(
-            // Said plainly rather than implied, because the honest description of this
+            // Said plainly rather than implied, because the honest tag of this
             // box is narrower than the one a user assumes: it searches what has been
             // read, and "no matches" on page one of a thousand statements would
             // otherwise be an answer the user has no way of catching as wrong.
@@ -208,7 +209,7 @@ private fun FilterStrip(model: HistoryViewModel) {
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.weight(1f),
         )
-        ToolButton(text = "Refresh", onClick = model::reload, description = "history-refresh")
+        ToolButton(text = "Refresh", onClick = model::reload, tag = "history-refresh")
     }
 }
 
@@ -235,6 +236,9 @@ private fun Entries(
 
     LazyColumn(modifier = Modifier.fillMaxSize()) {
         var heading: LocalDate? = null
+        // Counted over the entries only, so a day heading appearing between two of
+        // them does not shift what the third one is called.
+        var index = 0
         visible.forEach { record ->
             val day = HistoryFormat.day(record.executedAt, zone)
             if (day != heading) {
@@ -243,6 +247,7 @@ private fun Entries(
             }
             item(key = record.id ?: record.hashCode()) {
                 EntryRow(
+                    index = index++,
                     record = record,
                     connection = connections[record.connectionId],
                     // The connection is named on the row only when the list spans more
@@ -275,7 +280,7 @@ private fun DayHeading(text: String) {
             .fillMaxWidth()
             .background(Dbide.colors.chrome)
             .padding(horizontal = Space.lg, vertical = Space.sm)
-            .semantics { contentDescription = "history-day" },
+            .testTag("history-day"),
     )
 }
 
@@ -288,6 +293,7 @@ private fun DayHeading(text: String) {
  */
 @Composable
 private fun EntryRow(
+    index: Int,
     record: ExecutionRecord,
     connection: ConnectionView?,
     showConnection: Boolean,
@@ -302,6 +308,14 @@ private fun EntryRow(
             .hoverHighlight()
             .clickable(onClick = onToggle)
             .handCursor()
+            // The entry is the control — the whole row toggles — so this is where its
+            // name and its state belong. It used to be on the statement text inside,
+            // which reads as a paragraph nobody can press and says nothing about
+            // whether pressing it would show more or less.
+            .testTag("history-entry-$index")
+            .semantics {
+                stateDescription = if (expanded) "Expanded" else "Collapsed"
+            }
             .padding(horizontal = Space.lg, vertical = Space.md),
         verticalArrangement = Arrangement.spacedBy(Space.sm),
     ) {
@@ -337,7 +351,7 @@ private fun EntryRow(
             color = MaterialTheme.colorScheme.onSurface,
             maxLines = if (expanded) Int.MAX_VALUE else 2,
             overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.fillMaxWidth().semantics { contentDescription = "history-statement" },
+            modifier = Modifier.fillMaxWidth().testTag("history-statement"),
         )
 
         if (!expanded) return@Column
@@ -347,7 +361,7 @@ private fun EntryRow(
                 text = message,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.error,
-                modifier = Modifier.semantics { contentDescription = "history-error" },
+                modifier = Modifier.testTag("history-error"),
             )
         }
         EntryActions(record, actions)
@@ -368,20 +382,20 @@ private fun EntryActions(record: ExecutionRecord, actions: HistoryActions) {
         ToolButton(
             text = "Open in new tab",
             onClick = { openTab?.invoke(record) },
-            description = "history-open-tab",
+            tag = "history-open-tab",
             enabled = openTab != null,
             emphasis = ToolEmphasis.PRIMARY,
         )
         ToolButton(
             text = "Open in this tab",
             onClick = { open?.invoke(record) },
-            description = "history-open",
+            tag = "history-open",
             enabled = open != null,
         )
         ToolButton(
             text = "Copy",
             onClick = { actions.copy(record.statement) },
-            description = "history-copy",
+            tag = "history-copy",
         )
         if (open == null) {
             Text(
@@ -406,7 +420,7 @@ private fun ShowMore(model: HistoryViewModel) {
         ToolButton(
             text = "Show older",
             onClick = model::loadMore,
-            description = "history-more",
+            tag = "history-more",
             enabled = !model.loadingMore,
         )
         if (model.loadingMore) {
@@ -436,20 +450,20 @@ private fun EmptyList(model: HistoryViewModel) {
             title = "No match in what is loaded",
             detail = "Nothing among the entries read so far contains that. " +
                 "Show older reads further back.",
-            description = "history-empty-search",
+            tag = "history-empty-search",
         )
 
         model.outcome != null -> EmptyState(
             title = "Nothing ${HistoryFormat.outcome(model.outcome!!)}",
             detail = "No execution here ended that way. Choose Any outcome to see the rest.",
-            description = "history-empty-filtered",
+            tag = "history-empty-filtered",
         )
 
         else -> EmptyState(
             title = "No history yet",
             detail = "Statements you run are recorded here — on this machine, in the same " +
                 "owner-only file as your connections, and nowhere else.",
-            description = "history-empty",
+            tag = "history-empty",
         )
     }
 }
@@ -457,7 +471,7 @@ private fun EmptyList(model: HistoryViewModel) {
 @Composable
 private fun Loading() {
     Box(
-        modifier = Modifier.fillMaxSize().semantics { contentDescription = "history-loading" },
+        modifier = Modifier.fillMaxSize().testTag("history-loading"),
         contentAlignment = Alignment.Center,
     ) {
         CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
@@ -495,7 +509,7 @@ fun ClearHistoryConfirmation(
         confirmButton = {
             TextButton(
                 onClick = onConfirm,
-                modifier = Modifier.semantics { contentDescription = "confirm-clear-history" },
+                modifier = Modifier.testTag("confirm-clear-history"),
             ) {
                 Text("Clear", color = MaterialTheme.colorScheme.error)
             }
@@ -503,11 +517,11 @@ fun ClearHistoryConfirmation(
         dismissButton = {
             TextButton(
                 onClick = onCancel,
-                modifier = Modifier.semantics { contentDescription = "cancel-clear-history" },
+                modifier = Modifier.testTag("cancel-clear-history"),
             ) {
                 Text("Cancel")
             }
         },
-        modifier = Modifier.semantics { contentDescription = "clear-history-confirmation" },
+        modifier = Modifier.testTag("clear-history-confirmation"),
     )
 }

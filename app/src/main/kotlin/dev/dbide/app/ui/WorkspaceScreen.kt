@@ -29,14 +29,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.LocalClipboard
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.dbide.app.ConnectionsViewModel
@@ -597,7 +596,7 @@ private fun WorkspaceBar(
             .height(Sizes.barHeight)
             .background(background)
             .padding(horizontal = Space.lg)
-            .semantics { contentDescription = if (production) "shell-prod" else "shell-normal" },
+            .testTag(if (production) "shell-prod" else "shell-normal"),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -611,7 +610,7 @@ private fun WorkspaceBar(
             ToolButton(
                 text = "Sidebar",
                 onClick = onToggleSidebar,
-                description = "toggle-sidebar",
+                tag = "toggle-sidebar",
                 emphasis = if (sidebar) ToolEmphasis.PRIMARY else ToolEmphasis.NORMAL,
             )
             AppMark(size = 16.dp)
@@ -651,26 +650,26 @@ private fun WorkspaceBar(
             ToolButton(
                 text = "Go to…",
                 onClick = onOpenSwitcher,
-                description = "open-switcher",
+                tag = "open-switcher",
                 tooltip = "${Shortcut.SWITCH.action}  ${shortcuts.chord(Shortcut.SWITCH)}",
             )
             ToolButton(
                 text = "History",
                 onClick = onOpenHistory,
-                description = "open-history",
+                tag = "open-history",
             )
             ToolButton(
                 text = "Shortcuts",
                 onClick = onOpenShortcuts,
-                description = "open-shortcuts",
+                tag = "open-shortcuts",
                 tooltip = "${Shortcut.HELP.action}  ${shortcuts.chord(Shortcut.HELP)}",
             )
             ToolButton(
                 text = "Settings",
                 onClick = onOpenSettings,
-                description = "open-settings",
+                tag = "open-settings",
             )
-            ToolButton(text = "Lock", onClick = onLock, description = "lock-application")
+            ToolButton(text = "Lock", onClick = onLock, tag = "lock-application")
         }
     }
 }
@@ -716,7 +715,7 @@ private fun WorkspaceTabs(
                     .clickable { onSelect(entry) }
                     .handCursor()
                     .padding(horizontal = Space.xl)
-                    .semantics { contentDescription = "workspace-tab-${entry.name.lowercase()}" },
+                    .testTag("workspace-tab-${entry.name.lowercase()}"),
                 contentAlignment = Alignment.Center,
             ) {
                 Row(
@@ -749,7 +748,7 @@ private fun WorkspaceTabs(
 @Composable
 private fun Connecting(name: String) {
     Box(
-        modifier = Modifier.fillMaxSize().semantics { contentDescription = "workspace-connecting" },
+        modifier = Modifier.fillMaxSize().testTag("workspace-connecting"),
         contentAlignment = Alignment.Center,
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -801,14 +800,14 @@ private fun Disconnected(
                     "back with the connection."
             },
         ).joinToString(" "),
-        description = "workspace-disconnected",
+        tag = "workspace-disconnected",
         action = {
             ToolButton(
                 // Never left disabled without a word for why: while something else is
                 // in flight the button says what it is waiting on.
                 text = if (busy) "Working…" else "Reconnect",
                 onClick = onReconnect,
-                description = "workspace-reconnect",
+                tag = "workspace-reconnect",
                 enabled = !busy,
                 emphasis = ToolEmphasis.PRIMARY,
             )
@@ -834,7 +833,7 @@ private fun EmptyPane(any: Boolean, onCreate: () -> Unit) {
             "Add a PostgreSQL or Redis server and it opens here. Everything stays on this " +
                 "machine, encrypted under your master password."
         },
-        description = "workspace-empty",
+        tag = "workspace-empty",
         action = {
             // On both, not only on the first run. A populated install with nothing
             // selected still has a sidebar to click, but the button costs one line and
@@ -842,7 +841,7 @@ private fun EmptyPane(any: Boolean, onCreate: () -> Unit) {
             ToolButton(
                 text = "Add connection",
                 onClick = onCreate,
-                description = "workspace-empty-create",
+                tag = "workspace-empty-create",
                 emphasis = ToolEmphasis.PRIMARY,
             )
         },

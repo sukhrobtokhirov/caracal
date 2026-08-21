@@ -6,7 +6,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.test.ComposeUiTest
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertIsDisplayed
-import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.v2.runDesktopComposeUiTest
@@ -71,12 +71,12 @@ class RedisInfoUiTest {
             )
             dashboard(service)
 
-            onNodeWithContentDescription("info-card-version").assertIsDisplayed()
-            onNodeWithContentDescription("info-card-hit-rate").assertIsDisplayed()
+            onNodeWithTag("info-card-version").assertIsDisplayed()
+            onNodeWithTag("info-card-hit-rate").assertIsDisplayed()
             onNodeWithText("90.0%").assertIsDisplayed()
-            onNodeWithContentDescription("info-db-0").assertIsDisplayed()
+            onNodeWithTag("info-db-0").assertIsDisplayed()
             onNodeWithText("1,200 keys").assertIsDisplayed()
-            onNodeWithContentDescription("info-restricted").assertDoesNotExist()
+            onNodeWithTag("info-restricted").assertDoesNotExist()
         }
 
     @Test
@@ -86,12 +86,12 @@ class RedisInfoUiTest {
             val service = service(ServerInfo(version = "7.2.4", connectedClients = 3))
             dashboard(service)
 
-            onNodeWithContentDescription("info-card-version").assertIsDisplayed()
-            onNodeWithContentDescription("info-card-clients").assertIsDisplayed()
+            onNodeWithTag("info-card-version").assertIsDisplayed()
+            onNodeWithTag("info-card-clients").assertIsDisplayed()
             // Not "0%", which would be a statement about the cache rather than about
             // this user's permissions.
-            onNodeWithContentDescription("info-card-hit-rate").assertDoesNotExist()
-            onNodeWithContentDescription("info-card-commands").assertDoesNotExist()
+            onNodeWithTag("info-card-hit-rate").assertDoesNotExist()
+            onNodeWithTag("info-card-commands").assertDoesNotExist()
         }
 
     @Test
@@ -102,7 +102,7 @@ class RedisInfoUiTest {
             )
             dashboard(service)
 
-            onNodeWithContentDescription("info-card-hit-rate").assertDoesNotExist()
+            onNodeWithTag("info-card-hit-rate").assertDoesNotExist()
         }
 
     @Test
@@ -111,10 +111,10 @@ class RedisInfoUiTest {
             val service = service(ServerInfo(restricted = true))
             dashboard(service)
 
-            onNodeWithContentDescription("info-restricted").assertIsDisplayed()
-            onNodeWithContentDescription("info-empty").assertIsDisplayed()
+            onNodeWithTag("info-restricted").assertIsDisplayed()
+            onNodeWithTag("info-empty").assertIsDisplayed()
             // The connection is fine. Only this one command was refused.
-            onNodeWithContentDescription("failure-query_failed").assertDoesNotExist()
+            onNodeWithTag("failure-query_failed").assertDoesNotExist()
         }
 
     @Test
@@ -125,7 +125,7 @@ class RedisInfoUiTest {
 
             assertEquals(1, service.calls.count { it == "redisInfo" })
 
-            onNodeWithContentDescription("info-refresh").performClick()
+            onNodeWithTag("info-refresh").performClick()
             waitForIdle()
 
             // Twice, because it was asked twice. §3.8 has no polling in it.

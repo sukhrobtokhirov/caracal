@@ -24,11 +24,10 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -62,17 +61,17 @@ fun RedisKeyBrowser(
     modifier: Modifier = Modifier,
     focus: FocusRequest = remember { FocusRequest() },
 ) {
-    Column(modifier = modifier.fillMaxSize().semantics { contentDescription = "redis-browser" }) {
+    Column(modifier = modifier.fillMaxSize().testTag("redis-browser")) {
         PaneHeader(title = "Keys", glyph = Glyphs.KEYS) {
             ToolButton(
                 text = if (model.grouped) "Grouped" else "Flat",
                 onClick = model::toggleGrouping,
-                description = "keys-grouping",
+                tag = "keys-grouping",
                 // Lit while grouping is on: it is a mode the pane is in, not a button
                 // that was pressed once.
                 emphasis = if (model.grouped) ToolEmphasis.PRIMARY else ToolEmphasis.NORMAL,
             )
-            ToolButton(text = "Refresh", onClick = model::refresh, description = "keys-refresh")
+            ToolButton(text = "Refresh", onClick = model::refresh, tag = "keys-refresh")
         }
         Hairline()
         Filters(model, focus)
@@ -152,7 +151,7 @@ private fun Filters(model: RedisBrowserViewModel, focus: FocusRequest) {
             InlineField(
                 value = model.pattern,
                 onValueChange = model::edit,
-                description = "keys-pattern",
+                tag = "keys-pattern",
                 placeholder = "user:*",
                 focus = patternHere,
                 onSubmit = model::search,
@@ -161,7 +160,7 @@ private fun Filters(model: RedisBrowserViewModel, focus: FocusRequest) {
             ToolButton(
                 text = "Search",
                 onClick = model::search,
-                description = "keys-search",
+                tag = "keys-search",
                 enabled = !model.scanning,
             )
         }
@@ -171,12 +170,12 @@ private fun Filters(model: RedisBrowserViewModel, focus: FocusRequest) {
         ) {
             MenuButton(
                 text = "Type: ${model.typeFilter?.wire ?: "all"}",
-                description = "keys-type",
+                tag = "keys-type",
                 actions = buildList {
                     add(
                         MenuAction(
                             label = "All types",
-                            description = "keys-type-all",
+                            tag = "keys-type-all",
                             onClick = { model.filterBy(null) },
                         ),
                     )
@@ -184,7 +183,7 @@ private fun Filters(model: RedisBrowserViewModel, focus: FocusRequest) {
                         add(
                             MenuAction(
                                 label = type.wire,
-                                description = "keys-type-${type.wire}",
+                                tag = "keys-type-${type.wire}",
                                 onClick = { model.filterBy(type) },
                             ),
                         )
@@ -195,12 +194,12 @@ private fun Filters(model: RedisBrowserViewModel, focus: FocusRequest) {
                 ToolButton(
                     text = "Expand",
                     onClick = model::expandAll,
-                    description = "keys-expand-all",
+                    tag = "keys-expand-all",
                 )
                 ToolButton(
                     text = "Collapse",
                     onClick = model::collapseAll,
-                    description = "keys-collapse-all",
+                    tag = "keys-collapse-all",
                 )
             }
         }
@@ -212,7 +211,7 @@ private fun Filters(model: RedisBrowserViewModel, focus: FocusRequest) {
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.semantics { contentDescription = "keys-glob-hint" },
+            modifier = Modifier.testTag("keys-glob-hint"),
         )
     }
 }
@@ -240,7 +239,7 @@ private fun KeyRowLine(
             .hoverHighlight()
             .clickable { if (row.expandable) onToggle() else onOpen() }
             .handCursor()
-            .semantics { contentDescription = row.describe() },
+            .testTag(row.describe()),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         // The same accent stripe the connection list marks its selection with, and in
@@ -306,13 +305,13 @@ private fun KeyRowLine(
 }
 
 @Composable
-private fun RowDetail(text: String, description: String) {
+private fun RowDetail(text: String, tag: String) {
     Text(
         text = text,
         style = MaterialTheme.typography.labelSmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         maxLines = 1,
-        modifier = Modifier.semantics { contentDescription = description },
+        modifier = Modifier.testTag(tag),
     )
 }
 
@@ -331,7 +330,7 @@ private fun GroupDisclosure(row: KeyRow, onToggle: () -> Unit) {
                         .hoverHighlight(MaterialTheme.shapes.extraSmall)
                         .clickable(onClick = onToggle)
                         .handCursor()
-                        .semantics { contentDescription = "${row.describe()}-toggle" }
+                        .testTag("${row.describe()}-toggle")
                 },
             ),
         contentAlignment = Alignment.Center,
@@ -373,12 +372,12 @@ private fun EmptyKeyspace(model: RedisBrowserViewModel) {
             detail = "The scan has walked part of the keyspace without matching " +
                 (if (model.filtered) describeFilters(model) else "anything") +
                 ". Load more to continue from where it stopped.",
-            description = "keys-empty-partial",
+            tag = "keys-empty-partial",
             action = {
                 ToolButton(
                     text = "Load more",
                     onClick = model::loadMore,
-                    description = "keys-load-more-empty",
+                    tag = "keys-load-more-empty",
                     emphasis = ToolEmphasis.PRIMARY,
                 )
             },
@@ -394,13 +393,13 @@ private fun EmptyKeyspace(model: RedisBrowserViewModel) {
             } else {
                 "The whole keyspace was scanned. This database is empty."
             },
-            description = "keys-empty-complete",
+            tag = "keys-empty-complete",
             action = if (model.filtered) {
                 {
                     ToolButton(
                         text = "Clear filters",
                         onClick = model::clearFilters,
-                        description = "keys-clear-filters",
+                        tag = "keys-clear-filters",
                         emphasis = ToolEmphasis.PRIMARY,
                     )
                 }
@@ -437,7 +436,7 @@ private fun ScanFooter(model: RedisBrowserViewModel) {
             if (model.scanning) {
                 CircularProgressIndicator(
                     strokeWidth = 1.5.dp,
-                    modifier = Modifier.size(10.dp).semantics { contentDescription = "keys-busy" },
+                    modifier = Modifier.size(10.dp).testTag("keys-busy"),
                 )
             }
             Text(
@@ -446,13 +445,13 @@ private fun ScanFooter(model: RedisBrowserViewModel) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f).semantics { contentDescription = "keys-progress" },
+                modifier = Modifier.weight(1f).testTag("keys-progress"),
             )
             if (model.hasMore) {
                 ToolButton(
                     text = "Load more",
                     onClick = model::loadMore,
-                    description = "keys-load-more",
+                    tag = "keys-load-more",
                     enabled = !model.scanning,
                     emphasis = ToolEmphasis.PRIMARY,
                 )
@@ -463,7 +462,7 @@ private fun ScanFooter(model: RedisBrowserViewModel) {
                 "can be missed or repeated.",
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f),
-            modifier = Modifier.semantics { contentDescription = "keys-snapshot-warning" },
+            modifier = Modifier.testTag("keys-snapshot-warning"),
         )
     }
 }
@@ -494,12 +493,12 @@ private fun RedisBrowserViewModel.progressLine(): String {
 }
 
 @Composable
-private fun BrowserMessage(text: String, description: String) {
+private fun BrowserMessage(text: String, tag: String) {
     Text(
         text = text,
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier.padding(Space.lg).semantics { contentDescription = description },
+        modifier = Modifier.padding(Space.lg).testTag(tag),
     )
 }
 

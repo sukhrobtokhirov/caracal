@@ -18,9 +18,8 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -46,18 +45,18 @@ import dev.dbide.core.redis.ServerInfo
  */
 @Composable
 fun RedisInfoDashboard(model: RedisInfoViewModel, modifier: Modifier = Modifier) {
-    Column(modifier = modifier.fillMaxSize().semantics { contentDescription = "redis-info" }) {
+    Column(modifier = modifier.fillMaxSize().testTag("redis-info")) {
         PaneHeader(title = "Server", glyph = Glyphs.SERVER) {
             if (model.loading) {
                 CircularProgressIndicator(
                     strokeWidth = 1.5.dp,
-                    modifier = Modifier.size(10.dp).semantics { contentDescription = "info-busy" },
+                    modifier = Modifier.size(10.dp).testTag("info-busy"),
                 )
             }
             ToolButton(
                 text = "Refresh",
                 onClick = model::refresh,
-                description = "info-refresh",
+                tag = "info-refresh",
                 enabled = !model.loading,
             )
         }
@@ -67,13 +66,13 @@ fun RedisInfoDashboard(model: RedisInfoViewModel, modifier: Modifier = Modifier)
             InfoState.Idle -> EmptyState(
                 title = "Nothing read yet",
                 detail = "Open a Redis connection to see its INFO summary.",
-                description = "info-idle",
+                tag = "info-idle",
             )
 
             InfoState.Loading -> EmptyState(
                 title = "Reading INFO…",
                 detail = "One command, once. This dashboard does not poll.",
-                description = "info-loading",
+                tag = "info-loading",
             )
 
             is InfoState.Failed -> Box(
@@ -111,7 +110,7 @@ private fun Summary(info: ServerInfo) {
                 },
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.semantics { contentDescription = "info-empty" },
+                modifier = Modifier.testTag("info-empty"),
             )
             return@Column
         }
@@ -144,7 +143,7 @@ private fun Keyspace(info: ServerInfo) {
         info.databases.forEach { database ->
             Row(
                 horizontalArrangement = Arrangement.spacedBy(Space.xl),
-                modifier = Modifier.semantics { contentDescription = "info-db-${database.index}" },
+                modifier = Modifier.testTag("info-db-${database.index}"),
             ) {
                 Text(
                     text = "db${database.index}",
@@ -182,7 +181,7 @@ private fun RestrictedBanner() {
             .clip(MaterialTheme.shapes.medium)
             .background(MaterialTheme.colorScheme.tertiaryContainer)
             .padding(Space.lg)
-            .semantics { contentDescription = "info-restricted" },
+            .testTag("info-restricted"),
         horizontalArrangement = Arrangement.spacedBy(Space.md),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -205,7 +204,7 @@ private fun InfoCard(card: Card, modifier: Modifier = Modifier) {
             .clip(MaterialTheme.shapes.medium)
             .border(Sizes.hairline, Dbide.colors.hairline, MaterialTheme.shapes.medium)
             .padding(Space.lg)
-            .semantics { contentDescription = "info-card-${card.label.slug()}" },
+            .testTag("info-card-${card.label.slug()}"),
         verticalArrangement = Arrangement.spacedBy(Space.xs),
     ) {
         Text(

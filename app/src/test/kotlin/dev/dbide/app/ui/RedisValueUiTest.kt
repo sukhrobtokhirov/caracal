@@ -6,7 +6,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.test.ComposeUiTest
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertIsDisplayed
-import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.v2.runDesktopComposeUiTest
@@ -92,14 +92,14 @@ class RedisValueUiTest {
             )
             pane(service, copied)
 
-            onNodeWithContentDescription("value-key-name").assertIsDisplayed()
-            onNodeWithContentDescription("value-text").assertIsDisplayed()
+            onNodeWithTag("value-key-name").assertIsDisplayed()
+            onNodeWithTag("value-text").assertIsDisplayed()
 
-            onNodeWithContentDescription("value-json").performClick()
+            onNodeWithTag("value-json").performClick()
             waitForIdle()
-            onNodeWithContentDescription("value-json-text").assertIsDisplayed()
+            onNodeWithTag("value-json-text").assertIsDisplayed()
 
-            onNodeWithContentDescription("value-copy").performClick()
+            onNodeWithTag("value-copy").performClick()
             waitForIdle()
 
             // §3.7: a copy is of the original bytes, not of what this pane reformatted.
@@ -122,9 +122,9 @@ class RedisValueUiTest {
             )
             pane(service)
 
-            onNodeWithContentDescription("value-binary").assertIsDisplayed()
+            onNodeWithTag("value-binary").assertIsDisplayed()
             // No JSON tab at all: there is no complete UTF-8 text to parse.
-            onNodeWithContentDescription("value-json").assertDoesNotExist()
+            onNodeWithTag("value-json").assertDoesNotExist()
         }
 
     @Test
@@ -141,10 +141,10 @@ class RedisValueUiTest {
             )
             pane(service)
 
-            onNodeWithContentDescription("value-hash").assertIsDisplayed()
+            onNodeWithTag("value-hash").assertIsDisplayed()
             onNodeWithText("email").assertIsDisplayed()
 
-            onNodeWithContentDescription("value-more").performClick()
+            onNodeWithTag("value-more").performClick()
             waitForIdle()
 
             assertEquals(2, service.calls.count { it.startsWith("redisValue") })
@@ -159,8 +159,8 @@ class RedisValueUiTest {
             )
             pane(service)
 
-            onNodeWithContentDescription("value-empty-collection").assertIsDisplayed()
-            onNodeWithContentDescription("value-missing").assertDoesNotExist()
+            onNodeWithTag("value-empty-collection").assertIsDisplayed()
+            onNodeWithTag("value-missing").assertDoesNotExist()
         }
 
     @Test
@@ -171,9 +171,9 @@ class RedisValueUiTest {
             }
             pane(service)
 
-            onNodeWithContentDescription("value-missing").assertIsDisplayed()
+            onNodeWithTag("value-missing").assertIsDisplayed()
             // Not an error banner: nothing failed.
-            onNodeWithContentDescription("value-retry").assertIsDisplayed()
+            onNodeWithTag("value-retry").assertIsDisplayed()
         }
 
     @Test
@@ -192,8 +192,8 @@ class RedisValueUiTest {
             )
             pane(service)
 
-            onNodeWithContentDescription("value-zset").assertIsDisplayed()
+            onNodeWithTag("value-zset").assertIsDisplayed()
             onNodeWithText("1.5").assertIsDisplayed()
-            onNodeWithContentDescription("value-rank-note").assertIsDisplayed()
+            onNodeWithTag("value-rank-note").assertIsDisplayed()
         }
 }

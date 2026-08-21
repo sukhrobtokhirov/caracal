@@ -23,10 +23,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import dev.dbide.app.ThemeViewModel
@@ -62,7 +61,7 @@ fun SettingsDialog(theme: ThemeViewModel, onDismiss: () -> Unit) {
     AppDialog(
         title = "Settings",
         subtitle = "Preferences are stored unencrypted beside the vault, so the first screen can honour them.",
-        description = "settings-dialog",
+        tag = "settings-dialog",
         icon = { AppMark(size = 26.dp) },
         onDismiss = onDismiss,
         maxWidth = 760.dp,
@@ -73,7 +72,7 @@ fun SettingsDialog(theme: ThemeViewModel, onDismiss: () -> Unit) {
                 RailItem(
                     label = entry.label,
                     detail = entry.detail,
-                    description = "settings-${entry.name.lowercase()}",
+                    tag = "settings-${entry.name.lowercase()}",
                     selected = section == entry,
                     onClick = { section = entry },
                     leading = { Glyph(entry.glyph, size = 14) },
@@ -85,7 +84,7 @@ fun SettingsDialog(theme: ThemeViewModel, onDismiss: () -> Unit) {
             OutlinedButton(
                 shape = MaterialTheme.shapes.small,
                 onClick = onDismiss,
-                modifier = Modifier.semantics { contentDescription = "settings-done" },
+                modifier = Modifier.testTag("settings-done"),
             ) {
                 Text("Done")
             }
@@ -121,7 +120,7 @@ private fun Appearance(theme: ThemeViewModel) {
                 RailItem(
                     label = mode.label,
                     detail = mode.blurb,
-                    description = "theme-choice-${mode.wire}",
+                    tag = "theme-choice-${mode.wire}",
                     selected = theme.mode == mode,
                     onClick = { theme.select(mode) },
                     leading = { ThemeSwatch(mode) },

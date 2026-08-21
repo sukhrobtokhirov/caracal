@@ -9,6 +9,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
@@ -20,8 +21,6 @@ import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.semantics.clearAndSetSemantics
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import dev.dbide.core.connections.Engine
@@ -80,7 +79,7 @@ fun EngineLogo(
             .size(size)
             .then(
                 if (described) {
-                    Modifier.semantics { contentDescription = "engine-${engine.wire}" }
+                    Modifier.testTag("engine-${engine.wire}")
                 } else {
                     Modifier.clearAndSetSemantics {}
                 },
@@ -251,7 +250,7 @@ private fun DrawScope.drawStack() {
 fun AppMark(modifier: Modifier = Modifier, size: Dp = 18.dp) {
     val accent = MaterialTheme.colorScheme.primary
     val dim = MaterialTheme.colorScheme.onSurfaceVariant
-    Canvas(modifier = modifier.size(size).semantics { contentDescription = "app-mark" }) {
+    Canvas(modifier = modifier.size(size).testTag("app-mark")) {
         val s = this.size.minDimension / 100f
         drawRoundRect(
             color = dim.copy(alpha = 0.6f),

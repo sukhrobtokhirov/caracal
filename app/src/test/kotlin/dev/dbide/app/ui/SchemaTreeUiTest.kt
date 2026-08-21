@@ -7,7 +7,7 @@ import androidx.compose.ui.test.ComposeUiTest
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.doubleClick
-import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performMouseInput
@@ -77,8 +77,8 @@ class SchemaTreeUiTest {
         return model
     }
 
-    private fun ComposeUiTest.clickNode(description: String) {
-        onNodeWithContentDescription(description).performClick()
+    private fun ComposeUiTest.clickNode(tag: String) {
+        onNodeWithTag(tag).performClick()
         waitForIdle()
     }
 
@@ -88,10 +88,10 @@ class SchemaTreeUiTest {
             val service = service()
             tree(service)
 
-            onNodeWithContentDescription("node-schema-public").assertIsDisplayed()
-            onNodeWithContentDescription("node-schema-sales").assertIsDisplayed()
+            onNodeWithTag("node-schema-public").assertIsDisplayed()
+            onNodeWithTag("node-schema-sales").assertIsDisplayed()
             // Nothing inside a schema has been asked for, so nothing inside one is drawn.
-            onNodeWithContentDescription("node-folder-public-table").assertDoesNotExist()
+            onNodeWithTag("node-folder-public-table").assertDoesNotExist()
             assertEquals(listOf("schemas(system=false)"), service.calls)
         }
 
@@ -101,15 +101,15 @@ class SchemaTreeUiTest {
             tree(service())
 
             clickNode("node-schema-public")
-            onNodeWithContentDescription("node-folder-public-table").assertIsDisplayed()
+            onNodeWithTag("node-folder-public-table").assertIsDisplayed()
             // A kind this schema has none of is not a line in the tree.
-            onNodeWithContentDescription("node-folder-public-function").assertDoesNotExist()
+            onNodeWithTag("node-folder-public-function").assertDoesNotExist()
 
             clickNode("node-folder-public-table")
-            onNodeWithContentDescription("node-object-public-users").assertIsDisplayed()
+            onNodeWithTag("node-object-public-users").assertIsDisplayed()
 
             clickNode("node-object-public-users")
-            onNodeWithContentDescription("node-column-public-users-1").assertIsDisplayed()
+            onNodeWithTag("node-column-public-users-1").assertIsDisplayed()
             onNodeWithText("bigint").assertIsDisplayed()
             onNodeWithText("PK").assertIsDisplayed()
         }
@@ -123,11 +123,11 @@ class SchemaTreeUiTest {
             // ten device-independent pixels of text with a row behind it.
             clickNode("node-schema-public-toggle")
 
-            onNodeWithContentDescription("node-folder-public-table").assertIsDisplayed()
+            onNodeWithTag("node-folder-public-table").assertIsDisplayed()
 
             clickNode("node-schema-public-toggle")
 
-            onNodeWithContentDescription("node-folder-public-table").assertDoesNotExist()
+            onNodeWithTag("node-folder-public-table").assertDoesNotExist()
         }
 
     @Test
@@ -137,8 +137,8 @@ class SchemaTreeUiTest {
         clickNode("node-folder-public-table")
         clickNode("node-object-public-users")
 
-        onNodeWithContentDescription("node-column-public-users-1").assertIsDisplayed()
-        onNodeWithContentDescription("node-column-public-users-1-toggle").assertDoesNotExist()
+        onNodeWithTag("node-column-public-users-1").assertIsDisplayed()
+        onNodeWithTag("node-column-public-users-1-toggle").assertDoesNotExist()
     }
 
     @Test
@@ -150,10 +150,10 @@ class SchemaTreeUiTest {
 
             clickNode("node-schema-public")
 
-            onNodeWithContentDescription("node-error").assertIsDisplayed()
+            onNodeWithTag("node-error").assertIsDisplayed()
             onNodeWithText("permission denied for schema public", substring = true).assertIsDisplayed()
             // The tree is still a tree: the schema that reads fine is still there.
-            onNodeWithContentDescription("node-schema-sales").assertIsDisplayed()
+            onNodeWithTag("node-schema-sales").assertIsDisplayed()
         }
 
     @Test
@@ -164,7 +164,7 @@ class SchemaTreeUiTest {
             clickNode("node-schema-public")
             clickNode("node-folder-public-table")
 
-            onNodeWithContentDescription("node-object-public-users").performMouseInput {
+            onNodeWithTag("node-object-public-users").performMouseInput {
                 doubleClick()
             }
             waitForIdle()
@@ -181,23 +181,23 @@ class SchemaTreeUiTest {
             clickNode("node-schema-public")
             clickNode("node-folder-public-table")
 
-            onNodeWithContentDescription("node-object-public-users").performMouseInput {
+            onNodeWithTag("node-object-public-users").performMouseInput {
                 rightClick()
             }
             waitForIdle()
 
-            onNodeWithContentDescription("menu-select-rows").assertIsDisplayed()
-            onNodeWithContentDescription("menu-copy").assertIsDisplayed()
-            onNodeWithContentDescription("menu-refresh").assertIsDisplayed()
+            onNodeWithTag("menu-select-rows").assertIsDisplayed()
+            onNodeWithTag("menu-copy").assertIsDisplayed()
+            onNodeWithTag("menu-refresh").assertIsDisplayed()
 
-            onNodeWithContentDescription("menu-select-rows").performClick()
+            onNodeWithTag("menu-select-rows").performClick()
             waitForIdle()
 
             // Bounded, quoted, qualified — and it arrives in the editor rather than
             // at the server, so Run is still the user's decision.
             assertEquals(listOf("SELECT * FROM \"public\".\"users\" LIMIT 100;"), inserted)
             // The menu closes behind the action it performed.
-            onNodeWithContentDescription("menu-select-rows").assertDoesNotExist()
+            onNodeWithTag("menu-select-rows").assertDoesNotExist()
         }
 
     @Test
@@ -209,17 +209,17 @@ class SchemaTreeUiTest {
             clickNode("node-folder-public-table")
             clickNode("node-object-public-users")
 
-            onNodeWithContentDescription("node-column-public-users-2").performMouseInput {
+            onNodeWithTag("node-column-public-users-2").performMouseInput {
                 rightClick()
             }
             waitForIdle()
 
             // A column names nothing to select from and has nothing under it to
             // re-read, so it offers the two lines it can honour and no more.
-            onNodeWithContentDescription("menu-select-rows").assertDoesNotExist()
-            onNodeWithContentDescription("menu-refresh").assertDoesNotExist()
+            onNodeWithTag("menu-select-rows").assertDoesNotExist()
+            onNodeWithTag("menu-refresh").assertDoesNotExist()
 
-            onNodeWithContentDescription("menu-copy").performClick()
+            onNodeWithTag("menu-copy").performClick()
             waitForIdle()
 
             assertEquals(listOf("\"email\""), copied)
@@ -233,13 +233,13 @@ class SchemaTreeUiTest {
             tree(service)
             clickNode("node-schema-public")
 
-            onNodeWithContentDescription("node-folder-public-table").performMouseInput {
+            onNodeWithTag("node-folder-public-table").performMouseInput {
                 rightClick()
             }
             waitForIdle()
 
-            onNodeWithContentDescription("menu-insert").assertDoesNotExist()
-            onNodeWithContentDescription("menu-refresh").performClick()
+            onNodeWithTag("menu-insert").assertDoesNotExist()
+            onNodeWithTag("menu-refresh").performClick()
             waitForIdle()
 
             // One node re-read, not the whole connection: the schema list is still
@@ -256,11 +256,11 @@ class SchemaTreeUiTest {
                 listOf(SchemaInfo("public"), SchemaInfo("pg_catalog", system = true)),
             )
             tree(service)
-            onNodeWithContentDescription("node-schema-pg_catalog").assertDoesNotExist()
+            onNodeWithTag("node-schema-pg_catalog").assertDoesNotExist()
 
             clickNode("tree-system-schemas")
 
-            onNodeWithContentDescription("node-schema-pg_catalog").assertIsDisplayed()
+            onNodeWithTag("node-schema-pg_catalog").assertIsDisplayed()
             onNodeWithText("system").assertIsDisplayed()
         }
 
@@ -284,15 +284,15 @@ class SchemaTreeUiTest {
             }
             waitForIdle()
 
-            onNodeWithContentDescription("connection-Closed").performClick()
+            onNodeWithTag("connection-Closed").performClick()
             waitForIdle()
-            onNodeWithContentDescription("schema-tree").assertDoesNotExist()
+            onNodeWithTag("schema-tree").assertDoesNotExist()
 
-            onNodeWithContentDescription("connection-Live").performClick()
+            onNodeWithTag("connection-Live").performClick()
             waitForIdle()
 
-            onNodeWithContentDescription("schema-tree").assertIsDisplayed()
-            onNodeWithContentDescription("node-schema-public").assertIsDisplayed()
+            onNodeWithTag("schema-tree").assertIsDisplayed()
+            onNodeWithTag("node-schema-public").assertIsDisplayed()
             // A closed connection is not dialed to fill a panel.
             assertEquals(closed.config.name, "Closed")
         }
@@ -316,9 +316,9 @@ class SchemaTreeUiTest {
             }
             waitForIdle()
 
-            onNodeWithContentDescription("connection-Cache").performClick()
+            onNodeWithTag("connection-Cache").performClick()
             waitForIdle()
 
-            onNodeWithContentDescription("schema-tree").assertDoesNotExist()
+            onNodeWithTag("schema-tree").assertDoesNotExist()
         }
 }

@@ -16,10 +16,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.unit.dp
@@ -50,7 +49,7 @@ fun ErrorBanner(
     Banner(
         background = MaterialTheme.colorScheme.errorContainer,
         foreground = MaterialTheme.colorScheme.onErrorContainer,
-        description = "failure-${failure.code}",
+        tag = "failure-${failure.code}",
         onDismiss = onDismiss,
         modifier = modifier,
     ) {
@@ -69,7 +68,7 @@ fun ErrorBanner(
                 style = MaterialTheme.typography.bodySmall,
                 fontStyle = FontStyle.Italic,
                 color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.9f),
-                modifier = Modifier.semantics { contentDescription = "error-note" },
+                modifier = Modifier.testTag("error-note"),
             )
         }
         Text(
@@ -127,7 +126,7 @@ private fun ErrorField(label: String, value: String, foreground: Color) {
             text = value,
             style = MaterialTheme.typography.bodySmall,
             color = foreground.copy(alpha = 0.9f),
-            modifier = Modifier.semantics { contentDescription = "error-${label.lowercase()}" },
+            modifier = Modifier.testTag("error-${label.lowercase()}"),
         )
     }
 }
@@ -141,7 +140,7 @@ fun TestResultBanner(result: TestResult, onDismiss: (() -> Unit)? = null, modifi
         // an outcome.
         background = Dbide.colors.successContainer,
         foreground = Dbide.colors.onSuccessContainer,
-        description = "test-succeeded",
+        tag = "test-succeeded",
         onDismiss = onDismiss,
         modifier = modifier,
     ) {
@@ -174,7 +173,7 @@ fun TestResultBanner(result: TestResult, onDismiss: (() -> Unit)? = null, modifi
 private fun Banner(
     background: Color,
     foreground: Color,
-    description: String,
+    tag: String,
     onDismiss: (() -> Unit)?,
     modifier: Modifier = Modifier,
     content: @Composable () -> Unit,
@@ -185,7 +184,7 @@ private fun Banner(
             .clip(MaterialTheme.shapes.medium)
             .background(background)
             .height(IntrinsicSize.Min)
-            .semantics { contentDescription = description },
+            .testTag(tag),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.Top,
     ) {
@@ -203,7 +202,7 @@ private fun Banner(
         }
         onDismiss?.let {
             Box(modifier = Modifier.padding(Space.sm)) {
-                ToolButton(text = "Dismiss", onClick = it, description = "banner-dismiss")
+                ToolButton(text = "Dismiss", onClick = it, tag = "banner-dismiss")
             }
         }
     }

@@ -6,7 +6,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.test.ComposeUiTest
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertIsDisplayed
-import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.v2.runDesktopComposeUiTest
@@ -76,16 +76,16 @@ class RedisBrowserUiTest {
             browser(service)
             val reads = service.calls.size
 
-            onNodeWithContentDescription("redis-group-user").assertIsDisplayed()
+            onNodeWithTag("redis-group-user").assertIsDisplayed()
             // A key with no delimiter in it is a leaf at the root rather than a group
             // of one.
-            onNodeWithContentDescription("redis-key-health").assertIsDisplayed()
-            onNodeWithContentDescription("redis-key-profile").assertDoesNotExist()
+            onNodeWithTag("redis-key-health").assertIsDisplayed()
+            onNodeWithTag("redis-key-profile").assertDoesNotExist()
 
-            onNodeWithContentDescription("redis-group-user").performClick()
+            onNodeWithTag("redis-group-user").performClick()
             waitForIdle()
 
-            onNodeWithContentDescription("redis-group-1").assertIsDisplayed()
+            onNodeWithTag("redis-group-1").assertIsDisplayed()
             // The tree is a presentation of keys already scanned. It has nothing to call.
             assertEquals(reads, service.calls.size)
         }
@@ -99,15 +99,15 @@ class RedisBrowserUiTest {
             val opened = mutableListOf<RedisKey>()
             browser(service, opened)
 
-            onNodeWithContentDescription("redis-group-user").performClick()
+            onNodeWithTag("redis-group-user").performClick()
             waitForIdle()
-            onNodeWithContentDescription("redis-group-42").performClick()
+            onNodeWithTag("redis-group-42").performClick()
             waitForIdle()
             // The row is labelled `profile` — the last segment — and what it produces
             // is the whole key. §3.4's rule that a command is never reconstructed from
             // a display label, asserted at the one place a label could be mistaken for
             // one.
-            onNodeWithContentDescription("redis-key-profile").performClick()
+            onNodeWithTag("redis-key-profile").performClick()
             waitForIdle()
 
             assertEquals(listOf("user:42:profile"), opened.map { it.text })
@@ -121,9 +121,9 @@ class RedisBrowserUiTest {
             }
             browser(service)
 
-            onNodeWithContentDescription("key-type-hash").assertIsDisplayed()
-            onNodeWithContentDescription("key-ttl").assertIsDisplayed()
-            onNodeWithContentDescription("key-memory").assertIsDisplayed()
+            onNodeWithTag("key-type-hash", useUnmergedTree = true).assertIsDisplayed()
+            onNodeWithTag("key-ttl", useUnmergedTree = true).assertIsDisplayed()
+            onNodeWithTag("key-memory", useUnmergedTree = true).assertIsDisplayed()
         }
 
     @Test
@@ -134,13 +134,13 @@ class RedisBrowserUiTest {
             }
             browser(service)
 
-            onNodeWithContentDescription("keys-load-more").assertIsDisplayed()
-            onNodeWithContentDescription("keys-progress").assertIsDisplayed()
+            onNodeWithTag("keys-load-more").assertIsDisplayed()
+            onNodeWithTag("keys-progress").assertIsDisplayed()
             // The warning is permanent rather than a one-time notice: it is how SCAN
             // works, and it applies to every page on screen.
-            onNodeWithContentDescription("keys-snapshot-warning").assertIsDisplayed()
+            onNodeWithTag("keys-snapshot-warning").assertIsDisplayed()
 
-            onNodeWithContentDescription("keys-load-more").performClick()
+            onNodeWithTag("keys-load-more").performClick()
             waitForIdle()
 
             assertTrue(service.calls.count { it.startsWith("redisScan") } >= 2)
@@ -155,15 +155,15 @@ class RedisBrowserUiTest {
             }
             browser(service)
 
-            onNodeWithContentDescription("keys-empty-complete").assertIsDisplayed()
+            onNodeWithTag("keys-empty-complete").assertIsDisplayed()
 
             // The other case: the cursor is still advancing and nothing has matched
             // yet, which is a fact about the budget rather than about the keyspace.
             service.scanPage = page(cursor = "12", stopped = ScanStop.PAGE_FULL)
-            onNodeWithContentDescription("keys-refresh").performClick()
+            onNodeWithTag("keys-refresh").performClick()
             waitForIdle()
 
-            onNodeWithContentDescription("keys-empty-partial").assertIsDisplayed()
+            onNodeWithTag("keys-empty-partial").assertIsDisplayed()
         }
 
     @Test
@@ -177,21 +177,21 @@ class RedisBrowserUiTest {
             // A pattern that matches nothing, so the empty state has to explain
             // itself in terms of the filter rather than the keyspace.
             service.scanPage = page()
-            onNodeWithContentDescription("keys-pattern").performTextInput("nope:*")
-            onNodeWithContentDescription("keys-search").performClick()
+            onNodeWithTag("keys-pattern").performTextInput("nope:*")
+            onNodeWithTag("keys-search").performClick()
             waitForIdle()
 
-            onNodeWithContentDescription("keys-empty-complete").assertIsDisplayed()
-            onNodeWithContentDescription("keys-clear-filters").assertIsDisplayed()
+            onNodeWithTag("keys-empty-complete").assertIsDisplayed()
+            onNodeWithTag("keys-clear-filters").assertIsDisplayed()
 
             service.scanPage = page(key("session:a"))
-            onNodeWithContentDescription("keys-clear-filters").performClick()
+            onNodeWithTag("keys-clear-filters").performClick()
             waitForIdle()
 
             // Both the box and the traversal, so the browser is back where it started.
             assertEquals("", model.pattern)
             assertEquals("redisScan(0, null, null)", service.calls.last { it.startsWith("redisScan") })
-            onNodeWithContentDescription("keys-clear-filters").assertDoesNotExist()
+            onNodeWithTag("keys-clear-filters").assertDoesNotExist()
         }
 
     @Test
@@ -204,8 +204,8 @@ class RedisBrowserUiTest {
 
             // An empty database is not a filter problem, and a button that would
             // change nothing is a button that teaches people to distrust them.
-            onNodeWithContentDescription("keys-empty-complete").assertIsDisplayed()
-            onNodeWithContentDescription("keys-clear-filters").assertDoesNotExist()
+            onNodeWithTag("keys-empty-complete").assertIsDisplayed()
+            onNodeWithTag("keys-clear-filters").assertDoesNotExist()
         }
 
     @Test
@@ -216,9 +216,9 @@ class RedisBrowserUiTest {
             }
             browser(service)
 
-            onNodeWithContentDescription("keys-pattern").performTextInput("session:*")
+            onNodeWithTag("keys-pattern").performTextInput("session:*")
             waitForIdle()
-            onNodeWithContentDescription("keys-search").performClick()
+            onNodeWithTag("keys-search").performClick()
             waitForIdle()
 
             assertEquals(

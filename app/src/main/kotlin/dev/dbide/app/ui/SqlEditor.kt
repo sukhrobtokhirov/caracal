@@ -24,6 +24,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
@@ -32,8 +33,6 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextLayoutResult
@@ -85,7 +84,7 @@ fun SqlEditor(
     shortcuts: Shortcuts = remember { Shortcuts() },
     focus: FocusRequest = remember { FocusRequest() },
 ) {
-    Column(modifier = modifier.fillMaxSize().semantics { contentDescription = "sql-editor" }) {
+    Column(modifier = modifier.fillMaxSize().testTag("sql-editor")) {
         EditorToolbar(model, shortcuts)
         Hairline()
         EditorText(model, shortcuts, focus, modifier = Modifier.weight(1f))
@@ -116,13 +115,13 @@ private fun EditorToolbar(model: EditorViewModel, shortcuts: Shortcuts) {
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f).semantics { contentDescription = "editor-run-label" },
+            modifier = Modifier.weight(1f).testTag("editor-run-label"),
         )
         if (model.running) {
             ToolButton(
                 text = "Cancel",
                 onClick = model::cancel,
-                description = "editor-cancel",
+                tag = "editor-cancel",
                 emphasis = ToolEmphasis.DANGER,
                 tooltip = "${Shortcut.CANCEL.action}  ${shortcuts.chord(Shortcut.CANCEL)}",
             )
@@ -133,7 +132,7 @@ private fun EditorToolbar(model: EditorViewModel, shortcuts: Shortcuts) {
         ToolButton(
             text = "Run  ${shortcuts.chord(Shortcut.RUN)}",
             onClick = model::execute,
-            description = "editor-run",
+            tag = "editor-run",
             enabled = model.runnable,
             emphasis = ToolEmphasis.PRIMARY,
             tooltip = Shortcut.RUN.detail,
@@ -235,7 +234,7 @@ private fun EditorText(
                     model.execute()
                     true
                 }
-                .semantics { contentDescription = "editor-text" },
+                .testTag("editor-text"),
         )
     }
 }
@@ -275,7 +274,7 @@ private fun Gutter(
             .width(width)
             .height(height)
             .background(Dbide.colors.gutter)
-            .semantics { contentDescription = "editor-gutter" },
+            .testTag("editor-gutter"),
     ) {
         val result = layout ?: return@Canvas
         var number = 0

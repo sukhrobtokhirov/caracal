@@ -24,11 +24,10 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
@@ -115,7 +114,7 @@ fun VaultScreen(viewModel: VaultViewModel, theme: ThemeViewModel) {
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .focusRequester(focus)
-                                .semantics { contentDescription = "master-password" },
+                                .testTag("master-password"),
                         )
 
                         if (setup) {
@@ -130,7 +129,7 @@ fun VaultScreen(viewModel: VaultViewModel, theme: ThemeViewModel) {
                                 keyboardActions = KeyboardActions(onDone = { viewModel.submit() }),
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .semantics { contentDescription = "confirm-master-password" },
+                                    .testTag("confirm-master-password"),
                             )
                             Text(
                                 "At least ${viewModel.minimumPasswordLength} characters. Length matters " +
@@ -146,7 +145,7 @@ fun VaultScreen(viewModel: VaultViewModel, theme: ThemeViewModel) {
                             hint,
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.error,
-                            modifier = Modifier.semantics { contentDescription = "vault-hint" },
+                            modifier = Modifier.testTag("vault-hint"),
                         )
                     }
 
@@ -162,7 +161,7 @@ fun VaultScreen(viewModel: VaultViewModel, theme: ThemeViewModel) {
                             shape = MaterialTheme.shapes.small,
                             onClick = viewModel::submit,
                             enabled = viewModel.canSubmit,
-                            modifier = Modifier.semantics { contentDescription = "vault-submit" },
+                            modifier = Modifier.testTag("vault-submit"),
                         ) {
                             Text(if (setup) "Create master password" else "Unlock")
                         }
@@ -179,7 +178,7 @@ fun VaultScreen(viewModel: VaultViewModel, theme: ThemeViewModel) {
                                 "Deriving the key…",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.semantics { contentDescription = "vault-busy" },
+                                modifier = Modifier.testTag("vault-busy"),
                             )
                         }
                     }

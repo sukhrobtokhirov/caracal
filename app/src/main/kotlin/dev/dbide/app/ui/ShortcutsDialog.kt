@@ -18,9 +18,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import dev.dbide.app.Shortcut
@@ -46,20 +45,20 @@ fun ShortcutsDialog(shortcuts: Shortcuts, onDismiss: () -> Unit) {
     AppDialog(
         title = "Keyboard shortcuts",
         subtitle = "Every one of these is also a button somewhere.",
-        description = "shortcuts-window",
+        tag = "shortcuts-window",
         icon = { Glyph(Glyphs.SHORTCUTS, size = 18) },
         maxWidth = 620.dp,
         maxHeight = 560.dp,
         onDismiss = onDismiss,
         footer = {
             Box(modifier = Modifier.weight(1f))
-            ToolButton(text = "Close", onClick = onDismiss, description = "shortcuts-close")
+            ToolButton(text = "Close", onClick = onDismiss, tag = "shortcuts-close")
         },
     ) {
         InlineField(
             value = query,
             onValueChange = { query = it },
-            description = "shortcuts-search",
+            tag = "shortcuts-search",
             placeholder = "Search shortcuts",
             monospace = false,
             modifier = Modifier.fillMaxWidth(),
@@ -70,7 +69,7 @@ fun ShortcutsDialog(shortcuts: Shortcuts, onDismiss: () -> Unit) {
                 text = "Nothing here matches \"$query\".",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.semantics { contentDescription = "shortcuts-no-match" },
+                modifier = Modifier.testTag("shortcuts-no-match"),
             )
             return@AppDialog
         }
@@ -94,7 +93,7 @@ private fun ShortcutRow(shortcut: Shortcut, shortcuts: Shortcuts) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .semantics { contentDescription = "shortcut-${shortcut.name.lowercase()}" },
+            .testTag("shortcut-${shortcut.name.lowercase()}"),
         horizontalArrangement = Arrangement.spacedBy(Space.lg),
         verticalAlignment = Alignment.Top,
     ) {

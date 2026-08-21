@@ -24,12 +24,13 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
@@ -78,7 +79,7 @@ fun ConnectionDialog(
         } else {
             "Everything stays on this machine. The password is sealed in the local vault."
         },
-        description = if (form.isEditing) "edit-connection-dialog" else "new-connection-dialog",
+        tag = if (form.isEditing) "edit-connection-dialog" else "new-connection-dialog",
         icon = { EngineTile(form.engine, size = 36.dp, selected = true) },
         onDismiss = onCancel,
         // A half-typed connection is not something to lose to a stray click.
@@ -93,7 +94,7 @@ fun ConnectionDialog(
                 shape = MaterialTheme.shapes.small,
                 onClick = onCancel,
                 enabled = !busy,
-                modifier = Modifier.semantics { contentDescription = "cancel-form" },
+                modifier = Modifier.testTag("cancel-form"),
             ) {
                 Text("Cancel")
             }
@@ -103,7 +104,7 @@ fun ConnectionDialog(
                 // Disabled while saving: this is what stops a double click from
                 // creating the connection twice.
                 enabled = !busy,
-                modifier = Modifier.semantics { contentDescription = "save-connection" },
+                modifier = Modifier.testTag("save-connection"),
             ) {
                 Text(if (form.isEditing) "Save changes" else "Create connection")
             }
@@ -122,7 +123,7 @@ fun ConnectionDialog(
                     error = form.errors[ValidationError.NAME],
                     enabled = !busy,
                     focusRequester = focusRequesters.getValue(ValidationError.NAME),
-                    description = "field-name",
+                    tag = "field-name",
                     placeholder = "payments-prod",
                     modifier = Modifier.weight(1f),
                 )
@@ -133,7 +134,7 @@ fun ConnectionDialog(
                     error = form.errors[ValidationError.COLOR],
                     enabled = !busy,
                     focusRequester = focusRequesters.getValue(ValidationError.COLOR),
-                    description = "field-color",
+                    tag = "field-color",
                     placeholder = "#4c8dff",
                     modifier = Modifier.width(180.dp),
                 )
@@ -149,7 +150,7 @@ fun ConnectionDialog(
                     error = form.errors[ValidationError.HOST],
                     enabled = !busy,
                     focusRequester = focusRequesters.getValue(ValidationError.HOST),
-                    description = "field-host",
+                    tag = "field-host",
                     placeholder = "localhost",
                     modifier = Modifier.weight(1f),
                 )
@@ -160,7 +161,7 @@ fun ConnectionDialog(
                     error = form.errors[ValidationError.PORT],
                     enabled = !busy,
                     focusRequester = focusRequesters.getValue(ValidationError.PORT),
-                    description = "field-port",
+                    tag = "field-port",
                     placeholder = form.engine.defaultPort.toString(),
                     modifier = Modifier.width(140.dp),
                 )
@@ -174,7 +175,7 @@ fun ConnectionDialog(
                     error = form.errors[ValidationError.DATABASE],
                     enabled = !busy,
                     focusRequester = focusRequesters.getValue(ValidationError.DATABASE),
-                    description = "field-database",
+                    tag = "field-database",
                     modifier = Modifier.weight(1f),
                 )
                 Field(
@@ -184,7 +185,7 @@ fun ConnectionDialog(
                     error = form.errors[ValidationError.USERNAME],
                     enabled = !busy,
                     focusRequester = focusRequesters.getValue(ValidationError.USERNAME),
-                    description = "field-username",
+                    tag = "field-username",
                     modifier = Modifier.weight(1f),
                 )
             }
@@ -198,7 +199,7 @@ fun ConnectionDialog(
                         onClick = { form.onTlsMode(mode) },
                         enabled = !busy,
                         label = { Text(mode.wire) },
-                        modifier = Modifier.semantics { contentDescription = "tls-choice-${mode.wire}" },
+                        modifier = Modifier.testTag("tls-choice-${mode.wire}"),
                     )
                 }
             }
@@ -226,7 +227,7 @@ fun ConnectionDialog(
                             }
                         },
                         modifier = Modifier.semantics {
-                            contentDescription = "environment-choice-${environment.wire}"
+                            testTag = "environment-choice-${environment.wire}"
                         },
                     )
                 }
@@ -240,7 +241,7 @@ fun ConnectionDialog(
                         .clip(MaterialTheme.shapes.medium)
                         .background(MaterialTheme.colorScheme.errorContainer)
                         .padding(Space.lg)
-                        .semantics { contentDescription = "prod-warning" },
+                        .testTag("prod-warning"),
                     horizontalArrangement = Arrangement.spacedBy(Space.md),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
@@ -258,7 +259,7 @@ fun ConnectionDialog(
                 onChange = form::onReadOnly,
                 enabled = !busy,
                 label = "Read only",
-                description = "field-read-only",
+                tag = "field-read-only",
                 glyph = Glyphs.READ_ONLY,
             )
         }
@@ -281,7 +282,7 @@ private fun EngineRail(form: ConnectionFormState, busy: Boolean) {
         RailItem(
             label = engine.title,
             detail = engine.blurb,
-            description = "engine-choice-${engine.wire}",
+            tag = "engine-choice-${engine.wire}",
             selected = form.engine == engine,
             enabled = !busy,
             onClick = { form.onEngine(engine) },
@@ -297,7 +298,7 @@ private fun EngineRail(form: ConnectionFormState, busy: Boolean) {
             .clip(MaterialTheme.shapes.medium)
             .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
             .padding(Space.md)
-            .semantics { contentDescription = "connection-preview" },
+            .testTag("connection-preview"),
     ) {
         Row(
             horizontalArrangement = Arrangement.spacedBy(Space.md),
@@ -363,7 +364,7 @@ private fun SecretField(form: ConnectionFormState, busy: Boolean) {
                 } else {
                     "Leave saved password unchanged"
                 },
-                description = "replace-password",
+                tag = "replace-password",
             )
             if (!form.replaceSecret && !form.hasStoredSecret) {
                 Text(
@@ -384,7 +385,7 @@ private fun SecretField(form: ConnectionFormState, busy: Boolean) {
                 visualTransformation = PasswordVisualTransformation(),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .semantics { contentDescription = "field-password" },
+                    .testTag("field-password"),
             )
             if (form.isEditing) {
                 Text(
@@ -405,7 +406,7 @@ private fun Field(
     error: String?,
     enabled: Boolean,
     focusRequester: FocusRequester,
-    description: String,
+    tag: String,
     modifier: Modifier = Modifier,
     placeholder: String? = null,
 ) {
@@ -421,7 +422,7 @@ private fun Field(
             modifier = Modifier
                 .fillMaxWidth()
                 .focusRequester(focusRequester)
-                .semantics { contentDescription = description },
+                .testTag(tag),
         )
         error?.let { FieldError(it) }
     }
@@ -437,14 +438,14 @@ private fun CheckboxRow(
     onChange: (Boolean) -> Unit,
     enabled: Boolean,
     label: String,
-    description: String,
+    tag: String,
     glyph: String? = null,
 ) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
             .toggleable(value = checked, enabled = enabled, role = Role.Checkbox, onValueChange = onChange)
-            .semantics { contentDescription = description },
+            .testTag(tag),
     ) {
         // The row owns the click, so the box itself must not also handle it.
         Checkbox(checked = checked, onCheckedChange = null, enabled = enabled)
@@ -463,7 +464,7 @@ private fun FieldError(message: String) {
         message,
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.error,
-        modifier = Modifier.semantics { contentDescription = "field-error" },
+        modifier = Modifier.testTag("field-error"),
     )
 }
 

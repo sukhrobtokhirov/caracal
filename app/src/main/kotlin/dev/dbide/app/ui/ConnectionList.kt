@@ -25,11 +25,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
@@ -82,14 +81,14 @@ fun ConnectionList(
             ToolButton(
                 text = "New",
                 onClick = onCreate,
-                description = "new-connection",
+                tag = "new-connection",
                 enabled = enabled,
                 emphasis = ToolEmphasis.PRIMARY,
             )
             // Collapsing from the pane itself, as well as from the shell. The button
             // that hides something should be on the thing being hidden; the one that
             // brings it back cannot be, which is why there are two of them.
-            ToolButton(text = "Hide", onClick = onCollapse, description = "collapse-sidebar")
+            ToolButton(text = "Hide", onClick = onCollapse, tag = "collapse-sidebar")
         }
         Hairline()
 
@@ -102,7 +101,7 @@ fun ConnectionList(
                     "No connections yet. Choose New to add a PostgreSQL or Redis server.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.semantics { contentDescription = "connections-empty" },
+                    modifier = Modifier.testTag("connections-empty"),
                 )
                 // The two marks the New window opens on. An empty sidebar is the one
                 // place with room to say what the application can talk to.
@@ -233,7 +232,7 @@ private fun ConnectionRow(
                 menuOpen = true
             }
             .handCursor()
-            .semantics { contentDescription = "connection-${view.config.name}" },
+            .testTag("connection-${view.config.name}"),
     ) {
         Box(
             modifier = Modifier
@@ -254,7 +253,7 @@ private fun ConnectionRow(
                 // POSTGRES badge that used to sit on the second line: the badge was a
                 // word being read to answer a question the eye can answer from a
                 // shape, and it took a third of the width the host needs. It carries
-                // the badge's own content description, so nothing announces less.
+                // the badge's own content tag, so nothing announces less.
                 EngineLogo(view.config.engine, size = 14.dp, described = true)
                 ColorSwatch(view.config.color)
                 // The name takes everything the status does not. A second weighted
@@ -294,7 +293,7 @@ private fun ConnectionRow(
             expanded = menuOpen,
             at = menuAt,
             onDismiss = { menuOpen = false },
-            description = "connection-menu",
+            tag = "connection-menu",
             actions = rowActions(view, enabled, actions),
         )
     }

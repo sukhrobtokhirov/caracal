@@ -21,10 +21,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.key
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -54,12 +53,12 @@ import dev.dbide.core.redis.RedisReply
  */
 @Composable
 fun RedisConsole(model: RedisConsoleViewModel, modifier: Modifier = Modifier) {
-    Column(modifier = modifier.fillMaxSize().semantics { contentDescription = "redis-console" }) {
+    Column(modifier = modifier.fillMaxSize().testTag("redis-console")) {
         PaneHeader(title = "Console", glyph = Glyphs.CONSOLE) {
             ToolButton(
                 text = "Clear",
                 onClick = model::clearHistory,
-                description = "console-clear",
+                tag = "console-clear",
                 enabled = model.entries.isNotEmpty(),
             )
         }
@@ -71,7 +70,7 @@ fun RedisConsole(model: RedisConsoleViewModel, modifier: Modifier = Modifier) {
                     title = "Nothing run yet",
                     detail = "Type a command — PING, GET user:42, TTL session:abc. " +
                         "Dangerous commands are blocked until you say otherwise.",
-                    description = "console-empty",
+                    tag = "console-empty",
                 )
             } else {
                 Transcript(model.entries)
@@ -103,7 +102,7 @@ private fun Transcript(entries: List<ConsoleEntry>) {
     SelectionContainer {
         LazyColumn(
             state = scroll,
-            modifier = Modifier.fillMaxSize().semantics { contentDescription = "console-transcript" },
+            modifier = Modifier.fillMaxSize().testTag("console-transcript"),
             contentPadding = PaddingValues(vertical = Space.sm),
         ) {
             items(entries, key = { it.sequence }) { entry -> Entry(entry) }
@@ -117,7 +116,7 @@ private fun Entry(entry: ConsoleEntry) {
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = Space.lg, vertical = Space.sm)
-            .semantics { contentDescription = "console-entry-${entry.sequence}" },
+            .testTag("console-entry-${entry.sequence}"),
         verticalArrangement = Arrangement.spacedBy(Space.xs),
     ) {
         Row(
@@ -148,7 +147,7 @@ private fun Entry(entry: ConsoleEntry) {
                 text = failure.message,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.error,
-                modifier = Modifier.semantics { contentDescription = "console-failure" },
+                modifier = Modifier.testTag("console-failure"),
             )
         }
 
@@ -159,7 +158,7 @@ private fun Entry(entry: ConsoleEntry) {
                     text = "The reply was larger than this build keeps; part of it is not shown.",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.semantics { contentDescription = "console-truncated" },
+                    modifier = Modifier.testTag("console-truncated"),
                 )
             }
         }
@@ -203,7 +202,7 @@ private fun Preview(parsed: ParsedLine) {
                 .fillMaxWidth()
                 .background(Dbide.colors.paneHeader)
                 .padding(horizontal = Space.lg, vertical = Space.sm)
-                .semantics { contentDescription = "console-parse-error" },
+                .testTag("console-parse-error"),
         )
 
         is ParsedLine.Ready -> if (parsed.ambiguous) {
@@ -218,7 +217,7 @@ private fun Preview(parsed: ParsedLine) {
                     .fillMaxWidth()
                     .background(Dbide.colors.paneHeader)
                     .padding(horizontal = Space.lg, vertical = Space.sm)
-                    .semantics { contentDescription = "console-parse-preview" },
+                    .testTag("console-parse-preview"),
             )
         }
     }
@@ -247,7 +246,7 @@ private fun Prompt(model: RedisConsoleViewModel) {
             InlineField(
                 value = model.line,
                 onValueChange = model::edit,
-                description = "console-input",
+                tag = "console-input",
                 // Not an example command: a placeholder that reads as a command is a
                 // placeholder someone tries to run, and one that looks identical to a
                 // line already typed.
@@ -276,13 +275,13 @@ private fun Prompt(model: RedisConsoleViewModel) {
             if (model.running) {
                 CircularProgressIndicator(
                     strokeWidth = 1.5.dp,
-                    modifier = Modifier.size(10.dp).semantics { contentDescription = "console-busy" },
+                    modifier = Modifier.size(10.dp).testTag("console-busy"),
                 )
             }
             ToolButton(
                 text = "Run",
                 onClick = model::run,
-                description = "console-run",
+                tag = "console-run",
                 enabled = model.runnable,
                 emphasis = ToolEmphasis.PRIMARY,
             )
@@ -292,7 +291,7 @@ private fun Prompt(model: RedisConsoleViewModel) {
                 "arguments can be a password, and nothing here is written to disk.",
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f),
-            modifier = Modifier.semantics { contentDescription = "console-privacy-note" },
+            modifier = Modifier.testTag("console-privacy-note"),
         )
     }
 }

@@ -37,6 +37,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
@@ -59,8 +60,8 @@ import androidx.compose.ui.input.pointer.isShiftPressed as pointerShiftPressed
 import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.testTag
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
@@ -129,7 +130,7 @@ fun ResultGrid(
                 state.copyText()?.let(onCopy)
                 true
             }
-            .semantics { contentDescription = "result-grid" },
+            .testTag("result-grid"),
     ) {
         if (result.columns.isEmpty()) {
             CommandResult(state, modifier = Modifier.weight(1f))
@@ -195,7 +196,7 @@ private fun Table(state: ResultGridState, focus: FocusRequester) {
                     EmptyState(
                         title = "No rows.",
                         detail = "The statement ran and matched nothing.",
-                        description = "grid-empty",
+                        tag = "grid-empty",
                         modifier = Modifier.align(Alignment.Center),
                     )
                 }
@@ -245,7 +246,7 @@ private fun HeaderCell(state: ResultGridState, index: Int, column: ResultColumn)
             modifier = Modifier
                 .fillMaxSize()
                 .padding(horizontal = CELL_PADDING, vertical = 4.dp)
-                .semantics(mergeDescendants = true) { contentDescription = "grid-header-$index" },
+                .semantics(mergeDescendants = true) { testTag = "grid-header-$index" },
             verticalArrangement = Arrangement.Center,
         ) {
             Text(
@@ -276,7 +277,7 @@ private fun HeaderCell(state: ResultGridState, index: Int, column: ResultColumn)
                         state.resize(index, amount.toDp().value)
                     }
                 }
-                .semantics { contentDescription = "grid-resize-$index" },
+                .testTag("grid-resize-$index"),
         ) {
             VerticalHairline(modifier = Modifier.align(Alignment.CenterEnd))
         }
@@ -362,7 +363,7 @@ private fun RowNumber(
                 }
             }
             .padding(horizontal = CELL_PADDING)
-            .semantics { contentDescription = "grid-row-$index" },
+            .testTag("grid-row-$index"),
         contentAlignment = Alignment.CenterEnd,
     ) {
         Text(
@@ -445,7 +446,7 @@ private fun GridCell(
                 },
             )
             .padding(horizontal = CELL_PADDING)
-            .semantics { contentDescription = "grid-cell-$row-$column" },
+            .testTag("grid-cell-$row-$column"),
         contentAlignment = if (format.rightAligned) Alignment.CenterEnd else Alignment.CenterStart,
     ) {
         Text(
@@ -485,7 +486,7 @@ private fun ValuePanel(state: ResultGridState, onCopy: (String) -> Unit) {
         modifier = Modifier
             .fillMaxWidth()
             .heightIn(min = 96.dp, max = 240.dp)
-            .semantics { contentDescription = "grid-detail" },
+            .testTag("grid-detail"),
     ) {
         Row(
             modifier = Modifier
@@ -507,15 +508,15 @@ private fun ValuePanel(state: ResultGridState, onCopy: (String) -> Unit) {
                 ToolButton(
                     text = if (pretty) "Raw" else "Pretty",
                     onClick = state::togglePrettyJson,
-                    description = "grid-detail-json",
+                    tag = "grid-detail-json",
                 )
             }
             ToolButton(
                 text = "Copy value",
                 onClick = { onCopy(raw) },
-                description = "grid-detail-copy",
+                tag = "grid-detail-copy",
             )
-            ToolButton(text = "Close", onClick = state::closePanel, description = "grid-detail-close")
+            ToolButton(text = "Close", onClick = state::closePanel, tag = "grid-detail-close")
         }
 
         SelectionContainer(modifier = Modifier.weight(1f)) {
@@ -526,7 +527,7 @@ private fun ValuePanel(state: ResultGridState, onCopy: (String) -> Unit) {
                     .fillMaxWidth()
                     .verticalScroll(rememberScrollState())
                     .padding(horizontal = Space.lg, vertical = Space.md)
-                    .semantics { contentDescription = "grid-detail-value" },
+                    .testTag("grid-detail-value"),
             )
         }
 
@@ -539,7 +540,7 @@ private fun ValuePanel(state: ResultGridState, onCopy: (String) -> Unit) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier
                     .padding(horizontal = Space.lg, vertical = Space.sm)
-                    .semantics { contentDescription = "grid-detail-truncated" },
+                    .testTag("grid-detail-truncated"),
             )
         }
     }
@@ -577,7 +578,7 @@ private fun NoticePanel(state: ResultGridState) {
         modifier = Modifier
             .fillMaxWidth()
             .heightIn(max = 132.dp)
-            .semantics { contentDescription = "grid-notices" },
+            .testTag("grid-notices"),
     ) {
         Row(
             modifier = Modifier
@@ -595,7 +596,7 @@ private fun NoticePanel(state: ResultGridState) {
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f),
             )
-            ToolButton(text = "Close", onClick = state::toggleNotices, description = "grid-notices-close")
+            ToolButton(text = "Close", onClick = state::toggleNotices, tag = "grid-notices-close")
         }
 
         SelectionContainer(modifier = Modifier.weight(1f, fill = false)) {
@@ -626,7 +627,7 @@ private fun NoticeLine(index: Int, notice: Notice) {
         // Merged: severity, message, detail, and hint are one thing the user reads and
         // one thing a screen reader should announce, not four adjacent fragments.
         modifier = Modifier.semantics(mergeDescendants = true) {
-            contentDescription = "grid-notice-$index"
+            testTag = "grid-notice-$index"
         },
     ) {
         Text(
@@ -667,27 +668,27 @@ private fun StatusBar(state: ResultGridState, onCopy: (String) -> Unit) {
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f).semantics { contentDescription = "grid-status" },
+            modifier = Modifier.weight(1f).testTag("grid-status"),
         )
         state.noticeLabel()?.let { label ->
             ToolButton(
                 text = label,
                 onClick = state::toggleNotices,
-                description = "grid-toggle-notices",
+                tag = "grid-toggle-notices",
             )
         }
         if (state.result.columns.isNotEmpty()) {
             ToolButton(
                 text = if (state.panelOpen) "Hide value" else "Show value",
                 onClick = { if (state.panelOpen) state.closePanel() else state.openPanel() },
-                description = "grid-toggle-panel",
+                tag = "grid-toggle-panel",
                 enabled = state.focused != null,
             )
         }
         ToolButton(
             text = state.copyLabel(),
             onClick = { copyable?.let(onCopy) },
-            description = "grid-copy",
+            tag = "grid-copy",
             enabled = copyable != null,
         )
     }
@@ -713,7 +714,7 @@ private fun CommandResult(state: ResultGridState, modifier: Modifier = Modifier)
             "It returned no columns, so there is no grid to show. " +
                 "The status line below carries what the server reported."
         },
-        description = "grid-command",
+        tag = "grid-command",
         modifier = modifier.fillMaxWidth(),
     )
 }

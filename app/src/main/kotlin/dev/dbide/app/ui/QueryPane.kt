@@ -28,11 +28,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.input.pointer.PointerIcon
 import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -156,7 +155,7 @@ private fun ReplaceScriptConfirmation(onConfirm: () -> Unit, onCancel: () -> Uni
         confirmButton = {
             TextButton(
                 onClick = onConfirm,
-                modifier = Modifier.semantics { contentDescription = "confirm-replace-script" },
+                modifier = Modifier.testTag("confirm-replace-script"),
             ) {
                 Text("Replace")
             }
@@ -164,12 +163,12 @@ private fun ReplaceScriptConfirmation(onConfirm: () -> Unit, onCancel: () -> Uni
         dismissButton = {
             TextButton(
                 onClick = onCancel,
-                modifier = Modifier.semantics { contentDescription = "cancel-replace-script" },
+                modifier = Modifier.testTag("cancel-replace-script"),
             ) {
                 Text("Keep mine")
             }
         },
-        modifier = Modifier.semantics { contentDescription = "replace-script-confirmation" },
+        modifier = Modifier.testTag("replace-script-confirmation"),
     )
 }
 
@@ -180,7 +179,7 @@ private fun ResultArea(model: EditorViewModel, export: ExportViewModel, onCopy: 
         EditorRun.Idle -> EmptyState(
             title = "No result yet",
             detail = "Run a statement to see its result.",
-            description = "query-idle",
+            tag = "query-idle",
         )
 
         is EditorRun.Running -> Running(model)
@@ -200,7 +199,7 @@ private fun ResultArea(model: EditorViewModel, export: ExportViewModel, onCopy: 
         EditorRun.Cancelled -> EmptyState(
             title = "Cancelled.",
             detail = "The statement was stopped before it returned. Nothing was left half-read.",
-            description = "query-cancelled",
+            tag = "query-cancelled",
         )
 
         is EditorRun.Failed -> Box(
@@ -228,7 +227,7 @@ private fun ResultArea(model: EditorViewModel, export: ExportViewModel, onCopy: 
 private fun Running(model: EditorViewModel) {
     val target = (model.run as? EditorRun.Running)?.target
     Column(
-        modifier = Modifier.fillMaxSize().semantics { contentDescription = "query-running" },
+        modifier = Modifier.fillMaxSize().testTag("query-running"),
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
@@ -275,7 +274,7 @@ private fun Splitter(onDrag: (Float) -> Unit) {
                     onDrag(amount)
                 }
             }
-            .semantics { contentDescription = "query-splitter" },
+            .testTag("query-splitter"),
         contentAlignment = Alignment.Center,
     ) {
         Hairline()
@@ -322,7 +321,7 @@ private fun ExportStrip(model: EditorViewModel, export: ExportViewModel, run: Ed
         ToolButton(
             text = "Export CSV…",
             onClick = { export.start(connection.id, sql, connection.name) },
-            description = "export-start",
+            tag = "export-start",
             enabled = refusal == null && !export.running,
         )
         if (export.running) {
@@ -330,7 +329,7 @@ private fun ExportStrip(model: EditorViewModel, export: ExportViewModel, run: Ed
             ToolButton(
                 text = "Stop",
                 onClick = export::cancel,
-                description = "export-stop",
+                tag = "export-stop",
                 emphasis = ToolEmphasis.DANGER,
             )
         }
@@ -344,7 +343,7 @@ private fun ExportStrip(model: EditorViewModel, export: ExportViewModel, run: Ed
             },
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f).semantics { contentDescription = "export-status" },
+            modifier = Modifier.weight(1f).testTag("export-status"),
         )
     }
 }

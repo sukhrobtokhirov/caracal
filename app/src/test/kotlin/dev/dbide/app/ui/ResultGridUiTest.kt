@@ -8,7 +8,7 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.doubleClick
-import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performKeyInput
 import androidx.compose.ui.test.performMouseInput
@@ -80,9 +80,9 @@ class ResultGridUiTest {
                 ),
             )
 
-            onNodeWithContentDescription("grid-header-0").assertTextContains("total")
-            onNodeWithContentDescription("grid-header-0").assertTextContains("int8")
-            onNodeWithContentDescription("grid-cell-0-0").assertTextEquals("42")
+            onNodeWithTag("grid-header-0").assertTextContains("total")
+            onNodeWithTag("grid-header-0").assertTextContains("int8")
+            onNodeWithTag("grid-cell-0-0").assertTextEquals("42")
         }
 
     @Test
@@ -96,9 +96,9 @@ class ResultGridUiTest {
                 ),
             )
 
-            onNodeWithContentDescription("grid-cell-0-0").assertTextEquals("NULL")
-            onNodeWithContentDescription("grid-cell-0-1").assertTextEquals("\"\"")
-            onNodeWithContentDescription("grid-cell-0-2").assertTextEquals("NULL")
+            onNodeWithTag("grid-cell-0-0").assertTextEquals("NULL")
+            onNodeWithTag("grid-cell-0-1").assertTextEquals("\"\"")
+            onNodeWithTag("grid-cell-0-2").assertTextEquals("NULL")
         }
 
     // --- Virtualization ------------------------------------------------------
@@ -108,14 +108,14 @@ class ResultGridUiTest {
         runDesktopComposeUiTest(width = 900, height = 600) {
             val state = grid(wide())
 
-            onNodeWithContentDescription("grid-cell-0-0").assertIsDisplayed()
-            onNodeWithContentDescription("grid-cell-4000-0").assertDoesNotExist()
+            onNodeWithTag("grid-cell-0-0").assertIsDisplayed()
+            onNodeWithTag("grid-cell-4000-0").assertDoesNotExist()
 
             runBlocking { state.vertical.scrollToItem(4_000) }
             waitForIdle()
 
-            onNodeWithContentDescription("grid-cell-4000-0").assertIsDisplayed()
-            onNodeWithContentDescription("grid-cell-0-0").assertDoesNotExist()
+            onNodeWithTag("grid-cell-4000-0").assertIsDisplayed()
+            onNodeWithTag("grid-cell-0-0").assertDoesNotExist()
         }
 
     @Test
@@ -133,15 +133,15 @@ class ResultGridUiTest {
                 ),
             )
 
-            onNodeWithContentDescription("grid-cell-0-0").assertIsDisplayed()
-            onNodeWithContentDescription("grid-cell-99999-0").assertDoesNotExist()
+            onNodeWithTag("grid-cell-0-0").assertIsDisplayed()
+            onNodeWithTag("grid-cell-99999-0").assertDoesNotExist()
 
             runBlocking { state.vertical.scrollToItem(99_999) }
             waitForIdle()
             scrollRight(state, 100_000)
 
-            onNodeWithContentDescription("grid-cell-99999-49").assertIsDisplayed()
-            onNodeWithContentDescription("grid-status")
+            onNodeWithTag("grid-cell-99999-49").assertIsDisplayed()
+            onNodeWithTag("grid-status")
                 .assertTextEquals("100,000 rows · 900 ms")
         }
 
@@ -150,29 +150,29 @@ class ResultGridUiTest {
         runDesktopComposeUiTest(width = 900, height = 600) {
             val state = grid(wide())
 
-            onNodeWithContentDescription("grid-cell-0-0").assertIsDisplayed()
-            onNodeWithContentDescription("grid-cell-0-39").assertDoesNotExist()
-            onNodeWithContentDescription("grid-header-39").assertDoesNotExist()
+            onNodeWithTag("grid-cell-0-0").assertIsDisplayed()
+            onNodeWithTag("grid-cell-0-39").assertDoesNotExist()
+            onNodeWithTag("grid-header-39").assertDoesNotExist()
 
             // Far enough right that the first columns are behind the left edge.
             scrollRight(state, 10_000)
 
-            onNodeWithContentDescription("grid-cell-0-39").assertIsDisplayed()
+            onNodeWithTag("grid-cell-0-39").assertIsDisplayed()
             // One scroll state drives the header and every row, so the column that
             // arrived on screen arrived under its own name.
-            onNodeWithContentDescription("grid-header-39").assertIsDisplayed()
-            onNodeWithContentDescription("grid-cell-0-0").assertDoesNotExist()
+            onNodeWithTag("grid-header-39").assertIsDisplayed()
+            onNodeWithTag("grid-cell-0-0").assertDoesNotExist()
         }
 
     @Test
     fun `the row numbers stay where they are when the columns scroll`() =
         runDesktopComposeUiTest(width = 900, height = 600) {
             val state = grid(wide())
-            onNodeWithContentDescription("grid-row-0").assertIsDisplayed()
+            onNodeWithTag("grid-row-0").assertIsDisplayed()
 
             scrollRight(state, 10_000)
 
-            onNodeWithContentDescription("grid-row-0").assertIsDisplayed()
+            onNodeWithTag("grid-row-0").assertIsDisplayed()
         }
 
     // --- Selection and copying -----------------------------------------------
@@ -191,10 +191,10 @@ class ResultGridUiTest {
                 ),
             )
 
-            onNodeWithContentDescription("grid-cell-0-0").performClick()
+            onNodeWithTag("grid-cell-0-0").performClick()
             waitForIdle()
-            onNodeWithContentDescription("grid-copy").assertTextEquals("Copy cell")
-            onNodeWithContentDescription("grid-copy").performClick()
+            onNodeWithTag("grid-copy").assertTextEquals("Copy cell")
+            onNodeWithTag("grid-copy").performClick()
             waitForIdle()
 
             // The value, tab included and unescaped: one cell is not a row of fields.
@@ -215,10 +215,10 @@ class ResultGridUiTest {
                 ),
             )
 
-            onNodeWithContentDescription("grid-row-1").performClick()
+            onNodeWithTag("grid-row-1").performClick()
             waitForIdle()
-            onNodeWithContentDescription("grid-copy").assertTextEquals("Copy row")
-            onNodeWithContentDescription("grid-copy").performClick()
+            onNodeWithTag("grid-copy").assertTextEquals("Copy row")
+            onNodeWithTag("grid-copy").performClick()
             waitForIdle()
 
             assertEquals(listOf("NULL\t2"), copied)
@@ -236,10 +236,10 @@ class ResultGridUiTest {
             )
             // The click is what gives the grid the keyboard, deliberately: a result
             // arriving must not take focus away from the editor that produced it.
-            onNodeWithContentDescription("grid-cell-0-0").performClick()
+            onNodeWithTag("grid-cell-0-0").performClick()
             waitForIdle()
 
-            onNodeWithContentDescription("result-grid").performKeyInput {
+            onNodeWithTag("result-grid").performKeyInput {
                 withKeyDown(Key.CtrlLeft) { pressKey(Key.C) }
             }
             waitForIdle()
@@ -261,17 +261,17 @@ class ResultGridUiTest {
                 ),
             )
 
-            onNodeWithContentDescription("grid-detail").assertDoesNotExist()
-            onNodeWithContentDescription("grid-cell-0-0").performMouseInput { doubleClick() }
+            onNodeWithTag("grid-detail").assertDoesNotExist()
+            onNodeWithTag("grid-cell-0-0").performMouseInput { doubleClick() }
             waitForIdle()
 
-            onNodeWithContentDescription("grid-detail-value").assertTextEquals("x".repeat(300))
+            onNodeWithTag("grid-detail-value").assertTextEquals("x".repeat(300))
             // And it says that this is not all of it.
-            onNodeWithContentDescription("grid-detail-truncated").assertIsDisplayed()
+            onNodeWithTag("grid-detail-truncated").assertIsDisplayed()
 
-            onNodeWithContentDescription("grid-detail-close").performClick()
+            onNodeWithTag("grid-detail-close").performClick()
             waitForIdle()
-            onNodeWithContentDescription("grid-detail").assertDoesNotExist()
+            onNodeWithTag("grid-detail").assertDoesNotExist()
         }
 
     @Test
@@ -286,20 +286,20 @@ class ResultGridUiTest {
                 ),
             )
 
-            onNodeWithContentDescription("grid-cell-0-0").performMouseInput { doubleClick() }
+            onNodeWithTag("grid-cell-0-0").performMouseInput { doubleClick() }
             waitForIdle()
 
-            onNodeWithContentDescription("grid-detail-value")
+            onNodeWithTag("grid-detail-value")
                 .assertTextEquals("{\n  \"id\": 1,\n  \"tags\": [\n    \"a\"\n  ]\n}")
 
             // The pretty view is a view: what leaves the application is what arrived.
-            onNodeWithContentDescription("grid-detail-copy").performClick()
+            onNodeWithTag("grid-detail-copy").performClick()
             waitForIdle()
             assertEquals(listOf(raw), copied)
 
-            onNodeWithContentDescription("grid-detail-json").performClick()
+            onNodeWithTag("grid-detail-json").performClick()
             waitForIdle()
-            onNodeWithContentDescription("grid-detail-value").assertTextEquals(raw)
+            onNodeWithTag("grid-detail-value").assertTextEquals(raw)
         }
 
     // --- The status bar ------------------------------------------------------
@@ -316,7 +316,7 @@ class ResultGridUiTest {
                 ),
             )
 
-            onNodeWithContentDescription("grid-status")
+            onNodeWithTag("grid-status")
                 .assertTextEquals("1,000 rows · 812 ms · truncated at the row limit")
         }
 
@@ -332,9 +332,9 @@ class ResultGridUiTest {
                 ),
             )
 
-            onNodeWithContentDescription("grid-command").assertIsDisplayed()
-            onNodeWithContentDescription("grid-status").assertTextEquals("3 rows affected · 4.00 ms")
-            onNodeWithContentDescription("grid-header-0").assertDoesNotExist()
+            onNodeWithTag("grid-command").assertIsDisplayed()
+            onNodeWithTag("grid-status").assertTextEquals("3 rows affected · 4.00 ms")
+            onNodeWithTag("grid-header-0").assertDoesNotExist()
         }
 
     // --- Notices --------------------------------------------------------------
@@ -354,8 +354,8 @@ class ResultGridUiTest {
                 ),
             )
 
-            onNodeWithContentDescription("grid-notices").assertIsDisplayed()
-            onNodeWithContentDescription("grid-notice-0").assertTextContains("NOTICE: checked 3 tables")
+            onNodeWithTag("grid-notices").assertIsDisplayed()
+            onNodeWithTag("grid-notice-0").assertTextContains("NOTICE: checked 3 tables")
         }
 
     @Test
@@ -377,7 +377,7 @@ class ResultGridUiTest {
                 ),
             )
 
-            val notice = onNodeWithContentDescription("grid-notice-0")
+            val notice = onNodeWithTag("grid-notice-0")
             notice.assertTextContains("WARNING: nothing was dropped")
             notice.assertTextContains("Detail: The table was not there.")
             notice.assertTextContains("Hint: Check the schema.")
@@ -397,14 +397,14 @@ class ResultGridUiTest {
                 ),
             )
 
-            onNodeWithContentDescription("grid-notices").assertIsDisplayed()
-            onNodeWithContentDescription("grid-notices-close").performClick()
+            onNodeWithTag("grid-notices").assertIsDisplayed()
+            onNodeWithTag("grid-notices-close").performClick()
 
-            onNodeWithContentDescription("grid-notices").assertDoesNotExist()
-            onNodeWithContentDescription("grid-toggle-notices").assertTextEquals("2 notices")
+            onNodeWithTag("grid-notices").assertDoesNotExist()
+            onNodeWithTag("grid-toggle-notices").assertTextEquals("2 notices")
 
-            onNodeWithContentDescription("grid-toggle-notices").performClick()
-            onNodeWithContentDescription("grid-notice-1").assertTextContains("second")
+            onNodeWithTag("grid-toggle-notices").performClick()
+            onNodeWithTag("grid-notice-1").assertTextContains("second")
         }
 
     @Test
@@ -418,8 +418,8 @@ class ResultGridUiTest {
                 ),
             )
 
-            onNodeWithContentDescription("grid-notices").assertDoesNotExist()
-            onNodeWithContentDescription("grid-toggle-notices").assertDoesNotExist()
+            onNodeWithTag("grid-notices").assertDoesNotExist()
+            onNodeWithTag("grid-toggle-notices").assertDoesNotExist()
         }
 
     @Test
@@ -437,7 +437,7 @@ class ResultGridUiTest {
                 ),
             )
 
-            onNodeWithContentDescription("grid-notice-0").assertTextContains(hostile)
+            onNodeWithTag("grid-notice-0").assertTextContains(hostile)
         }
 
     @Test
@@ -451,8 +451,8 @@ class ResultGridUiTest {
                 ),
             )
 
-            onNodeWithContentDescription("grid-header-0").assertIsDisplayed()
-            onNodeWithContentDescription("grid-empty").assertIsDisplayed()
+            onNodeWithTag("grid-header-0").assertIsDisplayed()
+            onNodeWithTag("grid-empty").assertIsDisplayed()
             assertTrue(copied.isEmpty())
         }
 }

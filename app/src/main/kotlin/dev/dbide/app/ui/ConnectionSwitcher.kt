@@ -29,12 +29,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.key
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
@@ -131,7 +130,7 @@ fun ConnectionSwitcher(
                 .fillMaxWidth(0.9f)
                 .widthIn(max = 560.dp)
                 .border(Sizes.hairline, Dbide.colors.hairline, MaterialTheme.shapes.extraLarge)
-                .semantics { contentDescription = "connection-switcher" },
+                .testTag("connection-switcher"),
         ) {
             Column {
                 Row(
@@ -149,7 +148,7 @@ fun ConnectionSwitcher(
                             query = it
                             moved = null
                         },
-                        description = "switcher-search",
+                        tag = "switcher-search",
                         placeholder = "Go to connection…",
                         monospace = false,
                         focus = field,
@@ -232,7 +231,7 @@ private fun SwitcherRow(
             .clickable(onClick = onClick)
             .handCursor()
             .padding(horizontal = Space.lg, vertical = Space.md)
-            .semantics { contentDescription = "switcher-row-$position" },
+            .testTag("switcher-row-$position"),
         horizontalArrangement = Arrangement.spacedBy(Space.md),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -281,7 +280,7 @@ private fun Legend(shortcuts: Shortcuts, chosen: Boolean) {
             .fillMaxWidth()
             .background(Dbide.colors.paneHeader)
             .padding(horizontal = Space.lg, vertical = Space.md)
-            .semantics { contentDescription = "switcher-legend" },
+            .testTag("switcher-legend"),
     )
 }
 
@@ -299,14 +298,14 @@ private fun NoMatch(query: String, any: Boolean) {
                 text = "No connection is called \"$query\".",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.semantics { contentDescription = "switcher-no-match" },
+                modifier = Modifier.testTag("switcher-no-match"),
             )
         } else {
             Text(
                 text = "No connections yet. Choose New in the sidebar to add one.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.semantics { contentDescription = "switcher-empty" },
+                modifier = Modifier.testTag("switcher-empty"),
             )
         }
     }
