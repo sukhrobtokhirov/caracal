@@ -14,12 +14,14 @@ no JDK to install: the installer bundles its own trimmed runtime.
 > tag; the plan's [§10](db-ide-mvp-plan.md#10-stack-move-record--2026-08-20)
 > records exactly what the move simplified and what it made harder.
 >
-> Kotlin **M0, M1, and M2 are done**: a packaged window opens an encrypted
+> Kotlin **M0 through M3 are done**: a packaged window opens an encrypted
 > connection manager, where PostgreSQL and Redis connections are saved under a
-> master password, survive a restart, and reconnect on unlock — and a PostgreSQL
+> master password, survive a restart, and reconnect on unlock. A PostgreSQL
 > connection then opens a schema browser, a SQL editor, a virtualized result grid,
-> and CSV export. M3, the Redis read path, is next. See
-> [`docs/mvp-steps/`](docs/mvp-steps/README.md).
+> and CSV export; a Redis connection opens a bounded `SCAN` key browser with
+> prefix grouping, a paged viewer for each of the six value types, an `INFO`
+> summary, and a command console behind the dangerous-command guard. M4, polish,
+> is next. See [`docs/mvp-steps/`](docs/mvp-steps/README.md).
 
 ## The shape of the product
 
@@ -164,7 +166,7 @@ core/src/main/kotlin/dev/dbide/core/
   vault/         Argon2id derivation, AES-GCM sealing                       [M1]
   store/         SQLite configuration database and migrations               [M1]
   registry/      live HikariCP pools and Lettuce clients                    [M1]
-  redis/         Lettuce adapter; SCAN and paged value reads arrive in M3  [M1]
+  redis/         Lettuce adapter: bounded SCAN, paged values, command guard    [M3]
   appdata/       platform configuration directory                           [M1]
   sql/           statement splitter, editor execution rule, highlighting    [M2]
   policy/        what a statement may do, and what must be agreed to first  [M2]
@@ -172,14 +174,16 @@ core/src/main/kotlin/dev/dbide/core/
   history/       what was executed, how it ended, and how much is kept      [M2]
 
 app/src/main/kotlin/dev/dbide/app/
-  ui/            connection screens [M1]; schema tree, SQL editor, result grid [M2]
+  ui/            connection screens [M1]; schema tree, SQL editor, result grid [M2];
+                 key browser, value viewers, INFO dashboard, console          [M3]
   Main.kt        window, application lifecycle
 ```
 
-The Redis key browser is not in `ui/` yet — `redis/` carries M1's connection
-handling and waits for M3. Query history is written from M2 and read from M4:
-the panel that shows it is not built, so the only way to see it today is the
-`query_history` table in the configuration database.
+Query history is written from M2 and read from M4: the panel that shows it is
+not built, so the only way to see it today is the `query_history` table in the
+configuration database. Redis console commands are deliberately not in it — a
+command's arguments are where its secrets are, so the console's history lives in
+memory for one session and is discarded when the vault locks.
 
 Configuration lives in the platform application data directory
 (`~/Library/Application Support/dbide` on macOS, `%AppData%\dbide` on Windows,

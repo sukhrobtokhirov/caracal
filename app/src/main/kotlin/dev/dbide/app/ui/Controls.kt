@@ -18,22 +18,34 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEvent
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.PointerIcon
 import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 import java.awt.Cursor
 
@@ -225,3 +237,99 @@ fun Modifier.hoverHighlight(shape: Shape = RectangleShape, enabled: Boolean = tr
 /** The pointer a clickable thing deserves. Desktop users read the cursor. */
 fun Modifier.handCursor(enabled: Boolean = true): Modifier =
     if (enabled) pointerHoverIcon(PointerIcon(Cursor(Cursor.HAND_CURSOR))) else this
+
+/**
+ * A single-line input sized for a header strip.
+ *
+ * Material's `OutlinedTextField` is 56dp tall before its label, which is the right
+ * size for a form and twice the height of the toolbar this has to sit in. The form
+ * keeps Material's; the search box and the command line get this.
+ *
+ * [onSubmit] is Enter, and it is handled as a preview so the key never reaches the
+ * field as a character. [onKey] is for the console's history recall, which needs the
+ * arrows before the field decides they move the caret.
+ */
+@Composable
+fun InlineField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    description: String,
+    modifier: Modifier = Modifier,
+    placeholder: String = "",
+    enabled: Boolean = true,
+    monospace: Boolean = true,
+    onSubmit: (() -> Unit)? = null,
+    onKey: ((KeyEvent) -> Boolean)? = null,
+) {
+    val style = MaterialTheme.typography.bodySmall.copy(
+        color = MaterialTheme.colorScheme.onSurface,
+        fontFamily = if (monospace) FontFamily.Monospace else FontFamily.Default,
+    )
+
+    Box(
+        modifier = modifier
+            .clip(MaterialTheme.shapes.small)
+            .background(MaterialTheme.colorScheme.surface)
+            .border(Sizes.hairline, Dbide.colors.hairline, MaterialTheme.shapes.small)
+            .padding(horizontal = Space.md, vertical = Space.sm),
+        contentAlignment = Alignment.CenterStart,
+    ) {
+        if (value.isEmpty() && placeholder.isNotEmpty()) {
+            Text(
+                text = placeholder,
+                style = style.copy(color = MaterialTheme.colorScheme.onSurfaceVariant),
+                maxLines = 1,
+            )
+        }
+        BasicTextField(
+            value = value,
+            onValueChange = onValueChange,
+            enabled = enabled,
+            singleLine = true,
+            textStyle = style,
+            cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+            modifier = Modifier
+                .fillMaxWidth()
+                .onPreviewKeyEvent { event ->
+                    if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                    if (onKey?.invoke(event) == true) return@onPreviewKeyEvent true
+                    if (event.key != Key.Enter || onSubmit == null) return@onPreviewKeyEvent false
+                    onSubmit()
+                    true
+                }
+                .semantics { contentDescription = description },
+        )
+    }
+}
+
+/**
+ * A [ToolButton] that opens a menu underneath itself.
+ *
+ * The same menu the right-click gesture opens, because a filter with seven values is
+ * seven chips wide and the pane it belongs in is 320 device-independent pixels.
+ */
+@Composable
+fun MenuButton(
+    text: String,
+    description: String,
+    actions: List<MenuAction>,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+) {
+    var open by remember { mutableStateOf(false) }
+    Box(modifier = modifier) {
+        ToolButton(
+            text = "$text ▾",
+            onClick = { open = true },
+            description = description,
+            enabled = enabled,
+        )
+        ContextMenu(
+            expanded = open,
+            at = DpOffset.Zero,
+            actions = actions,
+            onDismiss = { open = false },
+            description = "$description-menu",
+        )
+    }
+}

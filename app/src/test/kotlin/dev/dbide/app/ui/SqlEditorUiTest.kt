@@ -25,6 +25,7 @@ import dev.dbide.app.ConnectionsViewModel
 import dev.dbide.app.EditorViewModel
 import dev.dbide.app.ExportViewModel
 import dev.dbide.app.FakeConnectionService
+import dev.dbide.app.RedisWorkspace
 import dev.dbide.app.SchemaTreeViewModel
 import dev.dbide.app.ThemeViewModel
 import dev.dbide.core.catalog.ColumnInfo
@@ -255,7 +256,8 @@ class SqlEditorUiTest {
                 editor = remember { EditorViewModel(service, scope) }
                 val export = remember { ExportViewModel(service, scope) { null } }
                 val theme = remember { ThemeViewModel(null, scope) }
-                DbideTheme { WorkspaceScreen(connections, tree, editor, export, theme, onLock = {}) }
+                val redis = remember { RedisWorkspace(service, scope) }
+                DbideTheme { WorkspaceScreen(connections, tree, editor, export, redis, theme, onLock = {}) }
             }
             waitForIdle()
 
@@ -287,7 +289,8 @@ class SqlEditorUiTest {
                 val editor = remember { EditorViewModel(service, scope) }
                 val export = remember { ExportViewModel(service, scope) { null } }
                 val theme = remember { ThemeViewModel(null, scope) }
-                DbideTheme { WorkspaceScreen(connections, tree, editor, export, theme, onLock = {}) }
+                val redis = remember { RedisWorkspace(service, scope) }
+                DbideTheme { WorkspaceScreen(connections, tree, editor, export, redis, theme, onLock = {}) }
             }
             waitForIdle()
 

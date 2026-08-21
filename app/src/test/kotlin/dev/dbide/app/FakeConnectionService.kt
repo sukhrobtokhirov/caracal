@@ -307,11 +307,41 @@ open class FakeConnectionService(
         stopped = ScanStop.COMPLETE,
     )
 
+    /**
+     * Pages [redisScan] hands back in order, one per call, before falling back to
+     * [scanPage].
+     *
+     * A queue rather than one page, because the behaviour §3.2 is most emphatic about
+     * — an empty batch is not the end of a traversal — can only be asserted across a
+     * sequence of pages. One page cannot express "and then another one".
+     */
+    val scanPages = mutableListOf<ScanPage>()
+
+    /** The metadata [redisKey] answers with, for keys not on the current scan page. */
+    val keyMetadata = mutableMapOf<RedisKey, KeyMetadata>()
+
+    /**
+     * Metadata [redisKey] answers with in order, one per call, before [keyMetadata].
+     *
+     * For the one sequence that cannot be expressed as a fixed answer: a key that is a
+     * string when it is opened and a list when the viewer looks again.
+     */
+    val metadataPages = mutableListOf<KeyMetadata>()
+
     /** What [redisInfo] hands back. Restricted by default, which is the harder case. */
     var serverInfo: ServerInfo = ServerInfo(restricted = true)
 
     /** What [redisValue] hands back, or `null` to have it report a missing key. */
     var valuePage: ValuePage? = null
+
+    /** Pages [redisValue] hands back in order, for asserting continuation. */
+    val valuePages = mutableListOf<ValuePage>()
+
+    /** Every value request made, so a test can prove which continuation was sent. */
+    val valueRequests = mutableListOf<ValueRequest>()
+
+    /** Set to fail the next [redisValue] alone, leaving the metadata read intact. */
+    var nextValueFailure: Throwable? = null
 
     /** What [redisCommand] hands back when the guard is satisfied. */
     var commandResult: CommandResult = CommandResult(
@@ -347,21 +377,29 @@ open class FakeConnectionService(
         calls += "redisScan($cursor, $match, ${type?.wire})"
         await()
         requireUnlocked()
-        return scanPage
+        return if (scanPages.isEmpty()) scanPage else scanPages.removeAt(0)
     }
 
     override suspend fun redisKey(id: ConnectionId, key: RedisKey): KeyMetadata {
         calls += "redisKey"
         await()
         requireUnlocked()
-        return scanPage.keys.firstOrNull { it.key == key }
+        if (metadataPages.isNotEmpty()) return metadataPages.removeAt(0)
+        return keyMetadata[key]
+            ?: scanPage.keys.firstOrNull { it.key == key }
             ?: KeyMetadata(key = key, type = null, ttl = Ttl.Gone, memory = MemoryEstimate.Absent)
     }
 
     override suspend fun redisValue(id: ConnectionId, request: ValueRequest): ValuePage {
         calls += "redisValue(${request.type.wire})"
+        valueRequests += request
         await()
         requireUnlocked()
+        nextValueFailure?.let {
+            nextValueFailure = null
+            throw it
+        }
+        if (valuePages.isNotEmpty()) return valuePages.removeAt(0)
         return valuePage
             ?: throw DbException(DbError.KeyTypeChanged(expected = request.type.wire, actual = null))
     }
@@ -378,7 +416,10 @@ open class FakeConnectionService(
         // The real guard lives in `:core` and is tested there. What a UI test needs is
         // the one behaviour it has to react to: a command that asks a question.
         confirmations.remove(command.label)?.let { throw CommandConfirmationRequired(it) }
-        return commandResult
+        // The reply is whatever the test set, but the name on it is always the command
+        // that was actually sent — as `:core` guarantees, and as the transcript relies
+        // on to label an entry with something other than the last test's fixture.
+        return commandResult.copy(command = command.label)
     }
 
     /** Commands this double will demand an acknowledgement for, once each. */

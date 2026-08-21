@@ -72,6 +72,14 @@ object Sizes {
     /** The object browser, which holds longer names than the sidebar. */
     val browser = 288.dp
 
+    /**
+     * The Redis key browser.
+     *
+     * Wider than the schema tree because what it holds is wider: a schema tree row is
+     * one identifier, and a key row is a name, a type, a countdown, and a size.
+     */
+    val keyBrowser = 340.dp
+
     /** The accent stripe marking the selected row in a list. */
     val selectionStripe = 2.dp
 

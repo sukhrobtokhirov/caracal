@@ -414,29 +414,66 @@ Assert that key-browser code never issues `KEYS`, `HGETALL`, `SMEMBERS`, or unbo
 - [x] Empty SCAN batches do not end traversal prematurely.
 - [x] Metadata commands are pipelined and tolerate expired keys/partial permissions.
 - [x] Prefix grouping uses only already-scanned keys. `RedisKeyTree` takes a list and
-      returns a list; it has nothing to call.
+      returns a list; it has nothing to call, and `RedisBrowserUiTest` asserts that
+      expanding a group leaves the call log unchanged.
 - [x] All six supported value types use bounded paging/ranges.
-- [x] Binary strings are represented safely. **JSON detection is not built** — see the
-      note below.
-- [x] The `INFO` dashboard's *data* degrades gracefully when fields or permissions are
-      missing. The dashboard itself is not built.
+- [x] Binary strings are represented safely, and JSON is detected only where it can be
+      done honestly — a complete value, every window decoded, under
+      `RedisLimits.jsonBytes`. `JsonFormat` reformats without reinterpreting a value,
+      the raw view stays one click away, and a copy takes the original text.
+- [x] The `INFO` dashboard degrades gracefully when fields or permissions are missing:
+      a field the server did not report is a card that does not draw, a refused `INFO`
+      is a banner over a working browser, and there is no hit rate until there has been
+      a lookup.
 - [x] Raw command parsing preserves structured arguments and bounds replies.
 - [x] Dangerous and read-only command policies are enforced in `:core`.
 - [x] Production dangerous commands require typed confirmation, and consent is an
       argument rather than a setting — so there is nowhere for a one-shot override to
       persist.
 
-> **Note, 2026-08-21 — what is built, and what is not.**
-> Work packages 3.1, 3.2, 3.3, 3.5, 3.6, 3.8, 3.9, and 3.10 have landed in `:core`,
-> with 643 tests passing across the module and the Redis integration suites running
-> against a real `redis:7-alpine`. **3.4 and 3.7 — the key browser and the value
-> viewers — are not built.** Their data model is: `RedisKeyTree` is the prefix
-> grouping, tested; `ConnectionService` carries the five Redis operations. What is
-> missing is the Compose rendering, the console's own screen, and the `INFO`
-> dashboard. JSON detection and pretty-printing (§3.6, §3.7) belong with the viewers
-> and went with them; `RedisLimits.jsonBytes` is the threshold reserved for it.
+> **Note, 2026-08-21 — the milestone is complete.**
+> Work packages 3.1, 3.2, 3.3, 3.5, 3.6, 3.8, 3.9, and 3.10 landed in `:core` first,
+> with 643 tests across the module and the Redis integration suites running against a
+> real `redis:7-alpine`. **3.4 and 3.7 — the key browser and the value viewers — are
+> now built**, along with the console's own screen and the `INFO` dashboard: 284 tests
+> in `:app`, of which the Redis ones drive the real composables.
 >
-> What is worth recording about the shape of what did land:
+> What is worth recording about the UI half:
+>
+> - **The empty page is the browser's defining behaviour, and it is a loop.** `:core`
+>   bounds one request; `RedisBrowserViewModel` bounds how many requests one click may
+>   make, and continues by itself while every batch comes back empty. Without the
+>   first, a selective `MATCH` is `KEYS` written the long way; without the second, a
+>   selective `MATCH` reports an empty keyspace. Five pages per click is the number,
+>   and the footer says which of the traversal's four endings this one had, because
+>   "complete" and "the budget ran out" look identical if all you draw is a list that
+>   stopped.
+> - **A key row's label cannot be turned back into a key.** The tree shows a name's
+>   last segment and clips what does not fit, and `KeyRow.key` carries the bytes.
+>   `RedisBrowserUiTest` clicks a row labelled `profile` and asserts that
+>   `user:42:profile` is what comes out.
+> - **Paging accumulates; it does not replace.** Every viewer adds the page it read to
+>   what is already on screen, which is the difference between reading a large hash and
+>   watching one flicker. The continuation is per type — a cursor, a byte offset, a
+>   rank, an exclusive stream ID — and each one is asserted by reading the *second*
+>   request, because getting one wrong produces no error at all: it produces a **Show
+>   more** that silently re-reads the first page.
+> - **A string's windows are kept separately, and that is what makes JSON safe.** A
+>   `GETRANGE` boundary that lands mid-character does not decode, and `:core` reports
+>   that page as binary rather than dropping bytes. So joining the text of several
+>   windows is valid only when every one of them decoded — one check, in one place,
+>   and the reason a multi-page value is never quietly reassembled wrong.
+> - **The console draws the guard's answer; it does not have an opinion.** A refusal is
+>   a transcript entry with no override offered, because on a read-only connection none
+>   exists. A question is a dialog and not a result, and the phrase it collects goes
+>   straight back into one `redisCommand` call. There is no toggle to reset, which is
+>   §3.10's single-use rule made structural rather than remembered.
+> - **The transcript is memory only, and locking empties it.** `RedisWorkspace.clear()`
+>   is called from the same place the pools are closed. A screenshot of the transcript
+>   shows command names and durations; the lines that were typed live in the recall
+>   history and nowhere else.
+>
+> And what was already recorded about `:core`:
 >
 > - **The connection speaks bytes, not strings.** Every key, field, member, and value
 >   in Redis is a byte sequence, so the client is opened with `ByteArrayCodec`. A

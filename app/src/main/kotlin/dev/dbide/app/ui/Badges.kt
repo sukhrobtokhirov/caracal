@@ -17,6 +17,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -24,6 +25,7 @@ import dev.dbide.core.connections.Engine
 import dev.dbide.core.connections.Environment
 import dev.dbide.core.connections.RuntimeState
 import dev.dbide.core.connections.RuntimeStatus
+import dev.dbide.core.redis.KeyType
 
 /**
  * The safety signals.
@@ -109,6 +111,30 @@ fun StatusBadge(state: RuntimeState, modifier: Modifier = Modifier) {
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
+}
+
+/**
+ * Which Redis type a key holds.
+ *
+ * Outlined and monospace, like the engine badge and for the same reason: a key row
+ * already carries a countdown and a size, and a third filled pill on it would make
+ * the row read as decoration rather than as data. The word itself is Redis's own —
+ * `zset`, not "sorted set" — because that is what `TYPE` answers and what the user
+ * would type into a filter.
+ */
+@Composable
+fun KeyTypeBadge(type: KeyType, modifier: Modifier = Modifier) {
+    Text(
+        text = type.wire,
+        style = MaterialTheme.typography.labelSmall,
+        fontFamily = FontFamily.Monospace,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = modifier
+            .clip(MaterialTheme.shapes.extraSmall)
+            .border(Sizes.hairline, Dbide.colors.hairline, MaterialTheme.shapes.extraSmall)
+            .padding(horizontal = Space.sm, vertical = 1.dp)
+            .semantics { contentDescription = "key-type-${type.wire}" },
+    )
 }
 
 /** The user's chosen colour, as a swatch. Decorative: it never carries meaning alone. */

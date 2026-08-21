@@ -38,6 +38,7 @@ import dev.dbide.app.ConnectionsViewModel
 import dev.dbide.app.EditorViewModel
 import dev.dbide.app.ExportViewModel
 import dev.dbide.app.Pane
+import dev.dbide.app.RedisWorkspace
 import dev.dbide.app.SchemaTreeViewModel
 import dev.dbide.app.ThemeViewModel
 import dev.dbide.core.connections.ConnectionView
@@ -46,8 +47,35 @@ import dev.dbide.core.connections.Environment
 import java.awt.datatransfer.StringSelection
 import kotlinx.coroutines.launch
 
-/** Which half of an open connection the right-hand pane is showing. */
-private enum class WorkspaceTab(val label: String) { QUERY("Query"), CONNECTION("Connection") }
+/**
+ * Which view of an open connection the right-hand pane is showing.
+ *
+ * One enumeration across both engines rather than one each, because the tab strip and
+ * the pane behind it are the same control either way. Which entries appear is
+ * [tabsFor]'s decision, and it is made from the engine: a PostgreSQL connection has no
+ * keyspace and a Redis one has no SQL editor, so offering either would be offering a
+ * tab that can only say "not for this engine".
+ */
+private enum class WorkspaceTab(val label: String) {
+    QUERY("Query"),
+    KEY("Value"),
+    CONSOLE("Console"),
+    SERVER("Server"),
+    CONNECTION("Connection"),
+}
+
+/** The tabs an engine has, in the order they are shown. */
+private fun tabsFor(engine: Engine?): List<WorkspaceTab> = when (engine) {
+    Engine.POSTGRES -> listOf(WorkspaceTab.QUERY, WorkspaceTab.CONNECTION)
+    Engine.REDIS -> listOf(
+        WorkspaceTab.KEY,
+        WorkspaceTab.CONSOLE,
+        WorkspaceTab.SERVER,
+        WorkspaceTab.CONNECTION,
+    )
+
+    null -> listOf(WorkspaceTab.CONNECTION)
+}
 
 /**
  * The unlocked application: connections on the left, the object browser beside them
@@ -67,22 +95,28 @@ fun WorkspaceScreen(
     tree: SchemaTreeViewModel,
     editor: EditorViewModel,
     export: ExportViewModel,
+    redis: RedisWorkspace,
     theme: ThemeViewModel,
     onLock: () -> Unit,
 ) {
     LaunchedEffect(Unit) { viewModel.refresh() }
 
-    // Only an open PostgreSQL connection has a catalog to read. A closed one is not
-    // reopened to fill a panel: the user closed it.
-    val browsing = viewModel.selected
-        ?.takeIf { it.config.engine == Engine.POSTGRES && it.runtime.isOpen }
+    // Only an open connection has anything to browse. A closed one is not reopened to
+    // fill a panel: the user closed it.
+    val browsing = viewModel.selected?.takeIf { it.runtime.isOpen }
+    val postgres = browsing?.takeIf { it.config.engine == Engine.POSTGRES }
+    val redisView = browsing?.takeIf { it.config.engine == Engine.REDIS }
     // Keyed on the configuration and not just the identifier: §2.4's policy asks the
     // connection whether it is read only and which environment it is, so an edit to
     // either has to reach the editor without the connection being reopened.
-    LaunchedEffect(browsing?.config) {
-        tree.show(browsing?.id)
-        editor.show(browsing?.config)
+    LaunchedEffect(postgres?.config) {
+        tree.show(postgres?.id)
+        editor.show(postgres?.config)
     }
+    // The Redis panes take the identifier alone. Their own policy question — whether a
+    // console command needs a typed phrase — is asked inside `:core`, against the
+    // configuration the connection was opened with.
+    LaunchedEffect(redisView?.id) { redis.show(redisView?.id) }
     val clipboard = LocalClipboard.current
     val scope = rememberCoroutineScope()
     val copy: (String) -> Unit = { text -> scope.launch { clipboard.setClipEntry(clipEntryOf(text)) } }
@@ -90,7 +124,8 @@ fun WorkspaceScreen(
     // Opening a connection lands on its editor; the connection's own details are one
     // click away and stay there per connection, so switching back and forth does not
     // keep resetting which half is on screen.
-    var tab: WorkspaceTab by remember(browsing?.id) { mutableStateOf(WorkspaceTab.QUERY) }
+    val tabs = tabsFor(browsing?.config?.engine)
+    var tab: WorkspaceTab by remember(browsing?.id) { mutableStateOf(tabs.first()) }
 
     // The sidebar is a pane, not a fixture. On a laptop beside a terminal the list of
     // connections is read once an hour and the grid is read all day, and 264dp is
@@ -104,7 +139,11 @@ fun WorkspaceScreen(
             viewModel.select(view.id)
             // Already open is not an error and not a reconnect: the editor is what
             // the user was asking for, and it is already there.
-            if (!view.runtime.isOpen) viewModel.open(view.id) else tab = WorkspaceTab.QUERY
+            if (!view.runtime.isOpen) {
+                viewModel.open(view.id)
+            } else {
+                tab = tabsFor(view.config.engine).first()
+            }
         },
         close = { view -> viewModel.close(view.id) },
         test = { view -> viewModel.test(view.id) },
@@ -140,7 +179,7 @@ fun WorkspaceScreen(
                     VerticalHairline()
                 }
 
-                if (browsing != null) {
+                if (postgres != null) {
                     SchemaTree(
                         model = tree,
                         // Straight into the script at the caret. The name arrives
@@ -151,6 +190,23 @@ fun WorkspaceScreen(
                         },
                         modifier = Modifier
                             .width(Sizes.browser)
+                            .background(MaterialTheme.colorScheme.background),
+                    )
+                    VerticalHairline()
+                }
+
+                if (redisView != null) {
+                    RedisKeyBrowser(
+                        model = redis.browser,
+                        // Clicking a key opens it, which means showing the pane its
+                        // value is in: a browser that selected a key and left the
+                        // console on screen would look like it had done nothing.
+                        onOpenKey = { key ->
+                            tab = WorkspaceTab.KEY
+                            redis.open(key)
+                        },
+                        modifier = Modifier
+                            .width(Sizes.keyBrowser)
                             .background(MaterialTheme.colorScheme.background),
                     )
                     VerticalHairline()
@@ -203,10 +259,13 @@ fun WorkspaceScreen(
                             if (browsing?.id != pane.id) {
                                 detail()
                             } else {
-                                WorkspaceTabs(selected = tab, onSelect = { tab = it })
+                                WorkspaceTabs(tabs = tabs, selected = tab, onSelect = { tab = it })
                                 Hairline()
                                 when (tab) {
                                     WorkspaceTab.QUERY -> QueryPane(editor, export, onCopy = copy)
+                                    WorkspaceTab.KEY -> RedisValueViewer(redis.value, onCopy = copy)
+                                    WorkspaceTab.CONSOLE -> RedisConsole(redis.console)
+                                    WorkspaceTab.SERVER -> RedisInfoDashboard(redis.info)
                                     WorkspaceTab.CONNECTION -> detail()
                                 }
                             }
@@ -318,7 +377,11 @@ private fun WorkspaceBar(
  * — and these are two views of one thing, exactly one of which is showing.
  */
 @Composable
-private fun WorkspaceTabs(selected: WorkspaceTab, onSelect: (WorkspaceTab) -> Unit) {
+private fun WorkspaceTabs(
+    tabs: List<WorkspaceTab>,
+    selected: WorkspaceTab,
+    onSelect: (WorkspaceTab) -> Unit,
+) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -326,7 +389,7 @@ private fun WorkspaceTabs(selected: WorkspaceTab, onSelect: (WorkspaceTab) -> Un
             .background(Dbide.colors.paneHeader),
     ) {
         val accent = MaterialTheme.colorScheme.primary
-        WorkspaceTab.entries.forEach { entry ->
+        tabs.forEach { entry ->
             val active = entry == selected
             Box(
                 modifier = Modifier

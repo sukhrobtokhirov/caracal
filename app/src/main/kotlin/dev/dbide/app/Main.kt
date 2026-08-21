@@ -113,6 +113,7 @@ private fun FrameWindowScope.Workspace(
     val editor = remember(service) { EditorViewModel(service, scope) }
     val chooser = rememberCsvFileChooser()
     val export = remember(service, chooser) { ExportViewModel(service, scope, chooser) }
+    val redis = remember(service) { RedisWorkspace(service, scope) }
     val vault = remember(service) {
         VaultViewModel(service, scope, onUnlocked = { connections.refresh() })
     }
@@ -128,6 +129,7 @@ private fun FrameWindowScope.Workspace(
             tree = tree,
             editor = editor,
             export = export,
+            redis = redis,
             theme = theme,
             onLock = {
                 connections.clear()
@@ -140,6 +142,10 @@ private fun FrameWindowScope.Workspace(
                 // closed every one of them. Stopping it here is what turns that into a
                 // deleted partial file rather than a failure the user has to read.
                 export.clear()
+                // The keyspace, the open value, and the console transcript. The last of
+                // those is the one that matters most: a command's arguments can be a
+                // password, and they must not survive the session that typed them.
+                redis.clear()
                 vault.lock()
             },
         )
