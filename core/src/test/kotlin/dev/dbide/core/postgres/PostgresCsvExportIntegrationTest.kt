@@ -169,16 +169,26 @@ class PostgresCsvExportIntegrationTest {
 
     @Test
     fun `an export past its time budget stops`() {
-        // A millisecond is gone before the connection is open, which is the point:
-        // the clock starts when the export does, not when the first row arrives.
+        // The clock starts when the export does, not when the first row arrives, so
+        // the budget is already spent by the time there is anything to write.
+        //
+        // How *much* gets written before the check first fires is a fact about the
+        // machine and not about this code — the row is what an earlier version of this
+        // test asserted, and it held only for as long as no other container in the
+        // suite had warmed Docker up first. What the budget promises is that the export
+        // stops far short of the query, says which budget stopped it, and leaves a file
+        // that ends at a record boundary; those are what is asserted.
+        val rows = 2_000_000
         val export = export(
-            "SELECT i FROM generate_series(1, 100) i",
+            "SELECT i FROM generate_series(1, $rows) i",
             limits = ExportLimits(duration = 1.milliseconds),
         )
 
         assertEquals(ExportStop.TIME_LIMIT, export.report.stopped)
-        assertEquals(0, export.report.rows)
-        assertEquals("i\r\n", export.csv)
+        assertFalse(export.report.complete)
+        assertTrue(export.report.rows < rows / 10, "wrote ${export.report.rows} of $rows rows")
+        assertTrue(export.csv.startsWith("i\r\n"), "the header is missing from: ${export.csv.take(20)}")
+        assertTrue(export.csv.endsWith("\r\n"), "stopped inside a record")
     }
 
     @Test

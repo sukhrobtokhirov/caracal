@@ -388,6 +388,39 @@ Cancellation should display **Cancelled** rather than a generic red failure. Tim
 > generated, so there is nothing on screen for it to land on, which is §2.9's
 > "show the message without guessing".
 
+> **Note, 2026-08-21 — notices, which were missing until now.**
+> The API contract above ends every successful response with `"notices": []`, and the
+> user-visible workflow lists them among the things a person inspects. Neither was
+> built: nothing read JDBC's warning chain, so a `RAISE NOTICE` ran, succeeded, and
+> showed the user an empty grid. For a `DO` block written to report what it found —
+> no columns, no count, notices and nothing else — that is the entire output, thrown
+> away and reported as success.
+>
+> They are now `QueryResult.notices`, filled by `PostgresAdapter.collectNotices` and
+> mapped by `PostgresErrors.notices`. What is worth recording about the shape of it:
+>
+> - **A notice and an error are the same message with a different severity**, on the
+>   wire and in pgjdbc, so `Notice` carries `queryFailed`'s fields on `queryFailed`'s
+>   terms — everything actionable, nothing naming the server's own source, all of it
+>   through `Redaction`. `RAISE NOTICE '%', ...` interpolates whatever the function
+>   was handed, and a notice is no less server-authored than an error.
+> - **Position and subject are absent** rather than null-filled. A notice points at
+>   nothing and names nothing; there is no editor highlight to drive from it.
+> - **Both warning chains are read**, the statement's and the connection's, because
+>   which one a notice lands on is a driver detail that has moved between pgjdbc
+>   versions. The connection's chain is cleared before every statement, or a notice
+>   would be reported against whatever ran next on that pooled connection.
+> - **The list is capped** at `PostgresErrors.MAX_NOTICES`, with the last entry saying
+>   the list was cut. A loop raising one per iteration is ordinary PL/pgSQL, and it is
+>   the unbounded retention `ResultLimits` exists to prevent, one field over.
+> - **Duplicates within one chain are kept.** A function that raised the same sentence
+>   three times said it three times; only the same notice echoed across *both* chains
+>   is dropped.
+>
+> In the grid they open by themselves and close on request, with the count left in the
+> status bar. A notice nobody knows to look for is a notice nobody reads, and the
+> statement that most needs one read is the one with nothing else on screen.
+
 ### 2.10 Export CSV safely
 
 The export route uses a completed, unexpired query ID. Store only the minimum metadata needed for export and expire it quickly.
@@ -498,6 +531,15 @@ Do not store parameter values separately or log the statement. History is sensit
 ### Integration tests
 
 Run against supported PostgreSQL versions in CI where practical. Create fixtures covering:
+
+> **Note, 2026-08-21 — one version, not several.** Every suite runs against
+> `postgres:16-alpine`. "Where practical" is doing real work in that sentence: a
+> version matrix multiplies the slowest job in CI, and none of the behaviour these
+> suites assert — catalog shape, type text, error fields, notice delivery — has
+> differed across supported majors so far. The fixtures are written so that adding a
+> matrix later is a change to `ci.yml` and to one image string per file, not to any
+> test.
+
 
 - mixed-case schema/table/column names;
 - tables, views, materialized views if exposed, and functions;

@@ -3,6 +3,7 @@ package dev.dbide.app
 import dev.dbide.core.result.CellValue
 import dev.dbide.core.result.Column
 import dev.dbide.core.result.ColumnFormat
+import dev.dbide.core.result.Notice
 import dev.dbide.core.result.QueryResult
 import dev.dbide.core.result.ResultLimits
 import dev.dbide.core.result.Truncation
@@ -264,6 +265,34 @@ class ResultGridStateTest {
         state.selectRow(2, SelectionGesture.EXTEND)
         assertEquals(setOf(2), state.selectedRows.toSet())
     }
+
+    @Test
+    fun `the notices control counts what the server said, and says nothing when it said nothing`() {
+        assertNull(grid().noticeLabel())
+
+        val one = ResultGridState(noisy(Notice("checked 3 tables")))
+        assertTrue(one.noticesOpen)
+        assertEquals("Hide notice", one.noticeLabel())
+        one.toggleNotices()
+        assertEquals("1 notice", one.noticeLabel())
+
+        val several = ResultGridState(noisy(Notice("first"), Notice("second")))
+        several.toggleNotices()
+        assertEquals("2 notices", several.noticeLabel())
+    }
+
+    @Test
+    fun `notices start open, because a notice nobody looks for is a notice nobody reads`() {
+        assertTrue(ResultGridState(noisy(Notice("checked 3 tables"))).noticesOpen)
+        assertFalse(grid().noticesOpen)
+    }
+
+    private fun noisy(vararg notices: Notice) = QueryResult(
+        columns = emptyList(),
+        rows = emptyList(),
+        duration = 5.milliseconds,
+        notices = notices.toList(),
+    )
 
     @Test
     fun `the value panel describes the focused cell`() {

@@ -13,6 +13,7 @@ import kotlin.time.Duration.Companion.seconds
 import kotlin.time.TimeSource
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -137,6 +138,41 @@ class PostgresAdapterIntegrationTest {
                 assertEquals(0, session.activeConnections)
             }
         }
+    }
+
+    @Test
+    fun `a backend killed mid-statement is a connection failure, and the pool recovers`() = runBlocking {
+        // §2.5's last fixture: the server going away underneath a running statement.
+        // It is worth its own test because it is the one failure that arrives while a
+        // connection is checked out and half-used — the interesting part is not the
+        // message but what the pool does next, since a session that survives one
+        // killed backend and then hands out dead connections forever has failed in a
+        // way the user reads as "the application broke".
+        session().use { session ->
+            session().use { observer ->
+                val query = async(Dispatchers.IO) { runCatching { session.adapter.execute(SLEEP) } }
+                awaitBackend(observer)
+                terminateSleepingBackends(observer)
+
+                val failure = query.await().exceptionOrNull()
+                val error = assertIs<DbException>(failure).error
+                assertIs<DbError.ConnectionUnavailable>(error)
+                assertNoConnectionIdentity(error.message)
+
+                // The killed connection is discarded rather than returned, and the next
+                // statement gets a working one.
+                assertEquals(0, session.activeConnections)
+                assertEquals(listOf(listOf(CellValue.Integer(1))), session.adapter.selectOne().rows)
+            }
+        }
+    }
+
+    /** Ends every `pg_sleep` backend but the one asking. Allowed in a read-only transaction. */
+    private suspend fun terminateSleepingBackends(observer: PostgresSession) {
+        observer.adapter.execute(
+            "SELECT pg_terminate_backend(pid) FROM pg_stat_activity " +
+                "WHERE query LIKE 'SELECT pg_sleep%' AND pid <> pg_backend_pid()",
+        )
     }
 
     private suspend fun awaitBackend(observer: PostgresSession) =

@@ -295,6 +295,20 @@ class ResultGridState(val result: QueryResult) {
     var prettyJson: Boolean by mutableStateOf(true)
         private set
 
+    /**
+     * Whether the server's notices are showing. Open to begin with, whenever there
+     * are any.
+     *
+     * A notice is the server volunteering something, and the statement that most needs
+     * one read is the one that returns nothing else: a `DO` block that reports what it
+     * checked has no rows, no count, and nothing on screen but its notices. Putting
+     * them behind a control the user has to know about first is how they go unread, so
+     * they are shown and then dismissible — the status bar keeps the count, so a panel
+     * closed by mistake is one click from coming back.
+     */
+    var noticesOpen: Boolean by mutableStateOf(result.notices.isNotEmpty())
+        private set
+
     private var anchor: Int? = null
     private var fitted = false
 
@@ -358,6 +372,17 @@ class ResultGridState(val result: QueryResult) {
 
     fun togglePrettyJson() {
         prettyJson = !prettyJson
+    }
+
+    fun toggleNotices() {
+        noticesOpen = !noticesOpen
+    }
+
+    /** What the notices control calls itself, or `null` when the server said nothing. */
+    fun noticeLabel(): String? = when (result.notices.size) {
+        0 -> null
+        1 -> if (noticesOpen) "Hide notice" else "1 notice"
+        else -> if (noticesOpen) "Hide notices" else "${result.notices.size} notices"
     }
 
     /** The focused cell's column, or `null` when nothing is focused. */

@@ -2,12 +2,15 @@ package dev.dbide.core.postgres
 
 import dev.dbide.core.result.DbError
 import dev.dbide.core.result.ErrorSubject
+import dev.dbide.core.result.Notice
 import java.security.cert.CertificateException
 import java.sql.SQLException
 import java.sql.SQLTimeoutException
+import java.sql.SQLWarning
 import javax.net.ssl.SSLException
 import kotlin.time.Duration
 import org.postgresql.util.PSQLException
+import org.postgresql.util.PSQLWarning
 
 /**
  * Maps a driver failure onto [DbError].
@@ -17,6 +20,12 @@ import org.postgresql.util.PSQLException
  */
 object PostgresErrors {
     const val QUERY_CANCELED = "57014"
+
+    /** How many notices one statement may hand back. See [notices]. */
+    const val MAX_NOTICES = 100
+
+    /** How long any one field of a notice may be. A notice can quote a whole row. */
+    private const val MAX_NOTICE_LENGTH = 4_096
 
     /**
      * [timedOut] and [limit] are the caller's, not the driver's. PostgreSQL reports a
@@ -50,6 +59,59 @@ object PostgresErrors {
             else -> queryFailed(sqlException, state, redaction)
         }
     }
+
+    /**
+     * The server's notices, read off a JDBC warning chain.
+     *
+     * PostgreSQL's NoticeResponse and its ErrorResponse are the same message with a
+     * different severity, and pgjdbc reflects that: a notice arrives as a
+     * [PSQLWarning] wrapping the same `ServerErrorMessage` an error would. So the
+     * fields are copied across on the same terms [queryFailed] uses — everything the
+     * user can act on, nothing that describes the server's own source tree, and all
+     * of it through [Redaction] first.
+     *
+     * The chain is walked at most [MAX_NOTICES] links. A loop that raises a notice per
+     * iteration is a normal thing to write and would otherwise hand the grid a list as
+     * long as the loop ran, which is the same unbounded retention `ResultLimits` exists
+     * to prevent one field over. [truncatedNotice] is appended when that happens, so a
+     * shortened list never looks like a complete one.
+     */
+    fun notices(
+        first: SQLWarning?,
+        redaction: Redaction = Redaction.NONE,
+        limit: Int = MAX_NOTICES,
+    ): List<Notice> {
+        if (first == null || limit <= 0) return emptyList()
+        val notices = mutableListOf<Notice>()
+        var warning: SQLWarning? = first
+        while (warning != null) {
+            if (notices.size == limit) return notices + truncatedNotice()
+            notices += warning.toNotice(redaction)
+            // Guarded against a chain that links to itself. pgjdbc does not build one,
+            // but this walk is over driver-owned state and a hang here would look like
+            // a hung query.
+            val next = warning.nextWarning
+            warning = if (next === warning) null else next
+        }
+        return notices
+    }
+
+    private fun SQLWarning.toNotice(redaction: Redaction): Notice {
+        val server = (this as? PSQLWarning)?.serverErrorMessage
+        val state: String? = server?.sqlState
+        return Notice(
+            message = redaction.scrub(server?.message ?: message)?.take(MAX_NOTICE_LENGTH)
+                ?: "The server sent a notice with no message.",
+            severity = redaction.scrub(server?.severity).orNullIfBlank(),
+            sqlState = state.orNullIfBlank() ?: sqlState.orNullIfBlank(),
+            detail = redaction.scrub(server?.detail).orNullIfBlank()?.take(MAX_NOTICE_LENGTH),
+            hint = redaction.scrub(server?.hint).orNullIfBlank()?.take(MAX_NOTICE_LENGTH),
+        )
+    }
+
+    private fun truncatedNotice() = Notice(
+        message = "The server sent more than $MAX_NOTICES notices; the rest were not kept.",
+    )
 
     /**
      * The server's own report, minus the parts that describe the server.

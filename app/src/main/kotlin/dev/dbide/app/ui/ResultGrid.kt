@@ -79,6 +79,7 @@ import dev.dbide.app.rightAligned
 import dev.dbide.core.result.CellValue
 import dev.dbide.core.result.Column as ResultColumn
 import dev.dbide.core.result.ColumnFormat
+import dev.dbide.core.result.Notice
 import java.awt.Cursor
 
 private val ROW_HEIGHT = Sizes.gridRow
@@ -131,13 +132,17 @@ fun ResultGrid(
             .semantics { contentDescription = "result-grid" },
     ) {
         if (result.columns.isEmpty()) {
-            CommandResult(modifier = Modifier.weight(1f))
+            CommandResult(state, modifier = Modifier.weight(1f))
         } else {
             Box(modifier = Modifier.weight(1f)) { Table(state, focus) }
             if (state.panelOpen) {
                 Hairline()
                 ValuePanel(state, onCopy)
             }
+        }
+        if (state.noticesOpen && result.notices.isNotEmpty()) {
+            Hairline()
+            NoticePanel(state)
         }
         Hairline()
         StatusBar(state, onCopy)
@@ -551,6 +556,98 @@ private fun remnant(value: CellValue): String? = when {
     else -> null
 }
 
+/**
+ * What the server said, on a statement that did not fail.
+ *
+ * PostgreSQL's notices are the half of its output an application is free to throw
+ * away and a user is not: a `RAISE NOTICE` is somebody deliberately reporting
+ * something, and the statement that carries one often carries nothing else. So they
+ * are drawn where the result is, in the server's own words, rather than summarized
+ * into a count.
+ *
+ * Bounded and scrolled, because a loop can raise one per iteration and a panel that
+ * grew with them would push the grid off the screen. `:core` caps how many are kept;
+ * this caps how much room they take.
+ */
+@Composable
+private fun NoticePanel(state: ResultGridState) {
+    val notices = state.result.notices
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(max = 132.dp)
+            .semantics { contentDescription = "grid-notices" },
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(Dbide.colors.paneHeader)
+                .padding(start = Space.lg, end = Space.sm, top = Space.sm, bottom = Space.sm),
+            horizontalArrangement = Arrangement.spacedBy(Space.sm),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = if (notices.size == 1) "The server sent a notice" else "The server sent ${notices.size} notices",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
+            ToolButton(text = "Close", onClick = state::toggleNotices, description = "grid-notices-close")
+        }
+
+        SelectionContainer(modifier = Modifier.weight(1f, fill = false)) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = Space.lg, vertical = Space.md),
+                verticalArrangement = Arrangement.spacedBy(Space.sm),
+            ) {
+                notices.forEachIndexed { index, notice -> NoticeLine(index, notice) }
+            }
+        }
+    }
+}
+
+/**
+ * One notice: what it said, then what it added.
+ *
+ * The severity leads because it is the difference between `NOTICE` and `WARNING`,
+ * and PostgreSQL's own clients put it there. Detail and hint follow indented and
+ * only when present — a hint is frequently the whole answer, which is the same
+ * reason [ErrorBanner] carries them.
+ */
+@Composable
+private fun NoticeLine(index: Int, notice: Notice) {
+    Column(
+        // Merged: severity, message, detail, and hint are one thing the user reads and
+        // one thing a screen reader should announce, not four adjacent fragments.
+        modifier = Modifier.semantics(mergeDescendants = true) {
+            contentDescription = "grid-notice-$index"
+        },
+    ) {
+        Text(
+            text = listOfNotNull(notice.severity, notice.message).joinToString(": "),
+            style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+            color = MaterialTheme.colorScheme.onSurface,
+        )
+        listOfNotNull(
+            notice.detail?.let { "Detail: $it" },
+            notice.hint?.let { "Hint: $it" },
+        ).forEach { line ->
+            Text(
+                text = line,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(start = Space.lg),
+            )
+        }
+    }
+}
+
 /** Duration, row counts, truncation, and the copy the keyboard would also perform. */
 @Composable
 private fun StatusBar(state: ResultGridState, onCopy: (String) -> Unit) {
@@ -572,6 +669,13 @@ private fun StatusBar(state: ResultGridState, onCopy: (String) -> Unit) {
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.weight(1f).semantics { contentDescription = "grid-status" },
         )
+        state.noticeLabel()?.let { label ->
+            ToolButton(
+                text = label,
+                onClick = state::toggleNotices,
+                description = "grid-toggle-notices",
+            )
+        }
         if (state.result.columns.isNotEmpty()) {
             ToolButton(
                 text = if (state.panelOpen) "Hide value" else "Show value",
@@ -594,13 +698,21 @@ private fun StatusBar(state: ResultGridState, onCopy: (String) -> Unit) {
  *
  * pgjdbc surfaces the affected count but not PostgreSQL's command tag, so this says
  * what was actually received rather than inventing `UPDATE 3` from a keyword.
+ *
+ * When the server sent notices, they are what the statement produced, and saying
+ * "there is nothing to show" above a panel full of them would be wrong.
  */
 @Composable
-private fun CommandResult(modifier: Modifier = Modifier) {
+private fun CommandResult(state: ResultGridState, modifier: Modifier = Modifier) {
+    val spoke = state.result.notices.isNotEmpty()
     EmptyState(
         title = "Statement completed.",
-        detail = "It returned no columns, so there is no grid to show. " +
-            "The status line below carries what the server reported.",
+        detail = if (spoke) {
+            "It returned no columns. What the server said about it is below."
+        } else {
+            "It returned no columns, so there is no grid to show. " +
+                "The status line below carries what the server reported."
+        },
         description = "grid-command",
         modifier = modifier.fillMaxWidth(),
     )

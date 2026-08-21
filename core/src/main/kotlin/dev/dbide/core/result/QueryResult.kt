@@ -116,12 +116,43 @@ data class ResultLimits(
 }
 
 /**
+ * Something the server said on the way to a result that did not fail.
+ *
+ * `RAISE NOTICE` from a function, the "table will be created" line a `CREATE TABLE`
+ * emits for an implicit index, a deprecation warning from an extension: PostgreSQL
+ * sends these on the same connection as the rows and they are the entire output of
+ * some statements. A `DO` block whose only job is to report on what it found returns
+ * no columns and no count, so an application that drops notices shows the user a
+ * blank grid and calls it success.
+ *
+ * The fields are [DbError.QueryFailed]'s, minus the ones a notice never carries: a
+ * notice has no position to point at and names no object. [severity] is localized by
+ * the server's `lc_messages` and is shown rather than branched on, exactly as it is
+ * for an error; [sqlState] is `00000` for an ordinary notice and something more
+ * specific for a warning, and is the field worth testing if anything ever needs to.
+ *
+ * Every string here has been through `Redaction`. A notice is server-authored text
+ * and free to quote the connection it arrived on.
+ */
+data class Notice(
+    val message: String,
+    val severity: String? = null,
+    val sqlState: String? = null,
+    val detail: String? = null,
+    val hint: String? = null,
+)
+
+/**
  * A completed statement.
  *
  * [rowsAffected] is set only for a statement that returned no rows, and is the
  * closest thing to PostgreSQL's command tag that JDBC exposes: pgjdbc surfaces the
  * count but not the tag itself, and inventing `"UPDATE 3"` from the count and the
  * first keyword would be reporting a server value that was never received.
+ *
+ * [notices] is what the server said while producing all of the above. It belongs on
+ * a *successful* result because that is the only place it can go: a statement that
+ * fails throws, and a notice raised before the failure is about the same run.
  */
 data class QueryResult(
     val columns: List<Column>,
@@ -129,6 +160,7 @@ data class QueryResult(
     val duration: Duration,
     val truncation: Truncation = Truncation.NONE,
     val rowsAffected: Long? = null,
+    val notices: List<Notice> = emptyList(),
 ) {
     /** Whether anything was left behind. [truncation] says what did it. */
     val truncated: Boolean get() = truncation != Truncation.NONE

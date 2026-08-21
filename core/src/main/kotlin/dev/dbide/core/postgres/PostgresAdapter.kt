@@ -10,6 +10,7 @@ import dev.dbide.core.export.ExportStop
 import dev.dbide.core.result.CellValue
 import dev.dbide.core.result.DbError
 import dev.dbide.core.result.DbException
+import dev.dbide.core.result.Notice
 import dev.dbide.core.result.QueryResult
 import dev.dbide.core.result.ResultLimits
 import dev.dbide.core.result.Truncation
@@ -136,15 +137,54 @@ class PostgresAdapter(
     private fun PreparedStatement.readResult(started: TimeSource.Monotonic.ValueTimeMark): QueryResult {
         val hasRows = execute()
         val elapsed = started.elapsedNow()
+        val notices = collectNotices()
         if (!hasRows) {
             return QueryResult(
                 columns = emptyList(),
                 rows = emptyList(),
                 duration = elapsed,
                 rowsAffected = updateCount.takeIf { it >= 0 }?.toLong(),
+                notices = notices,
             )
         }
-        return resultSet.use { rows -> rows.read(elapsed) }
+        return resultSet.use { rows -> rows.read(elapsed).copy(notices = notices) }
+    }
+
+    /**
+     * The notices this statement's execution produced, from both chains JDBC offers.
+     *
+     * Both, because which one a notice lands on is a driver detail and not a promise:
+     * pgjdbc routes a notice raised during an execution to the statement, and one
+     * raised outside a statement — during connection setup, or by an asynchronous
+     * `LISTEN` — to the connection, and the boundary between those has moved between
+     * versions. Reading only one of them is how this works on the driver it was
+     * written against and quietly stops working on the next.
+     *
+     * What is here belongs to this execution: the statement is prepared fresh, so its
+     * chain starts empty, and the connection's is cleared in [withStatement] before the
+     * statement runs — otherwise a notice would be reported against whatever ran next
+     * on that pooled connection.
+     */
+    private fun PreparedStatement.collectNotices(): List<Notice> {
+        val fromStatement = PostgresErrors.notices(runCatching { warnings }.getOrNull(), redaction)
+        // The connection chain gets whatever room the statement's chain left, and
+        // nothing once that is gone. Not a trailing `take` over the joined list: the
+        // last entry of a full list is the line saying the list was cut, and trimming
+        // to length would remove exactly the sentence that stops a shortened list from
+        // looking complete.
+        val room = PostgresErrors.MAX_NOTICES - fromStatement.size
+        if (room <= 0) return fromStatement
+        val fromConnection = PostgresErrors.notices(
+            runCatching { connection.warnings }.getOrNull(),
+            redaction,
+            limit = room,
+        )
+        // Deduplicated across the two chains only, never within one. A driver that
+        // reported the same notice on both would otherwise say it twice — but a
+        // function that raises the same sentence on three rows raised it three times,
+        // and collapsing those would be reporting something that did not happen.
+        val seen = fromStatement.toSet()
+        return fromStatement + fromConnection.filterNot { it in seen }
     }
 
     /**
@@ -167,6 +207,10 @@ class PostgresAdapter(
                 // A cursor needs a transaction; without one pgjdbc buffers the entire
                 // result into heap regardless of the fetch size.
                 connection.autoCommit = false
+                // This connection has been used before. Whatever the last statement on
+                // it made the server say is not this statement's news, and reporting it
+                // as such is worse than reporting nothing.
+                runCatching { connection.clearWarnings() }
                 var succeeded = false
                 try {
                     val value = connection.prepareStatement(sql).use { statement ->

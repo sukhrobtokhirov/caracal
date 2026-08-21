@@ -19,6 +19,7 @@ import dev.dbide.app.ResultGridState
 import dev.dbide.core.result.CellValue
 import dev.dbide.core.result.Column
 import dev.dbide.core.result.ColumnFormat
+import dev.dbide.core.result.Notice
 import dev.dbide.core.result.QueryResult
 import dev.dbide.core.result.ResultLimits
 import dev.dbide.core.result.Truncation
@@ -334,6 +335,109 @@ class ResultGridUiTest {
             onNodeWithContentDescription("grid-command").assertIsDisplayed()
             onNodeWithContentDescription("grid-status").assertTextEquals("3 rows affected · 4.00 ms")
             onNodeWithContentDescription("grid-header-0").assertDoesNotExist()
+        }
+
+    // --- Notices --------------------------------------------------------------
+
+    @Test
+    fun `a statement whose only output was a notice shows the notice`() =
+        runDesktopComposeUiTest(width = 900, height = 600) {
+            // The failure this rules out is the whole reason notices are carried: a
+            // DO block that reports what it found returns no columns and no count, so
+            // dropping its notices leaves "Statement completed." and nothing else.
+            grid(
+                QueryResult(
+                    columns = emptyList(),
+                    rows = emptyList(),
+                    duration = 4.milliseconds,
+                    notices = listOf(Notice("checked 3 tables", severity = "NOTICE")),
+                ),
+            )
+
+            onNodeWithContentDescription("grid-notices").assertIsDisplayed()
+            onNodeWithContentDescription("grid-notice-0").assertTextContains("NOTICE: checked 3 tables")
+        }
+
+    @Test
+    fun `a notice shows its severity, and its detail and hint under it`() =
+        runDesktopComposeUiTest(width = 900, height = 600) {
+            grid(
+                QueryResult(
+                    columns = listOf(Column("id", "int8", ColumnFormat.NUMBER)),
+                    rows = listOf(listOf(CellValue.Integer(1))),
+                    duration = 4.milliseconds,
+                    notices = listOf(
+                        Notice(
+                            message = "nothing was dropped",
+                            severity = "WARNING",
+                            detail = "The table was not there.",
+                            hint = "Check the schema.",
+                        ),
+                    ),
+                ),
+            )
+
+            val notice = onNodeWithContentDescription("grid-notice-0")
+            notice.assertTextContains("WARNING: nothing was dropped")
+            notice.assertTextContains("Detail: The table was not there.")
+            notice.assertTextContains("Hint: Check the schema.")
+        }
+
+    @Test
+    fun `notices open by themselves, close on request, and come back from the status bar`() =
+        runDesktopComposeUiTest(width = 900, height = 600) {
+            // Open to begin with because a notice nobody knows to look for is a notice
+            // nobody reads; dismissible because the second look does not need it.
+            grid(
+                QueryResult(
+                    columns = listOf(Column("id", "int8", ColumnFormat.NUMBER)),
+                    rows = listOf(listOf(CellValue.Integer(1))),
+                    duration = 4.milliseconds,
+                    notices = listOf(Notice("first"), Notice("second")),
+                ),
+            )
+
+            onNodeWithContentDescription("grid-notices").assertIsDisplayed()
+            onNodeWithContentDescription("grid-notices-close").performClick()
+
+            onNodeWithContentDescription("grid-notices").assertDoesNotExist()
+            onNodeWithContentDescription("grid-toggle-notices").assertTextEquals("2 notices")
+
+            onNodeWithContentDescription("grid-toggle-notices").performClick()
+            onNodeWithContentDescription("grid-notice-1").assertTextContains("second")
+        }
+
+    @Test
+    fun `a result the server said nothing about has no notices control at all`() =
+        runDesktopComposeUiTest(width = 900, height = 600) {
+            grid(
+                QueryResult(
+                    columns = listOf(Column("id", "int8", ColumnFormat.NUMBER)),
+                    rows = listOf(listOf(CellValue.Integer(1))),
+                    duration = 4.milliseconds,
+                ),
+            )
+
+            onNodeWithContentDescription("grid-notices").assertDoesNotExist()
+            onNodeWithContentDescription("grid-toggle-notices").assertDoesNotExist()
+        }
+
+    @Test
+    fun `a notice is never drawn as anything but text`() =
+        runDesktopComposeUiTest(width = 900, height = 600) {
+            // Server-authored text on the same terms as a cell value. There is no
+            // renderer here that could interpret it, and this is what keeps it that way.
+            val hostile = "<b>bold</b> & ${'$'}{injected}"
+            grid(
+                QueryResult(
+                    columns = emptyList(),
+                    rows = emptyList(),
+                    duration = 4.milliseconds,
+                    notices = listOf(Notice(hostile)),
+                ),
+            )
+
+            onNodeWithContentDescription("grid-notice-0").assertTextContains(hostile)
         }
 
     @Test

@@ -5,6 +5,7 @@ import dev.dbide.core.result.DbError
 import java.sql.SQLException
 import java.sql.SQLTimeoutException
 import java.sql.SQLTransientConnectionException
+import java.sql.SQLWarning
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
@@ -17,6 +18,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.CsvSource
 import org.postgresql.util.PSQLException
+import org.postgresql.util.PSQLWarning
 import org.postgresql.util.ServerErrorMessage
 
 class PostgresErrorsTest {
@@ -205,6 +207,80 @@ class PostgresErrorsTest {
         assertEquals(true, error.message.contains("relation \"orders\" does not exist"))
     }
 
+    // --- Notices --------------------------------------------------------------
+
+    @Test
+    fun `a notice keeps everything the server put in it`() {
+        val notice = PostgresErrors.notices(psqlWarning(NOTICE), redaction).single()
+
+        assertEquals("table \"invoices\" does not exist, skipping", notice.message)
+        assertEquals("NOTICE", notice.severity)
+        assertEquals("00000", notice.sqlState)
+        assertEquals("Nothing was dropped.", notice.detail)
+        assertEquals("Use IF EXISTS deliberately.", notice.hint)
+    }
+
+    @Test
+    fun `a chain of notices arrives in the order the server raised them`() {
+        val chain = psqlWarning(NOTICE).apply {
+            nextWarning = psqlWarning(WARNING)
+            nextWarning.nextWarning = SQLWarning("a warning with no server report")
+        }
+
+        val notices = PostgresErrors.notices(chain, redaction)
+
+        assertEquals(3, notices.size)
+        assertEquals(listOf("NOTICE", "WARNING", null), notices.map { it.severity })
+        assertEquals("a warning with no server report", notices.last().message)
+    }
+
+    @Test
+    fun `every part of a notice goes through redaction`() {
+        // A notice is server-authored text like any error, and `RAISE NOTICE '%', ...`
+        // will happily interpolate whatever the function was given.
+        val notice = PostgresErrors.notices(psqlWarning(LEAKY_NOTICE), redaction).single()
+
+        listOf(notice.message, notice.detail, notice.hint).forEach {
+            assertNoConnectionIdentity(it.orEmpty())
+        }
+    }
+
+    @Test
+    fun `a chain longer than the cap is cut, and says so`() {
+        // A loop that raises a notice per iteration is ordinary PL/pgSQL, and keeping
+        // every one of them is the unbounded retention ResultLimits exists to prevent.
+        val head = psqlWarning(NOTICE)
+        var tail: SQLWarning = head
+        repeat(PostgresErrors.MAX_NOTICES + 20) {
+            val next = psqlWarning(NOTICE)
+            tail.nextWarning = next
+            tail = next
+        }
+
+        val notices = PostgresErrors.notices(head, redaction)
+
+        assertEquals(PostgresErrors.MAX_NOTICES + 1, notices.size)
+        assertTrue(
+            notices.last().message.contains("were not kept"),
+            "a cut list must not look complete: ${notices.last().message}",
+        )
+    }
+
+    @Test
+    fun `a warning chained to itself terminates instead of hanging`() {
+        // pgjdbc does not build one. This walk is over driver-owned state, and a hang
+        // here would be indistinguishable from a hung query.
+        val loop = SQLWarning("round and round")
+        loop.nextWarning = loop
+
+        assertEquals(1, PostgresErrors.notices(loop, redaction).size)
+    }
+
+    @Test
+    fun `no warning is no notices`() {
+        assertEquals(emptyList(), PostgresErrors.notices(null, redaction))
+    }
+
     private fun assertNoConnectionIdentity(message: String) {
         listOf("db.internal.example", "6432", "payments", "reporting", "hunter2", "jdbc:").forEach {
             assertFalse(message.contains(it, ignoreCase = true), "leaked \"$it\" in: $message")
@@ -219,10 +295,15 @@ class PostgresErrorsTest {
      * stub would prove that the mapping copies fields rather than that it copies the
      * right ones.
      */
-    private fun psqlException(fields: Map<Char, String>): PSQLException {
-        val encoded = fields.entries.joinToString("") { (tag, value) -> "$tag$value\u0000" }
-        return PSQLException(ServerErrorMessage(encoded))
-    }
+    private fun psqlException(fields: Map<Char, String>): PSQLException =
+        PSQLException(serverMessage(fields))
+
+    /** The same, for the warning half of PostgreSQL's identical message format. */
+    private fun psqlWarning(fields: Map<Char, String>): PSQLWarning =
+        PSQLWarning(serverMessage(fields))
+
+    private fun serverMessage(fields: Map<Char, String>): ServerErrorMessage =
+        ServerErrorMessage(fields.entries.joinToString("") { (tag, value) -> "$tag$value\u0000" })
 
     private companion object {
         /** `select ordr from invoices` — a typo, with everything the server says about it. */
@@ -256,6 +337,31 @@ class PostgresErrorsTest {
             'p' to "19",
             'q' to "SELECT count(*) FROM missing",
             'W' to "PL/pgSQL function add_invoice(numeric) line 3 at SQL statement",
+        )
+
+        /** `DROP TABLE IF EXISTS invoices` against a database that has none. */
+        val NOTICE = mapOf(
+            'S' to "NOTICE",
+            'C' to "00000",
+            'M' to "table \"invoices\" does not exist, skipping",
+            'D' to "Nothing was dropped.",
+            'H' to "Use IF EXISTS deliberately.",
+            'F' to "tablecmds.c",
+            'R' to "DropErrorMsgNonExistent",
+        )
+
+        val WARNING = mapOf(
+            'S' to "WARNING",
+            'C' to "01000",
+            'M' to "there is no transaction in progress",
+        )
+
+        val LEAKY_NOTICE = mapOf(
+            'S' to "NOTICE",
+            'C' to "00000",
+            'M' to "copied 12 rows from db.internal.example",
+            'D' to "The user reporting owns them.",
+            'H' to "Run this on jdbc:postgresql://db.internal.example:6432/payments instead.",
         )
 
         val LEAKY = mapOf(
