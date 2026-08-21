@@ -301,7 +301,10 @@ class RedisAdapter(
             key = request.key,
             content = RedisBytes.window(chunk, total = length.toInt(), limit = chunk.size),
             offset = offset.toInt(),
-            nextOffset = (offset + chunk.size).toInt().takeIf { it < ceiling },
+            // An empty chunk would otherwise hand back the offset it was given: the
+            // key deleted between the STRLEN and the GETRANGE leaves "Show more"
+            // fetching the same empty page forever.
+            nextOffset = (offset + chunk.size).toInt().takeIf { chunk.isNotEmpty() && it < ceiling },
             length = length.toInt(),
             complete = offset + chunk.size >= length,
             cappedAt = cappedAt,
@@ -317,9 +320,14 @@ class RedisAdapter(
         val budget = ByteBudget(limits.responseBytes)
         // A LinkedHashMap from Lettuce, so this is the server's own order. A hash
         // cannot hold a duplicate field, so nothing is lost by having gone through one.
-        val entries = page.map.entries.takeWhile { budget.isOpen }.map { (field, value) ->
+        // A sequence, not the collection: `Iterable.takeWhile` is eager, so it ran to
+        // completion before `map` had spent a single byte of the budget. Every element
+        // was taken whatever the budget said, and the byte bound was never enforced —
+        // only the element count was. A sequence interleaves the two, which is what
+        // the budget was written to do.
+        val entries = page.map.entries.asSequence().takeWhile { budget.isOpen }.map { (field, value) ->
             FieldEntry(field = budget.take(field), value = budget.take(value))
-        }
+        }.toList()
         return ValuePage.Fields(
             key = request.key,
             entries = entries,
@@ -336,7 +344,7 @@ class RedisAdapter(
             ScanArgs().limit(limits.entriesFor(request.limit).toLong()),
         ).await()
         val budget = ByteBudget(limits.responseBytes)
-        val members = page.values.takeWhile { budget.isOpen }.map { budget.take(it) }
+        val members = page.values.asSequence().takeWhile { budget.isOpen }.map { budget.take(it) }.toList()
         return ValuePage.Members(
             key = request.key,
             members = members,
@@ -366,9 +374,9 @@ class RedisAdapter(
             async.zrangeWithScores(bytes, offset, offset + size - 1).await().orEmpty()
         }
         val budget = ByteBudget(limits.responseBytes)
-        val members = scored.takeWhile { budget.isOpen }.map { entry ->
+        val members = scored.asSequence().takeWhile { budget.isOpen }.map { entry ->
             ScoredMember(member = budget.take(entry.value), score = formatScore(entry.score))
-        }
+        }.toList()
         return ValuePage.Scored(
             key = request.key,
             members = members,
@@ -393,9 +401,9 @@ class RedisAdapter(
             async.lrange(bytes, offset, offset + size - 1).await().orEmpty()
         }
         val budget = ByteBudget(limits.responseBytes)
-        val elements = values.takeWhile { budget.isOpen }.mapIndexed { index, value ->
+        val elements = values.asSequence().takeWhile { budget.isOpen }.mapIndexed { index, value ->
             IndexedElement(index = offset + index, value = budget.take(value))
-        }
+        }.toList()
         return ValuePage.Elements(
             key = request.key,
             elements = elements,
@@ -429,14 +437,19 @@ class RedisAdapter(
                 listOf(start, "+", "COUNT", size.toString()).map { it.toByteArray(Charsets.UTF_8) },
         )
         val entries = (reply as? RedisReply.Items)?.items.orEmpty().mapNotNull { it.asStreamEntry() }
+        // A short page means the stream ended inside it — unless the reply budget cut
+        // it short, which is a different thing entirely. Deciding on the count alone
+        // read a budget-truncated page as the end of the stream: it reported
+        // `complete` with no continuation id, and every entry past the cut became
+        // unreachable. One entry costs `2 * fields + 3` reply elements, so a stream
+        // with a handful of fields per entry reaches the element budget inside a
+        // normal-sized page rather than in some pathological case.
+        val ended = entries.size < size && !reply.wasTruncated()
         return ValuePage.Entries(
             key = request.key,
             entries = entries,
-            nextId = entries.lastOrNull()?.id.takeIf { entries.size >= size },
-            // A short page means the stream ended inside it. Asking for one more entry
-            // than needed would be the alternative, and this is the same answer without
-            // the extra element to discard.
-            complete = entries.size < size,
+            nextId = entries.lastOrNull()?.id.takeIf { !ended },
+            complete = ended,
             truncated = reply.wasTruncated(),
         )
     }

@@ -77,9 +77,11 @@ object AppPaths {
      *
      * The move is a rename within one parent directory, so it is atomic and cheap,
      * and it carries the WAL and shared-memory files along with the database rather
-     * than leaving a torn write behind. Inside, the database files are renamed by
-     * prefix for the same reason: `caracal.db` beside a `dbide.db-wal` would be a
-     * database missing its most recent transactions.
+     * than leaving a torn write behind. The database files are renamed by prefix
+     * first, for the same reason: `caracal.db` beside a `dbide.db-wal` would be a
+     * database missing its most recent transactions. The directory rename goes last
+     * so that the destination existing means the adoption finished, which is what
+     * the skip below assumes.
      *
      * It does nothing at all when the destination already exists — two installations
      * are a situation to leave alone, not to merge — and nothing when the data
@@ -98,13 +100,20 @@ object AppPaths {
         val legacy = dataDirectory(os, env, home, name = LEGACY_APP_DIRECTORY_NAME)
         if (!Files.isDirectory(legacy) || Files.exists(destination)) return null
 
-        Files.move(legacy, destination)
-        destination.listDirectoryEntries()
+        // The files are renamed first, inside the directory that is still the legacy
+        // one, and the directory is renamed last. The order matters because the
+        // directory rename is what the guard above tests: doing it first left a
+        // window where a crash produced a `caracal` directory holding `dbide.db`,
+        // and the next launch skipped adoption, opened a new empty `caracal.db`
+        // beside it, and offered the first-run screen to someone whose vault was
+        // sitting untouched in the same folder.
+        legacy.listDirectoryEntries()
             .filter { it.name.startsWith(LEGACY_CONFIG_DATABASE_FILE) }
             .forEach { file ->
                 val suffix = file.name.removePrefix(LEGACY_CONFIG_DATABASE_FILE)
-                Files.move(file, destination.resolve(CONFIG_DATABASE_FILE + suffix))
+                Files.move(file, legacy.resolve(CONFIG_DATABASE_FILE + suffix))
             }
+        Files.move(legacy, destination)
         return legacy
     }
 }

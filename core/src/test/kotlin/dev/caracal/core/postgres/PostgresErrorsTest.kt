@@ -374,4 +374,42 @@ class PostgresErrorsTest {
             't' to "payments",
         )
     }
+
+    @Test
+    fun `a slow statement that failed on its own terms keeps its SQLSTATE`() {
+        // `timedOut` is wall clock, measured from before the connection was even
+        // acquired, so it exceeds the limit routinely while the statement itself
+        // never timed out. Letting it short-circuit threw away the SQLSTATE, the
+        // server's message, the hint, and the position the editor highlights — a
+        // constraint violation at 29.8s of a 30s limit was reported as a timeout.
+        val violation = PSQLException(
+            ServerErrorMessage("SERROR\u0000C23505\u0000Mduplicate key value\u0000northers_pkey\u0000"),
+        )
+
+        val error = PostgresErrors.classify(violation, redaction, timedOut = true, limit = 30.seconds)
+
+        val failed = assertIs<DbError.QueryFailed>(error)
+        assertEquals("23505", failed.sqlState)
+    }
+
+    @Test
+    fun `a timeout still needs the cancellation the server actually performed`() {
+        val cancelled = PSQLException(ServerErrorMessage("SERROR\u0000C57014\u0000Mcanceling statement\u0000"))
+
+        assertIs<DbError.Timeout>(
+            PostgresErrors.classify(cancelled, redaction, timedOut = true, limit = 30.seconds),
+        )
+    }
+
+    @Test
+    fun `a saturated pool is a connection failure, not a failed query`() {
+        // Hikari raises this with no SQLSTATE anywhere in the chain when the pool is
+        // simply full of healthy connections. Falling through told the user their SQL
+        // was wrong and showed them pool internals; nothing ever reached the server.
+        val exhausted = SQLTransientConnectionException(
+            "caracal-postgres - Connection is not available, request timed out after 5000ms.",
+        )
+
+        assertIs<DbError.ConnectionFailed>(PostgresErrors.classify(exhausted, redaction))
+    }
 }

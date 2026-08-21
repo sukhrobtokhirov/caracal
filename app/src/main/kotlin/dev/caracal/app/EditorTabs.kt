@@ -156,9 +156,22 @@ class EditorTabs(
      * it is, so unticking Read only has to reach every tab already open on it.
      */
     fun show(config: ConnectionConfig?) {
+        // Before the null return, not after it: this runs when a connection stops
+        // being open too, and that is precisely when a question about closing one of
+        // its tabs has to go. `closing` gates every shortcut in the window through
+        // `modal`, and the dialog that would clear it is mounted only inside the
+        // query workspace — which the connection closing takes off screen. Left
+        // behind, it made ⌘K, ⌘T, ⌘Enter and the rest silent no-ops for the rest of
+        // the session, and reappeared over the next connection the user selected.
+        dropStaleClose(config)
         if (config == null) return
         of(config.id).forEach { it.editor.show(config) }
         if (seeded.add(config.id) && of(config.id).isEmpty()) open(config)
+    }
+
+    private fun dropStaleClose(config: ConnectionConfig?) {
+        val pending = closing ?: return
+        if (pending.tab !in tabs || pending.tab.connectionId != config?.id) cancelClose()
     }
 
     /**
@@ -282,6 +295,23 @@ class EditorTabs(
     /** Keeps the tab, its script, and its running query. */
     fun cancelClose() {
         closing = null
+    }
+
+    /**
+     * Stops the work every tab pointed at [id] has in flight, leaving the tabs alone.
+     *
+     * For a connection being disconnected. Closing a connection shuts its pool down,
+     * and without this the pool went out from under a query and an export that were
+     * still using it: the editor reported a raw driver failure instead of saying the
+     * connection had been closed, and the export died mid-file and deleted what it
+     * had written — while [evict] was deliberately sparing that tab because it
+     * believed the export was safely in progress.
+     */
+    fun stopWork(id: ConnectionId) {
+        of(id).forEach { tab ->
+            tab.editor.cancel()
+            tab.export.cancel()
+        }
     }
 
     /**

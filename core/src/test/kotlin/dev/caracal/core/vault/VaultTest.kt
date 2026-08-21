@@ -2,6 +2,7 @@ package dev.caracal.core.vault
 
 import dev.caracal.core.connections.Secret
 import java.time.Instant
+import kotlin.time.Duration.Companion.seconds
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
@@ -34,6 +35,66 @@ class VaultTest {
     private fun vault() = Vault(store, params = KdfParams.TESTING, clock = { now })
 
     private val password get() = Secret("correct-horse")
+
+    @Test
+    fun `setup refuses to re-key a vault whose verifier is missing but whose salt is not`() = runTest {
+        // The salt is what every stored secret was sealed under. Writing a new one
+        // over it makes them unopenable by any password, for good — and the screen
+        // that would do it is the ordinary first-run one, so the user would never
+        // know that was the choice they were making.
+        vault().setUp(password)
+        val salt = store.values[Vault.META_SALT]!!
+        store.values.remove(Vault.META_VERIFIER)
+
+        assertThrows<VaultDamagedException> { runBlocking { vault().setUp(Secret("another-password")) } }
+        assertEquals(salt.toList(), store.values[Vault.META_SALT]!!.toList())
+    }
+
+    @Test
+    fun `a corrupted verifier is reported as damage, not as a wrong password`() = runTest {
+        val vault = vault()
+        vault.setUp(password)
+        vault.lock()
+        // Ten bytes: too short to be an envelope at all. A partial write, a recovered
+        // WAL, a bad restore.
+        store.values[Vault.META_VERIFIER] = ByteArray(10) { 7 }
+
+        assertThrows<MalformedEnvelopeException> { runBlocking { vault.unlock(password) } }
+    }
+
+    @Test
+    fun `a corrupted verifier does not spend the unlock attempt budget`() = runTest {
+        val vault = vault()
+        vault.setUp(password)
+        vault.lock()
+        val verifier = store.values[Vault.META_VERIFIER]!!
+        store.values[Vault.META_VERIFIER] = ByteArray(10) { 7 }
+
+        // Five attempts is the cooldown threshold. Counting these would lock a user
+        // out of a vault their correct password still opens.
+        repeat(6) { assertThrows<MalformedEnvelopeException> { runBlocking { vault.unlock(password) } } }
+
+        store.values[Vault.META_VERIFIER] = verifier
+        vault.unlock(password)
+        assertTrue(vault.isUnlocked)
+    }
+
+    @Test
+    fun `concurrent setup calls agree on one salt and verifier`() = runTest(timeout = 60.seconds) {
+        val vault = vault()
+        val first = async(Dispatchers.Default) { runCatching { vault.setUp(Secret("first-password")) } }
+        val second = async(Dispatchers.Default) { runCatching { vault.setUp(Secret("second-password")) } }
+        first.await()
+        second.await()
+
+        // Whichever won, the pair on disk is that one's. A salt from one call beside a
+        // verifier from the other is a vault no password opens.
+        vault.lock()
+        val opens = listOf("first-password", "second-password").count { candidate ->
+            runCatching { vault.unlock(Secret(candidate)) }.isSuccess
+        }
+        assertEquals(1, opens)
+    }
 
     @Test
     fun `a fresh installation needs setup`() = runTest {

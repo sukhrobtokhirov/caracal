@@ -132,7 +132,14 @@ fun ResultGrid(
                     event.key == Key.C &&
                     (event.isCtrlPressed || event.isMetaPressed)
                 if (!copying) return@onPreviewKeyEvent false
-                state.copyText()?.let(onCopy)
+                // Answered only when there is a grid copy to make. Returning true
+                // unconditionally swallowed the chord for the selectable text in the
+                // value and notice panes below — a preview handler on the root sees
+                // the event before the focused node does, so a user who had
+                // highlighted one field of a JSON cell got the whole cell instead,
+                // and with nothing selected got nothing at all.
+                val text = state.copyText() ?: return@onPreviewKeyEvent false
+                onCopy(text)
                 true
             }
             .testTag("result-grid"),
@@ -513,7 +520,10 @@ private fun ValuePanel(state: ResultGridState, onCopy: (String) -> Unit) {
 
     val raw = GridText.copy(value)
     val pretty = column.format == ColumnFormat.JSON && state.prettyJson
-    val shown = if (pretty) JsonFormat.pretty(raw) ?: raw else raw
+    // Remembered: a re-parse and re-print of the cell on every recomposition of this
+    // pane, including every scroll that recomposes the grid around it. The Redis
+    // viewer caches its equivalent for the same reason.
+    val shown = remember(raw, pretty) { if (pretty) JsonFormat.pretty(raw) ?: raw else raw }
 
     Column(
         modifier = Modifier
@@ -685,7 +695,6 @@ private fun NoticeLine(index: Int, notice: Notice) {
 /** Duration, row counts, truncation, and the copy the keyboard would also perform. */
 @Composable
 private fun StatusBar(state: ResultGridState, onCopy: (String) -> Unit) {
-    val copyable = state.copyText()
 
     Row(
         modifier = Modifier
@@ -720,9 +729,10 @@ private fun StatusBar(state: ResultGridState, onCopy: (String) -> Unit) {
         }
         ToolButton(
             text = state.copyLabel(),
-            onClick = { copyable?.let(onCopy) },
+            // Built in the click, not in the composition. See `hasCopyText`.
+            onClick = { state.copyText()?.let(onCopy) },
             tag = "grid-copy",
-            enabled = copyable != null,
+            enabled = state.hasCopyText(),
         )
     }
 }

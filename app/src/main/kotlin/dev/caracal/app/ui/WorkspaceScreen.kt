@@ -424,7 +424,12 @@ fun WorkspaceScreen(
                                 onEdit = { viewModel.startEditing(view) },
                                 onTest = { viewModel.test(view.id) },
                                 onOpen = { viewModel.open(view.id) },
-                                onClose = { viewModel.close(view.id) },
+                                // The tab work stops before the pool does. See
+                                // EditorTabs.stopWork.
+                                onClose = {
+                                    tabs.stopWork(view.id)
+                                    viewModel.close(view.id)
+                                },
                                 onDelete = { viewModel.confirmDelete(view) },
                             )
                         }

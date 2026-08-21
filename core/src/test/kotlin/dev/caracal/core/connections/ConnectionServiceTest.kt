@@ -8,10 +8,12 @@ import dev.caracal.core.vault.KdfParams
 import dev.caracal.core.vault.SecretIdentity
 import dev.caracal.core.vault.Vault
 import dev.caracal.core.history.HistoryScope
+import dev.caracal.core.vault.VaultDamagedException
 import dev.caracal.core.vault.VaultLockedException
 import dev.caracal.core.vault.VaultState
 import dev.caracal.core.vault.WrongPasswordException
 import java.nio.file.Path
+import java.sql.DriverManager
 import java.time.Instant
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
@@ -19,6 +21,7 @@ import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
@@ -79,6 +82,52 @@ class ConnectionServiceTest {
         username = "caracal",
         secret = secret,
     )
+
+    // --- Vault damage --------------------------------------------------------
+
+    @Test
+    fun `setting up over a lost verifier is refused while sealed secrets exist`() = runTest {
+        // The salt is what every sealed credential was sealed under, and this is the
+        // ordinary first-run screen. Writing a new salt here would make every stored
+        // password permanently unopenable, silently, and look exactly like a fresh
+        // installation to the person doing it.
+        unlocked().use { session -> session.service.create(postgresDraft()) }
+        removeVerifier()
+
+        session().use { session ->
+            val salt = assertNotNull(session.store.getMetadata(Vault.META_SALT))
+            assertThrows<VaultDamagedException> {
+                runBlocking { session.service.setUp(Secret("a-new-password")) }
+            }
+            assertContentEquals(salt, session.store.getMetadata(Vault.META_SALT))
+        }
+    }
+
+    @Test
+    fun `an interrupted first run can still choose a password, because nothing was sealed`() = runTest {
+        // The other half of the same state. A crash between the salt and the verifier
+        // leaves no sealed secret behind, so re-keying costs nothing and the user gets
+        // the first-run screen they expected rather than an error about a file that
+        // has nothing in it.
+        unlocked().use { session -> assertTrue(session.service.list().isEmpty()) }
+        removeVerifier()
+
+        session().use { session ->
+            session.service.setUp(Secret("a-new-password"))
+            assertEquals(VaultState.UNLOCKED, session.service.vaultState())
+        }
+    }
+
+    /** What a lost verifier row looks like on disk. The store has no delete for it. */
+    private fun removeVerifier() {
+        val path = directory.resolve("caracal.db")
+        DriverManager.getConnection("jdbc:sqlite:" + path).use { connection ->
+            connection.prepareStatement("DELETE FROM app_metadata WHERE key = ?").use { statement ->
+                statement.setString(1, Vault.META_VERIFIER)
+                statement.executeUpdate()
+            }
+        }
+    }
 
     // --- Locked state --------------------------------------------------------
 

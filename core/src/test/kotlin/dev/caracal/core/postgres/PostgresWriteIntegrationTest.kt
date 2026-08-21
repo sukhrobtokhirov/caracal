@@ -43,6 +43,7 @@ class PostgresWriteIntegrationTest {
         postgres.createConnection("").use { connection ->
             connection.createStatement().use { statement ->
                 statement.execute("TRUNCATE ledger")
+                statement.execute("TRUNCATE deferred_ledger")
                 statement.execute("INSERT INTO ledger (note, amount) VALUES ('opening', 100)")
             }
         }
@@ -158,6 +159,38 @@ class PostgresWriteIntegrationTest {
     private suspend fun PostgresAdapter.count(sql: String): Long =
         (execute(sql).rows.single().single() as CellValue.Integer).value
 
+    @Test
+    fun `a write whose commit fails is reported as a failure, not as rows affected`() = runBlocking {
+        // The worst failure this application could have: "1 row affected" for a
+        // transaction the server threw away. A DEFERRABLE INITIALLY DEFERRED unique
+        // constraint is checked at COMMIT, so the INSERT succeeds and the commit does
+        // not — and a commit whose result is discarded looks exactly like a commit
+        // that worked.
+        writable().use { session ->
+            session.adapter.execute("INSERT INTO deferred_ledger (note) VALUES ('once')")
+
+            val error = assertThrows<DbException> {
+                runBlocking { session.adapter.execute("INSERT INTO deferred_ledger (note) VALUES ('once')") }
+            }.error
+
+            val failed = assertIs<DbError.QueryFailed>(error)
+            assertEquals("23505", failed.sqlState)
+        }
+
+        // And the row really is not there. The count is the assertion; the exception
+        // above only proves the user was told.
+        assertEquals(1L, deferredCount())
+    }
+
+    private fun deferredCount(): Long = postgres.createConnection("").use { connection ->
+        connection.createStatement().use { statement ->
+            statement.executeQuery("SELECT count(*) FROM deferred_ledger").use {
+                it.next()
+                it.getLong(1)
+            }
+        }
+    }
+
     private fun ledgerCount(): Long = postgres.createConnection("").use { connection ->
         connection.createStatement().use { statement ->
             statement.executeQuery("SELECT count(*) FROM ledger").use {
@@ -200,6 +233,13 @@ class PostgresWriteIntegrationTest {
             postgres.createConnection("").use { connection ->
                 connection.createStatement().use { statement ->
                     statement.execute("CREATE TABLE ledger (note text, amount numeric)")
+                    // Checked at COMMIT rather than at INSERT, which is what makes a
+                    // swallowed commit result visible.
+                    statement.execute("CREATE TABLE deferred_ledger (note text)")
+                    statement.execute(
+                        "ALTER TABLE deferred_ledger ADD CONSTRAINT deferred_ledger_note_key " +
+                            "UNIQUE (note) DEFERRABLE INITIALLY DEFERRED",
+                    )
                 }
             }
         }

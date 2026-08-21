@@ -165,11 +165,26 @@ class SchemaTreeViewModel(
     fun toggle(key: NodeKey) {
         if (expanded.remove(key)) {
             // Nobody is waiting for children that are no longer on screen.
-            jobs.remove(key)?.cancel()
+            //
+            // A schema is the one key that never has a job of its own: expanding it
+            // fans out into four Folder reads, and those are what `jobs` holds. So
+            // cancelling by the schema's own key looked up something that was never
+            // put there and collapsing a schema cancelled nothing at all — four
+            // catalog queries per schema kept running, each holding a pooled
+            // connection, for a subtree the user had already closed.
+            cancelJobsFor(key)
             return
         }
         expanded += key
         load(key)
+    }
+
+    private fun cancelJobsFor(key: NodeKey) {
+        if (key is NodeKey.Schema) {
+            ObjectKind.entries.forEach { kind -> jobs.remove(NodeKey.Folder(key.schema, kind))?.cancel() }
+        } else {
+            jobs.remove(key)?.cancel()
+        }
     }
 
     fun isExpanded(key: NodeKey): Boolean = key in expanded
@@ -425,11 +440,14 @@ class SchemaTreeViewModel(
         }
         jobs[key] = job
         job.invokeOnCompletion {
+            // Both guarded on this still being the registered job. A node refreshed
+            // twice in a row cancels the first job and registers the second under the
+            // same key; the first job's handler then ran and cleared the flag for a
+            // read that was still going, so the row stopped spinning while it was
+            // still being read.
+            val current = jobs[key]
             jobs.remove(key, job)
-            // Cancellation does not run the body's last line. A node collapsed
-            // mid-read would otherwise be marked as refreshing for the rest of the
-            // session, and its row would spin forever.
-            refreshing -= key
+            if (current == null || current === job) refreshing -= key
         }
     }
 

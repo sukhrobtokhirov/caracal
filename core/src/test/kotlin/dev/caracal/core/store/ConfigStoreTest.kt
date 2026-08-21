@@ -615,6 +615,43 @@ class ConfigStoreTest {
         assertFalse(reopened.readOnly)
     }
 
+    @Test
+    fun `migrating a schema-1 database keeps the history in it`() = runTest {
+        // Step 2 rebuilds `connections` by dropping the old table, and with foreign
+        // keys enforced SQLite performs an implicit DELETE first — which fires
+        // query_history's ON DELETE CASCADE and takes every row with it, inside the
+        // migration's own transaction, and commits. It costs nothing on a real
+        // schema-1 upgrade only because history was not written yet; the rebuild is
+        // the idiom in that file now, and the next one would land on a full table.
+        writeSchemaVersionOneDatabase()
+        seedSchemaVersionOneHistory()
+
+        withStore { store ->
+            val kept = store.history(HistoryQuery(connectionId = ConnectionId("id-1"), limit = 10))
+            assertEquals(2, kept.items.size)
+        }
+    }
+
+    /**
+     * Two history rows on a schema-1 database, written the same way the rest of the
+     * fixture is.
+     */
+    private fun seedSchemaVersionOneHistory() {
+        DriverManager.getConnection("jdbc:sqlite:$databasePath").use { connection ->
+            connection.createStatement().use { statement ->
+                repeat(2) { index ->
+                    statement.execute(
+                        """
+                        INSERT INTO query_history
+                            (connection_id, statement, duration_ms, row_count, status, executed_at)
+                        VALUES ('id-1', 'select $index', 5, 1, 'ok', '2026-08-20T10:00:0${index}Z')
+                        """,
+                    )
+                }
+            }
+        }
+    }
+
     /**
      * A database at schema version 1, with two connections in it, one of which has
      * `read_only = 0`.

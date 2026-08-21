@@ -130,10 +130,21 @@ class VaultViewModel(
     /** Discards the key, closes every client, and returns to the unlock screen. */
     fun lock() {
         scope.launch {
-            service.lock()
-            clearInput()
-            failure = null
-            screen = VaultUiState.Locked
+            // Guarded like every other launch here. This was the one that was not,
+            // and anything thrown out of `service.lock()` used to leave `screen` at
+            // Unlocked over a workspace that had already been torn down. The screen
+            // moves to Locked either way: the key is gone whether or not closing the
+            // clients raised on the way.
+            try {
+                service.lock()
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (problem: Throwable) {
+                failure = problem.toFailure()
+            } finally {
+                clearInput()
+                screen = VaultUiState.Locked
+            }
         }
     }
 

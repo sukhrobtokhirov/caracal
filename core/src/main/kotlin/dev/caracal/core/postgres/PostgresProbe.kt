@@ -8,6 +8,7 @@ import java.sql.SQLException
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
 import kotlin.time.TimeSource
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -24,7 +25,7 @@ object PostgresProbe {
     val CONNECT_TIMEOUT: Duration = 5.seconds
 
     suspend fun test(config: PostgresConnectionConfig): TestResult = withContext(Dispatchers.IO) {
-        val redaction = Redaction(config.secrets())
+        val redaction = config.redaction()
         val started = TimeSource.Monotonic.markNow()
         try {
             // A pool of one: the test opens exactly the connection it closes.
@@ -42,7 +43,14 @@ object PostgresProbe {
                         )
                     }
                 }
-        } catch (failure: SQLException) {
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (failure: Throwable) {
+            // Not just SQLException: driver-class resolution, a rejected Properties,
+            // and Hikari's PoolInitializationException all arrive as RuntimeException,
+            // and classify already walks the cause chain for the SQLException inside.
+            // Letting those through gave the one screen whose entire job is diagnosing
+            // a connection nothing better to say than "something went wrong".
             throw DbException(PostgresErrors.classify(failure, redaction), failure)
         }
     }

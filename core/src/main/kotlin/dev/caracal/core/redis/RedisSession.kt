@@ -53,7 +53,7 @@ class RedisSession private constructor(
     val adapter: RedisAdapter = RedisAdapter(
         connection = connection,
         config = config,
-        redaction = Redaction(secretsOf(config, password)),
+        redaction = Redaction(identityOf(config), listOf(password.expose())),
         limits = limits,
     )
 
@@ -127,17 +127,23 @@ class RedisSession private constructor(
         }
 
         /** Dials, authenticates, reads the server version, and disconnects. */
-        suspend fun test(config: ConnectionConfig, password: Secret): TestResult {
-            val started = TimeSource.Monotonic.markNow()
-            return open(config, password).use { session ->
-                val latency = started.elapsedNow().inWholeMilliseconds
-                TestResult(
-                    engine = Engine.REDIS,
-                    serverVersion = session.serverVersion(),
-                    latencyMillis = latency,
-                )
+        suspend fun test(config: ConnectionConfig, password: Secret): TestResult =
+            // On the IO dispatcher for the closing brace, not the opening one: `open`
+            // manages its own dispatcher, but `use` closes on the caller's, and
+            // `close` blocks on Lettuce's graceful Netty shutdown for up to two
+            // seconds. The caller is a Compose scope on the AWT thread, so testing a
+            // Redis connection froze the window for that long after it succeeded.
+            withContext(Dispatchers.IO) {
+                val started = TimeSource.Monotonic.markNow()
+                open(config, password).use { session ->
+                    val latency = started.elapsedNow().inWholeMilliseconds
+                    TestResult(
+                        engine = Engine.REDIS,
+                        serverVersion = session.serverVersion(),
+                        latencyMillis = latency,
+                    )
+                }
             }
-        }
 
         /**
          * The strings that must never survive into a message or a log line.
@@ -147,11 +153,10 @@ class RedisSession private constructor(
          * its connection failures, and the URI it builds carries the password when one
          * was given.
          */
-        private fun secretsOf(config: ConnectionConfig, password: Secret): List<String> = listOf(
+        private fun identityOf(config: ConnectionConfig): List<String> = listOf(
             config.host,
             "${config.host}:${config.port}",
             config.username,
-            password.expose(),
         )
 
         private fun uri(config: ConnectionConfig, password: Secret): RedisURI {

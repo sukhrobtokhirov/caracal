@@ -18,6 +18,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -81,6 +82,14 @@ fun RedisConsole(model: RedisConsoleViewModel, modifier: Modifier = Modifier) {
         Preview(model.parsed)
         Prompt(model)
     }
+
+    // The question goes when the pane does. It arrives asynchronously from `send`,
+    // so switching to another Redis pane while a command is in flight left `pending`
+    // set with nothing mounted to answer it — and `pending` gates every shortcut in
+    // the window through `modal`, so all of them went quiet for the rest of the
+    // session. Nothing has been run at this point, so dropping the question costs
+    // only the retyping.
+    DisposableEffect(model) { onDispose { model.cancelConfirmation() } }
 
     model.pending?.let { pending ->
         CommandConfirmation(

@@ -134,4 +134,27 @@ class StatementClassifierTest {
 
     private fun assertWrite(sql: String) =
         assertEquals(StatementKind.WRITE, StatementClassifier.classify(sql), sql)
+
+    @Test
+    fun `every row-locking clause is a write, not only the ones spelled UPDATE`() {
+        // FOR UPDATE and FOR NO KEY UPDATE were caught only because the word UPDATE
+        // is in the write set. The other two contain no such word, so they were
+        // granted silently and then rejected by the server with 25006.
+        listOf(
+            "select * from invoices where id = 1 for update",
+            "select * from invoices where id = 1 for no key update",
+            "select * from invoices where id = 1 for share",
+            "select * from invoices where id = 1 for key share",
+        ).forEach { sql ->
+            assertEquals(StatementKind.WRITE, StatementClassifier.classify(sql), sql)
+        }
+    }
+
+    @Test
+    fun `a column named share or key is still a read`() {
+        // The locking words are matched only after FOR, so an ordinary schema does
+        // not collect a confirmation for using them as names.
+        assertEquals(StatementKind.READ, StatementClassifier.classify("select key, share from t"))
+        assertEquals(StatementKind.READ, StatementClassifier.classify("select * from t order by share"))
+    }
 }

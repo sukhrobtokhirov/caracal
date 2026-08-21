@@ -57,8 +57,17 @@ object StatementClassifier {
         // AS (DELETE FROM t RETURNING *) SELECT * FROM deleted` begins with WITH and
         // empties a table, and `SELECT ... FOR UPDATE` takes row locks that a
         // read-only transaction refuses.
+        // `FOR UPDATE` and `FOR NO KEY UPDATE` were caught only because the word
+        // UPDATE happens to be in WRITES. `FOR SHARE` and `FOR KEY SHARE` contain no
+        // word that is, so they classified as reads, were granted with no
+        // confirmation, and then failed on the server with 25006 — the raw error
+        // this classifier exists to pre-empt. All four are the same clause.
+        var previous = first
         while (words.hasNext()) {
-            if (words.next() in WRITES) return StatementKind.WRITE
+            val word = words.next()
+            if (word in WRITES) return StatementKind.WRITE
+            if (previous == "FOR" && word in LOCKING_CLAUSE) return StatementKind.WRITE
+            previous = word
         }
 
         return if (first in READS) StatementKind.READ else StatementKind.UNKNOWN
@@ -92,6 +101,14 @@ object StatementClassifier {
         "VACUUM", "ANALYZE", "ANALYSE", "REINDEX", "CLUSTER", "CHECKPOINT",
         "REFRESH", "COMMENT", "IMPORT", "REASSIGN", "EXECUTE", "SECURITY",
     )
+
+    /**
+     * The words that can follow `FOR` in a row-locking clause.
+     *
+     * Matched only after `FOR`, because `SHARE` and `KEY` are ordinary enough words
+     * elsewhere that matching them anywhere would warn about `SELECT key FROM t`.
+     */
+    private val LOCKING_CLAUSE = setOf("UPDATE", "SHARE", "KEY", "NO")
 
     /** Transaction, session, and cursor control. First word only; all unambiguous there. */
     private val SESSION_COMMANDS = setOf(

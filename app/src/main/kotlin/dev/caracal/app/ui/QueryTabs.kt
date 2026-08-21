@@ -94,7 +94,11 @@ fun QueryWorkspace(
         }
     }
 
-    tabs.closing?.let { pending ->
+    // Scoped to this strip's connection. `closing` is one field across every
+    // connection, so an unscoped render put connection A's question over connection
+    // B's workspace, where "Cancel and close" cancelled a query the user could not
+    // see.
+    tabs.closing?.takeIf { it.tab.connectionId == connection.id }?.let { pending ->
         CloseTabConfirmation(
             pending = pending,
             onConfirm = tabs::confirmClose,

@@ -24,7 +24,21 @@ data class KeyRow(
     val expanded: Boolean = false,
     /** How many keys are under this grouping, including ones nested deeper. */
     val childCount: Int = 0,
-)
+) {
+    /**
+     * An identity no two rows on screen can share, for a list that needs one.
+     *
+     * [path] is not that identity, and a list key has to be. It is built from
+     * [RedisKey.display], which is clipped at `elementBytes`, so two keys agreeing on
+     * their first four kilobytes — or two binary keys agreeing on a hex prefix —
+     * produce the same path. Both rows survive into the list, because the browser
+     * deduplicates by the key's real bytes, and a LazyColumn handed the same key
+     * twice throws rather than drawing them. A leaf uses the key itself, which is
+     * unique because Redis keys are; a grouping keeps its path, which is unique among
+     * groupings because the tree is built from a map of them.
+     */
+    val id: Any get() = key ?: path
+}
 
 /**
  * Groups the keys already on screen by a delimiter, so `user:42:profile` reads as

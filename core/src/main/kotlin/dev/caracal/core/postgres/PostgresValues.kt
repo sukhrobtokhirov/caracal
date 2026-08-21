@@ -101,7 +101,14 @@ internal object PostgresValues {
     private fun ResultSet.binary(index: Int, limits: ResultLimits): CellValue {
         val bytes = getBytes(index) ?: return CellValue.Null
         val shown = minOf(bytes.size, limits.binaryPreviewBytes)
-        val hex = StringBuilder(2 + shown * 2).append("\\x")
+        // Computed as a Long and clamped. Export sets binaryPreviewBytes to
+        // Int.MAX_VALUE, so `shown` is the whole value there: past about a gigabyte
+        // `2 + shown * 2` overflowed to a negative Int and StringBuilder threw
+        // NegativeArraySizeException, which is not an SQLException and so escaped
+        // the adapter's classification entirely and reached the user as
+        // "something went wrong".
+        val capacity = (2L + shown.toLong() * 2).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+        val hex = StringBuilder(capacity).append("\\x")
         for (position in 0 until shown) hex.append(HEX[bytes[position].toInt() and 0xff])
         return CellValue.Binary(
             preview = hex.toString(),

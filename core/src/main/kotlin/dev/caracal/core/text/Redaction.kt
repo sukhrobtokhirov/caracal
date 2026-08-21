@@ -12,9 +12,23 @@ package dev.caracal.core.text
  * freer with them — Lettuce puts the address in the message of most connection
  * failures, and a `RAISE`-style server reply can quote whatever it was handed.
  */
-class Redaction(secrets: Collection<String>) {
+class Redaction(
+    identity: Collection<String>,
+    /**
+     * Values redacted whatever their length.
+     *
+     * [identity] carries a length floor because a one-character user name or
+     * database name is a single letter, and redacting every "a" in a driver message
+     * destroys the message without hiding anything an onlooker did not already have.
+     * A password is the opposite case: it is short only by accident, nothing about
+     * it is guessable from context, and exempting it meant the one value that must
+     * never be logged was the one value that passed through intact. Nothing forces
+     * a password to be two characters, so nothing may assume it.
+     */
+    passwords: Collection<String> = emptyList(),
+) {
     private val secrets: List<String> =
-        secrets.filter { it.isNotBlank() && it.length >= 2 }
+        (identity.filter { it.isNotBlank() && it.length >= 2 } + passwords.filter { it.isNotEmpty() })
             .distinct()
             .sortedByDescending { it.length }
 

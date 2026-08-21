@@ -200,4 +200,57 @@ class CsvWriterTest {
         assertEquals(csv.toByteArray(Charsets.UTF_8).size.toLong(), writer.bytes, "byte count disagrees with the file")
         return csv
     }
+
+    @Test
+    fun `a text cell a spreadsheet would run as a formula is neutralized`() {
+        // Anyone with INSERT on a shared table can put this in a column. Opening the
+        // export in Excel executes it, and quoting does not help — Excel strips the
+        // CSV quoting before deciding what the cell is.
+        val out = StringBuilder()
+        val writer = CsvWriter(out)
+        writer.row(listOf(CellValue.Text("=cmd|'/C calc.exe'!A0")))
+
+        // The apostrophe is the whole mitigation: it is what makes a spreadsheet
+        // read the cell as text. Quoting is decided separately and this value needs
+        // none.
+        assertEquals("'=cmd|'/C calc.exe'!A0\r\n", out.toString())
+    }
+
+    @Test
+    fun `every formula lead is covered, and a negative number is not one`() {
+        val out = StringBuilder()
+        val writer = CsvWriter(out)
+        writer.row(listOf(CellValue.Text("+1"), CellValue.Text("-1"), CellValue.Text("@SUM(A1)")))
+        // A number is arithmetic no spreadsheet will run, so its minus sign survives.
+        writer.row(listOf(CellValue.Integer(-1), CellValue.Decimal(BigDecimal("-2.5"))))
+
+        val lines = out.toString().split("\r\n")
+        assertEquals("'+1,'-1,'@SUM(A1)", lines[0])
+        assertEquals("-1,-2.5", lines[1])
+    }
+
+    @Test
+    fun `a column named like a formula is neutralized too`() {
+        val out = StringBuilder()
+        CsvWriter(out).header(listOf(Column(name = "=total", typeName = "text")))
+
+        assertEquals("'=total\r\n", out.toString())
+    }
+
+    @Test
+    fun `neutralizing can be turned off for a caller that wants the exact bytes`() {
+        val out = StringBuilder()
+        CsvWriter(out, CsvOptions(neutralizeFormulas = false)).row(listOf(CellValue.Text("=1+1")))
+
+        assertEquals("=1+1\r\n", out.toString())
+    }
+
+    @Test
+    fun `a null representation that would break a COPY round trip is refused`() {
+        // The sentinel is written unquoted by definition, so the hazards a value is
+        // quoted against have no fallback here.
+        assertThrows<IllegalArgumentException> { CsvOptions(nullText = "\\.") }
+        assertThrows<IllegalArgumentException> { CsvOptions(nullText = " NULL") }
+        assertThrows<IllegalArgumentException> { CsvOptions(nullText = "NULL ") }
+    }
 }

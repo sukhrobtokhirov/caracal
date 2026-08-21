@@ -9,7 +9,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import dev.caracal.core.result.Failure
 import dev.caracal.core.result.toFailure
+import kotlin.coroutines.coroutineContext
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.withContext
 
 /** The lifecycle of the one long-lived resource the window owns. */
 sealed interface Startup<out T> {
@@ -40,12 +45,23 @@ fun <T : AutoCloseable> rememberStartup(open: suspend () -> T): Startup<T> {
     }
 
     LaunchedEffect(Unit) {
-        state = try {
-            Startup.Ready(open())
-        } catch (cancellation: CancellationException) {
-            throw cancellation
-        } catch (problem: Throwable) {
-            Startup.Failed(problem.toFailure())
+        // The effect's own job, asked below. `isActive` would not do: inside
+        // NonCancellable it is true by construction.
+        val effect = checkNotNull(coroutineContext[Job])
+        val opened = runCatching { open() }
+        // Under NonCancellable, because the window closing while the store is being
+        // opened is exactly when this matters. `open()` can return after the effect
+        // has been cancelled, and the assignment below would then never run — the
+        // SQLite handle open, unreferenced, and `onDispose` looking at a state that
+        // never became Ready.
+        withContext(NonCancellable) {
+            opened
+                .onSuccess { value ->
+                    if (effect.isActive) state = Startup.Ready(value) else runCatching { value.close() }
+                }
+                .onFailure { problem ->
+                    if (problem !is CancellationException) state = Startup.Failed(problem.toFailure())
+                }
         }
     }
 

@@ -79,21 +79,33 @@ sealed interface LoadedValue {
         override val loaded: Int get() = loadedBytes
 
         /** Whether any window failed to decode, which makes the whole value binary here. */
-        val binary: Boolean get() = windows.any { it !is RedisText.Utf8 }
+        val binary: Boolean by lazy { windows.any { it !is RedisText.Utf8 } }
 
-        /** The text read so far, or `null` when some of it is not text. */
-        val text: String?
-            get() = if (binary) null else windows.joinToString("") { (it as RedisText.Utf8).value }
+        /**
+         * The text read so far, or `null` when some of it is not text.
+         *
+         * Computed once, not on every read. These were `get()` properties, and a
+         * composable that reads one is not skippable — the value holds a `List`, so
+         * Compose treats it as unstable and re-runs the body on every recomposition
+         * of anything above it. At the 4 MB the string limit allows, one read of
+         * [hex] is an eight-million-character string built from scratch, and the
+         * window froze for seconds per frame while paging through a large value.
+         * The same reasoning already applies to `json` a few lines down.
+         */
+        val text: String? by lazy {
+            if (binary) null else windows.joinToString("") { (it as RedisText.Utf8).value }
+        }
 
         /** The bytes read so far, as hexadecimal, for a value that is not text. */
-        val hex: String
-            get() = windows.joinToString("") {
+        val hex: String by lazy {
+            windows.joinToString("") {
                 when (it) {
                     is RedisText.Binary -> it.hex
                     is RedisText.Utf8 -> it.value.toByteArray(Charsets.UTF_8)
                         .joinToString("") { byte -> "%02x".format(byte) }
                 }
             }
+        }
     }
 
     /** A hash, continued by [cursor]. */

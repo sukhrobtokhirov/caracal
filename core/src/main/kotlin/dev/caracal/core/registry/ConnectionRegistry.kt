@@ -151,8 +151,22 @@ class ConnectionRegistry(
      * deleted, so no phantom entry survives its record.
      */
     suspend fun forget(id: ConnectionId) {
-        close(id)
-        stateLock.withLock { entries.remove(id) }
+        val entry = stateLock.withLock { entries[id] } ?: return
+        // The close and the removal are one operation under the entry's own lock.
+        // Doing them as two left a window between them in which a concurrent `open`
+        // could take this same entry back out of the map, dial, and store a live
+        // client on it — after which the removal made that client unreachable from
+        // `entries`, so closeAll, shutdown, and lock all walked past it and the pool
+        // survived until the process died.
+        entry.operationLock.withLock {
+            closeClient(entry)
+            stateLock.withLock {
+                entry.reset(RuntimeStatus.CLOSED)
+                // Only if it is still this entry: an `open` that already replaced it
+                // owns what is in the map now.
+                if (entries[id] === entry) entries.remove(id)
+            }
+        }
     }
 
     /**
@@ -236,6 +250,12 @@ class ConnectionRegistry(
          * would leave a connection the user has just marked writable still refusing
          * writes, and turning it on would leave one still accepting them. The second
          * is the one that matters.
+         *
+         * `environment` is in here for the same reason one step removed. The Redis
+         * adapter captures the config at open, and the command guard reads the
+         * environment off it: without this, re-labelling an open connection as
+         * production left `FLUSHDB` behind a single click instead of the typed
+         * confirmation, on the connection the user had just declared production.
          */
         fun fingerprint(config: ConnectionConfig, password: Secret): String {
             val digest = MessageDigest.getInstance("SHA-256")
@@ -247,6 +267,7 @@ class ConnectionRegistry(
                 config.username,
                 config.tlsMode.wire,
                 config.readOnly.toString(),
+                config.environment.wire,
                 password.expose(),
             ).forEach { part ->
                 digest.update(part.toByteArray(Charsets.UTF_8))

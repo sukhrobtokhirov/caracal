@@ -31,10 +31,15 @@ import java.awt.Dimension
 import java.awt.FileDialog
 import java.lang.management.ManagementFactory
 import java.nio.file.Path
+import kotlin.time.Duration.Companion.seconds
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
+import org.slf4j.LoggerFactory
 
 /**
  * Everything the application owns for its lifetime, opened once and closed once.
@@ -60,11 +65,33 @@ private class Application(
     override fun close() {
         // Clients first: a pool closed after its configuration database is a pool
         // that can no longer report what it was.
-        runBlocking { service.shutdown() }
+        //
+        // On an IO thread rather than this one, and bounded. Compose disposes the
+        // composition on the AWT event thread, so a bare `runBlocking` here blocked
+        // the EDT — and `shutdown` waits on the registry's per-connection locks,
+        // whose holders resume on `Dispatchers.Main`, which is that same blocked
+        // thread. Closing the window while a connection was still dialing deadlocked
+        // the two against each other and the process never exited. Running the block
+        // elsewhere leaves the EDT free to deliver those continuations, and the
+        // timeout means a server that will not answer costs a few seconds on the way
+        // out rather than a process that has to be killed.
+        runBlocking(Dispatchers.IO) {
+            withTimeoutOrNull(SHUTDOWN_TIMEOUT) { service.shutdown() }
+                ?: log.debug("shutdown timed out; closing the store anyway")
+        }
         store.close()
     }
 
     companion object {
+        private val log = LoggerFactory.getLogger(Application::class.java)
+
+        /**
+         * How long the window waits for clients to close on the way out. Long enough
+         * for a healthy pool, short enough that an unreachable server does not hold
+         * the process open.
+         */
+        private val SHUTDOWN_TIMEOUT = 5.seconds
+
         suspend fun open(): Application = withContext(Dispatchers.IO) {
             // Before anything opens the configuration database: an installation from
             // before the application was named Caracal is moved to the new name, so
@@ -102,7 +129,18 @@ fun main(args: Array<String>) {
 }
 
 private fun window() = application {
-    val scope = rememberCoroutineScope()
+    // A supervisor, and a handler. The default `rememberCoroutineScope()` builds a
+    // plain Job parented to the recomposer, and this one scope is handed to every
+    // view model in the window: connections, the schema tree, every editor and
+    // export per tab, history, the theme, the vault. A single child completing
+    // exceptionally would cancel that shared job and propagate to the recomposer,
+    // after which every later `launch` returns a dead job — Run, Refresh, Connect
+    // and Unlock all become silent no-ops with nothing on screen to say why.
+    val scope = rememberCoroutineScope {
+        SupervisorJob() + CoroutineExceptionHandler { _, problem ->
+            LoggerFactory.getLogger("dev.caracal.app").debug("a view model coroutine failed", problem)
+        }
+    }
     val startup = rememberStartup { Application.open() }
 
     // What the window asks before it closes. It is created out here because

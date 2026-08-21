@@ -76,8 +76,16 @@ object CsvExport {
         try {
             // Buffered: the writer sees a field at a time, and a syscall per field is
             // the difference between an export that streams and one that crawls.
-            val result = withContext(Dispatchers.IO) { Files.newBufferedWriter(path, Charsets.UTF_8) }
-                .use { writer -> body(writer) }
+            // The open, the writing, and the close are all inside one withContext.
+            // With only the open inside it, a cancellation landing between the file
+            // being created and `use` being entered threw before `use` could run: the
+            // writer was never closed, and the delete below then ran against a file
+            // still open — the case the comment there says cannot happen. It also put
+            // the closing flush on the caller's dispatcher, which for an export
+            // started from the UI is the Compose main thread.
+            val result = withContext(Dispatchers.IO) {
+                Files.newBufferedWriter(path, Charsets.UTF_8).use { writer -> body(writer) }
+            }
             finished = true
             return result
         } finally {

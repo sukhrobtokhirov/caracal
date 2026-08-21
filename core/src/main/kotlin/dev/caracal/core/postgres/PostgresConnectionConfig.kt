@@ -3,6 +3,7 @@ package dev.caracal.core.postgres
 import dev.caracal.core.connections.ConnectionConfig
 import dev.caracal.core.connections.Secret
 import dev.caracal.core.connections.TlsMode
+import dev.caracal.core.text.Redaction
 
 /**
  * Everything needed to reach one PostgreSQL server.
@@ -31,6 +32,12 @@ data class PostgresConnectionConfig(
     /** The strings that must never survive into a message or a log line. */
     fun secrets(): List<String> =
         listOf(jdbcUrl, host, "$host:$port", database, user, password.expose())
+
+    /** The connection identity alone, for the half of [Redaction] that has a length floor. */
+    fun identity(): List<String> = listOf(jdbcUrl, host, "$host:$port", database, user)
+
+    /** The redaction this connection's driver messages pass through. */
+    fun redaction(): Redaction = Redaction(identity(), listOf(password.expose()))
 
     override fun toString(): String = "PostgresConnectionConfig(tlsMode=$tlsMode)"
 

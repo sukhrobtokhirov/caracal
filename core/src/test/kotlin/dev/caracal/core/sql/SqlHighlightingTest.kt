@@ -1,6 +1,7 @@
 package dev.caracal.core.sql
 
 import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import org.junit.jupiter.api.Test
@@ -137,5 +138,30 @@ class SqlHighlightingTest {
     @Test
     fun `a caret nowhere near a bracket matches nothing`() {
         assertNull(SqlHighlighting.matchingBracket("select 1", 3))
+    }
+
+    @Test
+    fun `a bracket inside a quoted identifier takes no part in matching`() {
+        // The same rule as a string, and for the same reason: it is part of a name.
+        // The lexer already tells quoted identifiers apart; the matcher was not
+        // asking for them, so the real closing paren found an empty stack.
+        val sql = """select f("a)b") from t"""
+        val open = sql.indexOf('(')
+        val close = sql.lastIndexOf(')')
+
+        val pair = assertNotNull(SqlHighlighting.matchingBracket(sql, caret = open))
+
+        assertEquals(open, pair.open)
+        assertEquals(close, pair.close)
+    }
+
+    @Test
+    fun `matching stops at the limit rather than guessing past it`() {
+        // Past the limit there is no token stream, so every bracket inside a string or
+        // a comment would count as code. Answering nothing is the honest result.
+        val sql = "select 1; " + "-- filler\n".repeat(50) + "(x)"
+        val caret = sql.lastIndexOf('(')
+
+        assertNull(SqlHighlighting.matchingBracket(sql, caret = caret, limit = 20))
     }
 }

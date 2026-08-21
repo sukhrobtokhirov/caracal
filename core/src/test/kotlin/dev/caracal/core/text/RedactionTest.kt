@@ -47,6 +47,26 @@ class RedactionTest {
     }
 
     @Test
+    fun `a one-character password is still removed`() {
+        // The length floor is for identity — redacting every "a" in a driver message
+        // destroys the message and hides nothing. A password is the opposite: nothing
+        // forces it to be two characters, and it is the one value that must never
+        // reach a log whatever its length.
+        val short = PostgresConnectionConfig(
+            host = "db.internal.example",
+            port = 6432,
+            database = "payments",
+            user = "reporting",
+            password = Secret("x"),
+        ).redaction()
+
+        assertEquals(
+            "the server rejected [redacted]",
+            short.scrub("the server rejected x"),
+        )
+    }
+
+    @Test
     fun `ignores secrets too short to be distinctive`() {
         val single = Redaction(listOf("a", "postgres"))
 

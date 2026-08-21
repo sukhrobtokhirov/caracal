@@ -67,25 +67,45 @@ class Vault(
      * Chooses the master password on first run and leaves the vault unlocked.
      *
      * The caller keeps ownership of [password] and should clear it afterwards.
+     *
+     * A salt with no verifier is refused rather than overwritten. The two ways to
+     * reach that state look identical from here and want opposite handling: a crash
+     * between the two writes in this method, where nothing has been sealed yet and
+     * re-keying costs nothing — and a damaged or partly restored file, where every
+     * stored credential is sealed under the salt about to be replaced and re-keying
+     * makes all of them permanently unopenable, silently, behind the ordinary
+     * first-run screen. Only a caller that can see the connection records can tell
+     * the two apart, so [replaceOrphanedMetadata] is how one says it has looked.
      */
-    suspend fun setUp(password: Secret) {
+    suspend fun setUp(password: Secret, replaceOrphanedMetadata: Boolean = false) {
         if (password.exposeChars().size < MIN_PASSWORD_LENGTH) throw WeakPasswordException()
-        if (store.getMetadata(META_VERIFIER) != null) throw AlreadySetUpException()
 
-        val salt = Kdf.newSalt()
-        val derived = withContext(derivationDispatcher) { Kdf.deriveKey(password, salt, params) }
-        try {
-            val verifier = Seal.sealVerifier(derived)
-            // Order matters: the verifier is written last, so a crash mid-setup leaves
-            // the vault needing setup rather than permanently unopenable.
-            store.putMetadata(META_SALT, salt)
-            store.putMetadata(META_PARAMS, params.encode())
-            store.putMetadata(META_VERIFIER, verifier)
-        } catch (failure: Throwable) {
-            derived.wipe()
-            throw failure
-        }
+        // The whole sequence is serialized. Two callers that each read a null verifier
+        // and then raced through the writes could leave one caller's salt beside the
+        // other's verifier, and that pair is not openable by any password.
         mutex.withLock {
+            if (store.getMetadata(META_VERIFIER) != null) throw AlreadySetUpException()
+            // A salt with no verifier is damage, not a first run. Choosing a new
+            // password here would write a new salt over the old one, and every
+            // connection secret already sealed under the old key would become
+            // permanently unopenable — silently, and looking exactly like a fresh
+            // installation. Refuse instead, and leave the metadata for recovery.
+            val orphaned = store.getMetadata(META_SALT) != null || store.getMetadata(META_PARAMS) != null
+            if (orphaned && !replaceOrphanedMetadata) throw VaultDamagedException()
+
+            val salt = Kdf.newSalt()
+            val derived = withContext(derivationDispatcher) { Kdf.deriveKey(password, salt, params) }
+            try {
+                val verifier = Seal.sealVerifier(derived)
+                // Order matters: the verifier is written last, so a crash mid-setup
+                // leaves the vault needing setup rather than permanently unopenable.
+                store.putMetadata(META_SALT, salt)
+                store.putMetadata(META_PARAMS, params.encode())
+                store.putMetadata(META_VERIFIER, verifier)
+            } catch (failure: Throwable) {
+                derived.wipe()
+                throw failure
+            }
             replaceKey(derived)
             failures = 0
             lockedUntil = null
@@ -112,7 +132,16 @@ class Vault(
         val stored = KdfParams.decode(encodedParams)
         val derived = withContext(derivationDispatcher) { Kdf.deriveKey(password, salt, stored) }
 
-        if (!Seal.verifies(derived, verifier)) {
+        // A verifier that is not an envelope at all leaves `verifies` as a
+        // MalformedEnvelopeException rather than a false, so a damaged file is
+        // reported as damage instead of counting against the attempt budget.
+        val opened = try {
+            Seal.verifies(derived, verifier)
+        } catch (failure: Throwable) {
+            derived.wipe()
+            throw failure
+        }
+        if (!opened) {
             derived.wipe()
             recordFailure()
             throw WrongPasswordException()

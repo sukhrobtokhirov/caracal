@@ -147,11 +147,47 @@ internal fun migrate(connection: Connection) {
     }
 }
 
+/**
+ * Applies one step with foreign keys off, which is SQLite's documented procedure
+ * for a table rebuild.
+ *
+ * With `foreign_keys` on — and [ConfigStore] turns it on — SQLite performs an
+ * implicit `DELETE FROM` before dropping a table, and that fires every
+ * `ON DELETE CASCADE` pointing at it. Step 2 rebuilds `connections` that way, and
+ * `query_history.connection_id` cascades from it: the rebuild would take the
+ * user's entire query history with it, inside the migration's own transaction, and
+ * commit. It costs nothing today because a schema-1 database predates history
+ * being written, but the rebuild is now the idiom in this file and the next one
+ * would land on a populated table.
+ *
+ * The pragma is a no-op inside a transaction, so it is set here, outside the one
+ * below, and `foreign_key_check` verifies before committing that the step did not
+ * leave a dangling reference behind — which is what enforcement would have caught.
+ */
 private fun applyMigration(connection: Connection, migration: Migration) {
+    connection.createStatement().use { it.execute("PRAGMA foreign_keys = OFF") }
+    try {
+        applyMigrationStatements(connection, migration)
+    } finally {
+        connection.createStatement().use { runCatching { it.execute("PRAGMA foreign_keys = ON") } }
+    }
+}
+
+private fun applyMigrationStatements(connection: Connection, migration: Migration) {
     connection.autoCommit = false
     try {
         connection.createStatement().use { statement ->
             migration.statements.forEach { statement.execute(it.trimIndent()) }
+        }
+        connection.createStatement().use { statement ->
+            statement.executeQuery("PRAGMA foreign_key_check").use { violations ->
+                if (violations.next()) {
+                    throw StoreOpenException(
+                        "The configuration database could not be prepared " +
+                            "(step ${migration.version}, ${migration.name} left a dangling reference).",
+                    )
+                }
+            }
         }
         connection.prepareStatement(
             """

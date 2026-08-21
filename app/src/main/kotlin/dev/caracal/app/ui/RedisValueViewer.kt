@@ -22,6 +22,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
@@ -298,10 +299,16 @@ private fun StringBody(value: LoadedValue.Text, textView: TextView, json: String
         return
     }
 
-    val shown = when {
-        textView == TextView.JSON && json != null -> json
-        value.binary -> value.hex.chunked(2).chunked(16).joinToString("\n") { it.joinToString(" ") }
-        else -> value.text.orEmpty()
+    // Remembered on the windows that produced it. The hex layout allocates a
+    // `String` per byte pair and a list per line — for a 4 MB value that is millions
+    // of objects — and it was being rebuilt on every recomposition of this pane,
+    // including every drag inside the selection container around it.
+    val shown = remember(value.windows, textView, json) {
+        when {
+            textView == TextView.JSON && json != null -> json
+            value.binary -> value.hex.chunked(2).chunked(16).joinToString("\n") { it.joinToString(" ") }
+            else -> value.text.orEmpty()
+        }
     }
 
     Column(modifier = Modifier.fillMaxSize()) {
@@ -511,12 +518,16 @@ private fun ValueFooter(state: ValueState.Ready, onMore: () -> Unit, onCopy: (St
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.weight(1f).testTag("value-extent"),
             )
-            (value as? LoadedValue.Text)?.text?.let { text ->
+            // Gated on the label, not on the payload: reading `.text` here to decide
+            // whether to draw a button materialised the whole value on every
+            // recomposition of the footer. The text itself is read in the click.
+            val copyable = (value as? LoadedValue.Text)?.takeIf { !it.binary }
+            if (copyable != null) {
                 ToolButton(
                     // The original text, never the reformatted JSON. §3.7 is explicit:
                     // a copy is of what Redis holds, not of what this pane drew.
                     text = "Copy value",
-                    onClick = { onCopy(text) },
+                    onClick = { copyable.text?.let(onCopy) },
                     tag = "value-copy",
                 )
             }

@@ -352,13 +352,18 @@ class EditorViewModel(
      * arriving as SQLSTATE 25006 half a second after a `DELETE` was sent to
      * production.
      *
-     * A second call while one is running, or while a confirmation is open, is
+     * A second call while one is running, or while any confirmation is open, is
      * ignored.
      */
     fun execute() {
         val connection = connection ?: return
         val ready = execution as? Execution.Ready ?: return
-        if (running || pending != null) return
+        // `pendingScript` too, not just `pending`. It is already part of `runnable`,
+        // so the Run button was correctly disabled while "Replace what is in the
+        // editor?" was on screen — but the ⌘Enter chord reaches this directly from
+        // the text field underneath the dialog, and ran the statement the dialog was
+        // asking about replacing.
+        if (running || pending != null || pendingScript != null) return
 
         when (val clearance = DataSafetyPolicy.clearanceFor(ready.target.sql, connection)) {
             Clearance.Granted -> send(ready.target)

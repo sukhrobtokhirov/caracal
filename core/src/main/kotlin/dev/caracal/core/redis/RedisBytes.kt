@@ -69,7 +69,13 @@ object RedisBytes {
      * large the value is on the server, which for a ranged read is larger.
      */
     fun window(bytes: ByteArray, total: Int, limit: Int): RedisText {
-        val kept = of(bytes, 0, bytes.size, limit)
+        // Being a window is itself a reason to allow a dangling character. Deciding it
+        // from `shown < length` alone got this backwards on the only paths that
+        // produce windows: both callers pass a limit equal to the window's own size,
+        // so the internal comparison is always false and the decode was strict. A
+        // GETRANGE that cut a 200 KB JSON document mid-character then failed to
+        // decode and the whole document was shown as hexadecimal.
+        val kept = of(bytes, 0, bytes.size, limit, allowDangling = bytes.size < total)
         // The window's own truncation is one reason; being a window is another, and
         // either makes this a prefix.
         val partial = kept.truncated || bytes.size < total
@@ -79,10 +85,16 @@ object RedisBytes {
         }
     }
 
-    private fun of(bytes: ByteArray, offset: Int, length: Int, limit: Int): RedisText {
+    private fun of(
+        bytes: ByteArray,
+        offset: Int,
+        length: Int,
+        limit: Int,
+        allowDangling: Boolean = false,
+    ): RedisText {
         val shown = minOf(length, limit.coerceAtLeast(0))
         val truncated = shown < length
-        val text = decode(bytes, offset, shown, allowDanglingCharacter = truncated)
+        val text = decode(bytes, offset, shown, allowDanglingCharacter = truncated || allowDangling)
         return if (text != null) {
             RedisText.Utf8(value = text, byteCount = length, truncated = truncated)
         } else {
@@ -101,22 +113,57 @@ object RedisBytes {
      * [allowDanglingCharacter] is for a prefix. Cutting a byte window at a fixed
      * length lands in the middle of a multi-byte character roughly as often as
      * multi-byte characters occur, and that dangling sequence is not evidence the
-     * value is binary — it is evidence of where the cut fell. UTF-8 encodes a
-     * character in at most four bytes, so dropping up to three recovers the boundary,
-     * and a window that still will not decode after that is genuinely not text.
+     * value is binary — it is evidence of where the cut fell.
      *
-     * The allowance never reaches zero bytes, which is the trap it would otherwise
-     * fall into: an empty window decodes successfully, so a window of three bytes of
-     * binary would shrink to nothing, "decode", and be reported as empty text. Only a
-     * genuinely empty value gets to be empty text.
+     * What is dropped is exactly the incomplete sequence, found by [danglingBytes],
+     * and never anything else. Retrying successively shorter windows instead — the
+     * obvious version — decides that binary is text as soon as some prefix of it
+     * happens to decode: a two-byte window of `00 ff` shrinks to `00`, which is a
+     * perfectly good NUL, and a value that is not text at all is reported as text
+     * with its last byte quietly missing. Trimming a sequence that is genuinely
+     * unfinished cannot do that, because a byte that cannot begin a UTF-8 character
+     * is not an unfinished one.
+     *
+     * A window that is nothing but a dangling sequence stays binary. An empty window
+     * decodes successfully, so trimming to nothing would report three bytes of binary
+     * as empty text; only a genuinely empty value gets to be empty text.
      */
     private fun decode(bytes: ByteArray, offset: Int, length: Int, allowDanglingCharacter: Boolean): String? {
         if (length == 0) return ""
-        val shortest = if (allowDanglingCharacter) maxOf(1, length - 3) else length
-        for (end in length downTo shortest) {
-            decodeExactly(bytes, offset, end)?.let { return it }
+        val dangling = if (allowDanglingCharacter) danglingBytes(bytes, offset, length) else 0
+        val end = length - dangling
+        if (end == 0) return null
+        return decodeExactly(bytes, offset, end)
+    }
+
+    /**
+     * How many trailing bytes begin a UTF-8 character the window cut short, which is
+     * zero unless they do.
+     *
+     * At most three: a UTF-8 character is at most four bytes, so a cut one leaves a
+     * lead byte and at most two continuations. Three continuation bytes in a row with
+     * no lead byte within reach cannot be a cut character, and neither can a byte
+     * that is not a legal lead byte at all.
+     */
+    private fun danglingBytes(bytes: ByteArray, offset: Int, length: Int): Int {
+        var back = 0
+        while (back < 3 && back < length) {
+            val byte = bytes[offset + length - 1 - back].toInt() and 0xff
+            if (byte and 0xC0 == 0x80) {
+                back++
+                continue
+            }
+            val needed = when {
+                byte and 0x80 == 0x00 -> 1
+                byte and 0xE0 == 0xC0 -> 2
+                byte and 0xF0 == 0xE0 -> 3
+                byte and 0xF8 == 0xF0 -> 4
+                else -> return 0
+            }
+            val present = back + 1
+            return if (needed > present) present else 0
         }
-        return null
+        return 0
     }
 
     private fun decodeExactly(bytes: ByteArray, offset: Int, length: Int): String? {

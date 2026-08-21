@@ -135,4 +135,40 @@ class RedisBytesTest {
         assertEquals("a" + Char(0) + "b", text.text)
         assertEquals(3, text.byteCount)
     }
+
+    @Test
+    fun `a window cut inside a character is still text`() {
+        // GETRANGE cuts at a byte offset, so it lands mid-character about as often as
+        // multi-byte characters occur. Deciding that makes the value binary means a
+        // 200 KB JSON document with one accented letter in it renders as hexadecimal.
+        val whole = "price: 12\u20AC".toByteArray(Charsets.UTF_8)
+        // One byte short of the euro sign's three.
+        val cut = whole.copyOfRange(0, whole.size - 1)
+
+        val text = RedisBytes.window(cut, total = whole.size, limit = cut.size)
+
+        assertIs<RedisText.Utf8>(text)
+        assertEquals("price: 12", text.value)
+        assertTrue(text.truncated)
+    }
+
+    @Test
+    fun `the allowance only drops a sequence that is genuinely unfinished`() {
+        // The trap in the obvious implementation: retrying successively shorter
+        // windows finds that some prefix of binary decodes and calls the value text.
+        // 0xFF cannot begin a UTF-8 character, so nothing here is unfinished.
+        val text = RedisBytes.window(byteArrayOf(0x41, 0xFF.toByte()), total = 900, limit = 2)
+
+        assertIs<RedisText.Binary>(text)
+        assertEquals("41ff", text.hex)
+    }
+
+    @Test
+    fun `a window that is nothing but a dangling sequence stays binary`() {
+        // Trimming to nothing would decode as empty text and report a value that has
+        // bytes in it as empty.
+        val text = RedisBytes.window(byteArrayOf(0xE2.toByte(), 0x82.toByte()), total = 900, limit = 2)
+
+        assertIs<RedisText.Binary>(text)
+    }
 }

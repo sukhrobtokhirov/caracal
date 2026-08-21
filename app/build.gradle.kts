@@ -12,6 +12,7 @@ dependencies {
     implementation(compose.desktop.currentOs)
     implementation(libs.compose.material3)
     implementation(libs.kotlinx.coroutines.swing)
+    implementation(libs.slf4j.api)
     runtimeOnly(libs.slf4j.simple)
 
     testImplementation(libs.compose.ui.test)

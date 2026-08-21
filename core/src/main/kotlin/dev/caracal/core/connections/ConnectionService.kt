@@ -255,8 +255,20 @@ class DefaultConnectionService(
     /** Whether setup is required, and whether the vault is open. */
     override suspend fun vaultState(): VaultState = vault.state()
 
-    /** Chooses the master password on first run. */
-    override suspend fun setUp(password: Secret) = vault.setUp(password)
+    /**
+     * Chooses the master password on first run.
+     *
+     * The vault refuses to write a new salt over an existing one, because doing so
+     * would orphan every sealed credential. Whether there are any to orphan is a
+     * question only this layer can answer: no stored connection holds a sealed
+     * secret means an interrupted first run, which re-keying costs nothing, and the
+     * user gets the first-run screen they expected rather than an error about a file
+     * that has nothing in it.
+     */
+    override suspend fun setUp(password: Secret) {
+        val nothingSealed = store.list().none { it.sealedSecret?.isNotEmpty() == true }
+        vault.setUp(password, replaceOrphanedMetadata = nothingSealed)
+    }
 
     /** Opens the vault with the master password. */
     override suspend fun unlock(password: Secret) = vault.unlock(password)

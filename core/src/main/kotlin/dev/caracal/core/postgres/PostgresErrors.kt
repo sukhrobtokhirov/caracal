@@ -7,6 +7,7 @@ import dev.caracal.core.text.Redaction
 import java.security.cert.CertificateException
 import java.sql.SQLException
 import java.sql.SQLTimeoutException
+import java.sql.SQLTransientConnectionException
 import java.sql.SQLWarning
 import javax.net.ssl.SSLException
 import kotlin.time.Duration
@@ -48,9 +49,23 @@ object PostgresErrors {
         val sqlException = throwable.firstSqlException()
             ?: return DbError.ConnectionFailed()
 
-        if (timedOut || sqlException is SQLTimeoutException) return DbError.Timeout(limit)
+        val state = sqlException.sqlStateOrInherited()
 
-        return when (val state = sqlException.sqlStateOrInherited()) {
+        // A timeout is a cancellation the server performed, so it always carries
+        // QUERY_CANCELED. Requiring that state stops the wall clock from shadowing a
+        // real error: [timedOut] is measured from before the connection was even
+        // acquired, so a statement that failed on a constraint at 29.8s of a 30s
+        // limit was reported as "ran past its limit" — losing the SQLSTATE, the
+        // server's message, the hint, and the position the editor highlights.
+        if (sqlException is SQLTimeoutException) return DbError.Timeout(limit)
+        if (timedOut && state == QUERY_CANCELED) return DbError.Timeout(limit)
+
+        // A pool that is merely saturated raises this with no state anywhere in the
+        // chain. Falling through to queryFailed told the user their SQL was wrong and
+        // showed them Hikari's internals; the connection never opened.
+        if (state == null && throwable.isPoolTimeout()) return DbError.ConnectionFailed()
+
+        return when (state) {
             "28P01", "28000" -> DbError.AuthenticationFailed()
             "3D000" -> DbError.DatabaseNotFound()
             "08001", "08S01" -> DbError.HostUnreachable()
@@ -164,6 +179,19 @@ object PostgresErrors {
         var current: Throwable? = this
         while (current != null) {
             if (current is SSLException || current is CertificateException) return true
+            current = current.cause
+        }
+        return false
+    }
+
+    /**
+     * Whether this is Hikari giving up on handing out a connection, rather than a
+     * server error. Matched by type so the message text stays out of it.
+     */
+    private fun Throwable.isPoolTimeout(): Boolean {
+        var current: Throwable? = this
+        while (current != null) {
+            if (current is SQLTransientConnectionException) return true
             current = current.cause
         }
         return false

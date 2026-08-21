@@ -126,7 +126,16 @@ class PostgresCatalog(
             dataSource.connection.use { connection ->
                 connection.prepareStatement(sql).use { statement ->
                     statement.configure(parameters)
-                    statement.executeQuery().use { rows -> rows.collect(map) }
+                    // The same guard the adapter uses. `ensureActive` below can only
+                    // relabel an exception that was already thrown; it cannot
+                    // interrupt a blocked executeQuery, so without this a collapsed
+                    // schema node kept its pooled connection for the full read. Four
+                    // of those and the pool is gone.
+                    statement.cancelledWithScope(
+                        onCancelFailure = { log.debug("catalog statement cancel after scope cancellation failed") },
+                    ) {
+                        statement.executeQuery().use { rows -> rows.collect(map) }
+                    }
                 }
             }
         } catch (failure: SQLException) {
@@ -140,7 +149,10 @@ class PostgresCatalog(
     }
 
     private fun PreparedStatement.configure(parameters: Array<out String>) {
-        queryTimeout = this@PostgresCatalog.queryTimeout.inWholeSeconds.toInt()
+        // Rounded up, not truncated. JDBC reads zero as "no limit", so truncation
+        // turns any sub-second bound into an unbounded catalog read holding a pooled
+        // connection — the same trap PostgresAdapter documents at length.
+        queryTimeout = this@PostgresCatalog.queryTimeout.asQueryTimeoutSeconds()
         // maxRows is what stops the driver buffering a pathological catalog into heap.
         // With it in place these reads need no cursor and no transaction of their own.
         maxRows = limits.items + 1

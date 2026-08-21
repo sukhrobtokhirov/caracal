@@ -49,6 +49,12 @@ data class KdfParams(
             version != KDF_VERSION -> reject("key derivation version $version is not supported")
             iterations < 1 -> reject("the time cost must be at least 1")
             memoryKib < 8 * 1024 -> reject("the memory cost must be at least 8 MiB")
+            // Without a ceiling, a tampered or corrupted `kdf_params` naming a
+            // terabyte of memory turns every launch into an OutOfMemoryError before
+            // the vault screen can report anything.
+            memoryKib > MAX_MEMORY_KIB -> reject("the memory cost must be at most ${MAX_MEMORY_KIB / 1024} MiB")
+            iterations > MAX_ITERATIONS -> reject("the time cost must be at most $MAX_ITERATIONS")
+            parallelism > MAX_PARALLELISM -> reject("the parallelism must be at most $MAX_PARALLELISM")
             parallelism < 1 -> reject("the parallelism must be at least 1")
             keyLength != KEY_LENGTH -> reject("the key length must be $KEY_LENGTH bytes")
         }
@@ -65,6 +71,15 @@ data class KdfParams(
             .toByteArray(Charsets.US_ASCII)
 
     companion object {
+        /**
+         * Ceilings on the stored cost. High enough that a future increase in
+         * [DEFAULT] needs no format change, low enough that no encoded value can
+         * make derivation fail to allocate.
+         */
+        const val MAX_MEMORY_KIB = 1024 * 1024
+        const val MAX_ITERATIONS = 64
+        const val MAX_PARALLELISM = 64
+
         val DEFAULT = KdfParams()
 
         /** Cheap parameters for tests. Never write these to a real installation. */

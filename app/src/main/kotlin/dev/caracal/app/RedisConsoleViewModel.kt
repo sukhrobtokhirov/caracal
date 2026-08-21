@@ -223,7 +223,8 @@ class RedisConsoleViewModel(
 
     private fun send(id: ConnectionId, command: RedisCommand, consent: CommandConsent) {
         running = true
-        job = scope.launch {
+        lateinit var mine: Job
+        mine = scope.launch {
             try {
                 val result = service.redisCommand(id, command, consent)
                 record(ConsoleEntry(++sequence, result.command, result = result))
@@ -238,9 +239,16 @@ class RedisConsoleViewModel(
             } catch (problem: Throwable) {
                 record(ConsoleEntry(++sequence, command.label, failure = problem.toFailure()))
             } finally {
-                running = false
+                // Only if this is still the command on the wire. A cancelled job's
+                // `finally` runs whenever its blocking Lettuce call finally returns,
+                // which can be seconds after `clear()` already reset the flag and a
+                // second command was sent — and clearing it there let a third command
+                // past the guard in `run()`, orphaning the second one's job while its
+                // reply was still coming back.
+                if (job === mine) running = false
             }
         }
+        job = mine
     }
 
     private fun record(entry: ConsoleEntry) {

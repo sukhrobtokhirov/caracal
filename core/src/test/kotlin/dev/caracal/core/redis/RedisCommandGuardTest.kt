@@ -302,4 +302,34 @@ class RedisCommandGuardTest {
         color = null,
         createdAt = Instant.parse("2026-08-21T10:00:00Z"),
     )
+
+    @Test
+    fun `a command that takes over the shared connection is dangerous`() {
+        // One connection is shared by the key browser, the INFO dashboard, the value
+        // viewer and the console, and Redis answers a connection's commands in order.
+        // A command that changes its mode or parks it does not fail alone: it takes
+        // every later read on that connection with it until the app is restarted.
+        // RESET was already treated this way; these are the rest of the same class.
+        listOf(
+            "SUBSCRIBE channel", "PSUBSCRIBE pattern*", "SSUBSCRIBE channel", "SYNC", "PSYNC ? -1",
+            "SELECT 3", "WAIT 1 0", "WAITAOF 1 0 0", "BLPOP queue 0", "BRPOP queue 0",
+            "BLMOVE a b LEFT LEFT 0", "BRPOPLPUSH a b 0", "BLMPOP 0 1 queue LEFT",
+            "BZPOPMIN z 0", "BZPOPMAX z 0", "BZMPOP 0 1 z MIN",
+        ).forEach { line ->
+            assertIs<CommandClearance.Confirm>(
+                RedisCommandGuard.clearanceFor(CommandLine.command(line), connection()),
+                "$line was not guarded",
+            )
+        }
+    }
+
+    @Test
+    fun `CLIENT REPLY is dangerous while the other CLIENT reads are not`() {
+        assertIs<CommandClearance.Confirm>(
+            RedisCommandGuard.clearanceFor(CommandLine.command("CLIENT REPLY OFF"), connection()),
+        )
+        assertIs<CommandClearance.Granted>(
+            RedisCommandGuard.clearanceFor(CommandLine.command("CLIENT INFO"), connection()),
+        )
+    }
 }

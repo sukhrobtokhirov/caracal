@@ -8,6 +8,7 @@ import dev.caracal.core.redis.Ttl
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNotEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -174,6 +175,29 @@ class RedisKeyTreeTest {
 
     /** How [RedisKeyTree] joins path segments, spelled out so a test can name one. */
     private fun pathOf(vararg segments: String) = segments.joinToString("\u0000")
+
+    @Test
+    fun `two keys sharing a clipped path still get different list identities`() {
+        // `path` is built from RedisKey.display, which is clipped at elementBytes, so
+        // two keys agreeing on their first four kilobytes produce the same path. The
+        // browser deduplicates by the key's real bytes, so both rows reach the list —
+        // and a LazyColumn handed the same key twice throws instead of drawing them.
+        val shared = "k".repeat(5000)
+        val rows = RedisKeyTree.rows(keys(shared + "-one", shared + "-two"), expanded = emptySet())
+
+        assertEquals(2, rows.size)
+        assertEquals(rows[0].path, rows[1].path, "the fixture no longer produces a path collision")
+        assertNotEquals(rows[0].id, rows[1].id)
+        assertEquals(rows.size, rows.map { it.id }.distinct().size)
+    }
+
+    @Test
+    fun `a grouping keeps its path as its identity`() {
+        val rows = RedisKeyTree.rows(keys("user:1", "user:2"), expanded = emptySet())
+
+        val group = rows.single()
+        assertEquals(group.path, group.id)
+    }
 
     private fun keys(vararg names: String) = names.map { name ->
         KeyMetadata(

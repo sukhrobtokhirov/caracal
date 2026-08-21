@@ -180,7 +180,13 @@ class HistoryViewModel(
     fun confirmClear() {
         val target = pendingClear ?: return
         pendingClear = null
-        scope.launch {
+        // Tracked in `job` like every other read here, so `clear()` can cancel it.
+        // Untracked, it survived the vault locking: it finished the delete, called
+        // `reload()`, and that read threw VaultLockedException onto a locked
+        // application — leaving a failure on screen and a live job, after `clear()`
+        // had just reset all of it.
+        job?.cancel()
+        job = scope.launch {
             try {
                 service.clearHistory(target)
                 reload()

@@ -124,21 +124,34 @@ object SqlHighlighting {
      */
     fun matchingBracket(sql: String, caret: Int, limit: Int = DEFAULT_LIMIT): BracketPair? {
         if (sql.isEmpty()) return null
-        val pairs = bracketPairs(sql, limit)
         val at = caret.coerceIn(0, sql.length)
+        // Past the limit there is no token stream to hide literals behind, so any
+        // answer here would be a guess dressed as a match.
+        if (at > limit) return null
+        val pairs = bracketPairs(sql, limit)
         return pairs.firstOrNull { it.open == at || it.close == at } // caret before a bracket
             ?: pairs.firstOrNull { it.open == at - 1 || it.close == at - 1 } // caret after one
     }
 
     /** Every matched bracket pair in the code of [sql], strings and comments excluded. */
     private fun bracketPairs(sql: String, limit: Int): List<BracketPair> {
-        val text = tokens(sql, limit).filter { it.kind == TokenKind.STRING || it.kind == TokenKind.COMMENT }
+        // A quoted identifier hides brackets for the same reason a string does: the
+        // `)` in `select f("a)b")` is part of a column name and closes nothing. The
+        // lexer already tells them apart; this filter simply did not ask for them.
+        val text = tokens(sql, limit).filter {
+            it.kind == TokenKind.STRING || it.kind == TokenKind.COMMENT || it.kind == TokenKind.QUOTED_IDENTIFIER
+        }
         val pairs = mutableListOf<BracketPair>()
         val open = ArrayDeque<Int>()
         var index = 0
         var skipped = 0
 
-        while (index < sql.length) {
+        // Bounded by the same limit the tokens are. Scanning past it counted every
+        // bracket inside a string or a comment as code, because no token had been
+        // produced to hide them — and did it on every keystroke and every caret move
+        // over the whole document.
+        val stop = minOf(sql.length, limit.coerceAtLeast(0))
+        while (index < stop) {
             // The literals are in document order, so each is passed once rather than
             // searched for.
             val hidden = text.getOrNull(skipped)

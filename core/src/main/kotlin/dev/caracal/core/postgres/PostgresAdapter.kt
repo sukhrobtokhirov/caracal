@@ -19,6 +19,7 @@ import java.sql.Connection
 import java.sql.PreparedStatement
 import java.sql.ResultSet
 import java.sql.SQLException
+import java.sql.Statement
 import javax.sql.DataSource
 import kotlin.coroutines.CoroutineContext
 import kotlin.coroutines.coroutineContext
@@ -217,16 +218,30 @@ class PostgresAdapter(
                     val value = connection.prepareStatement(sql).use { statement ->
                         statement.queryTimeout = timeout.asQueryTimeoutSeconds()
                         statement.fetchSize = FETCH_SIZE
-                        statement.cancelledWithScope { body(statement, started) }
+                        statement.cancelledWithScope(
+                            onCancelFailure = { log.debug("statement cancel after scope cancellation failed") },
+                        ) { body(statement, started) }
                     }
                     // Only a statement that ran to completion gets here. A failure, and
                     // a cancellation — which arrives as an exception out of
                     // cancelledWithScope — both leave this false, and a cancelled write
                     // must not be committed on its way out.
+                    //
+                    // The commit is here rather than in the `finally` because a commit
+                    // can fail on its own: a deferred constraint, a serialization
+                    // failure, a connection lost between the statement and the commit.
+                    // Swallowing that returned a QueryResult saying "3 rows affected"
+                    // for a transaction the server threw away — the one failure this
+                    // application must never have. Throwing from here instead sends it
+                    // through the same classification every other SQLException gets.
+                    connection.completeTransaction()
                     succeeded = true
                     value
                 } finally {
-                    connection.endTransaction(commit = succeeded)
+                    // Only the failure and cancellation paths reach this with work
+                    // outstanding; there is nothing to do with an aborted transaction
+                    // but end it, and a rollback that fails has no better answer.
+                    if (!succeeded) connection.rollbackQuietly()
                 }
             }
         } catch (failure: SQLException) {
@@ -243,38 +258,10 @@ class PostgresAdapter(
         }
     }
 
-    /**
-     * Runs [body] with the statement cancelled from another thread the moment the
-     * calling scope is cancelled. Without this, closing a tab leaves the query running
-     * on the server: cancelling a coroutine cannot interrupt a blocked JDBC call, and
-     * `Job.invokeOnCompletion` is no help because a job blocked in JDBC does not
-     * complete until that call returns.
-     */
-    private suspend fun <T> PreparedStatement.cancelledWithScope(body: () -> T): T = coroutineScope {
-        val statement = this@cancelledWithScope
-        val owner = checkNotNull(coroutineContext[Job])
-        val guard = launch(start = CoroutineStart.UNDISPATCHED) {
-            try {
-                awaitCancellation()
-            } finally {
-                // Reached either because the scope was cancelled, or because body()
-                // finished and cancelled this guard. Only the first needs the server told.
-                if (owner.isCancelled) {
-                    runCatching { statement.cancel() }
-                        .onFailure { log.debug("statement cancel after scope cancellation failed") }
-                }
-            }
-        }
-        try {
-            body()
-        } finally {
-            guard.cancel()
-        }
-    }
 
     /**
-     * Closes the statement's transaction, and this is where [readOnly] earns its
-     * place.
+     * Ends the statement's transaction on the success path, and this is where
+     * [readOnly] earns its place.
      *
      * On a read-only connection there is nothing to commit, so it always rolls back
      * — which returns a clean connection to the pool rather than one holding an open
@@ -290,33 +277,26 @@ class PostgresAdapter(
      * connection — which is why `StatementClassifier` keeps session statements in a
      * case of their own and the editor says so rather than pretending they are reads.
      *
-     * A failed statement rolls back either way. There is nothing else to do with an
-     * aborted transaction, and PostgreSQL will refuse every subsequent statement on
-     * it until it is ended.
-     */
-    /**
-     * This duration as the whole seconds JDBC will accept, rounded *up*.
+     * A failed statement rolls back either way, through [rollbackQuietly]. There is
+     * nothing else to do with an aborted transaction, and PostgreSQL will refuse
+     * every subsequent statement on it until it is ended.
      *
-     * `setQueryTimeout` takes an int of seconds and reads zero as "no limit", so the
-     * obvious conversion turns any timeout under a second into no timeout at all —
-     * a configuration that asks for the tightest possible limit and silently gets
-     * none. Rounding up means a sub-second limit is honoured as one second, which is
-     * the coarsest guarantee JDBC can make and is at least the right kind of wrong.
-     *
-     * A zero or negative duration is passed through as zero, because that is the only
-     * case where "no limit" is what was actually asked for.
+     * A commit that itself fails is not swallowed: it leaves as an [SQLException]
+     * and is classified like any other.
      */
-    private fun Duration.asQueryTimeoutSeconds(): Int {
-        if (this <= Duration.ZERO) return 0
-        val milliseconds = inWholeMilliseconds
-        if (milliseconds >= (Int.MAX_VALUE.toLong() - 1) * 1_000L) return Int.MAX_VALUE
-        return ((milliseconds + 999L) / 1_000L).toInt().coerceAtLeast(1)
+    private fun Connection.completeTransaction() {
+        if (readOnly) {
+            // Nothing to commit, and rolling back returns a connection that holds no
+            // snapshot and no session setting. A failure here loses nothing.
+            rollbackQuietly()
+        } else {
+            commit()
+        }
     }
 
-    private fun Connection.endTransaction(commit: Boolean) {
-        val ending = if (commit && !readOnly) "commit" else "rollback"
-        runCatching { if (commit && !readOnly) commit() else rollback() }
-            .onFailure { log.debug("{} on return to pool failed", ending) }
+    private fun Connection.rollbackQuietly() {
+        runCatching { rollback() }
+            .onFailure { log.debug("rollback on return to pool failed") }
     }
 
     /**
@@ -455,4 +435,58 @@ class PostgresAdapter(
          */
         private val CANCEL_GRACE = 30.seconds
     }
+}
+
+/**
+ * Runs [body] with the statement cancelled from another thread the moment the
+ * calling scope is cancelled. Without this, closing a tab leaves the query running
+ * on the server: cancelling a coroutine cannot interrupt a blocked JDBC call, and
+ * `Job.invokeOnCompletion` is no help because a job blocked in JDBC does not
+ * complete until that call returns.
+ *
+ * Shared with [PostgresCatalog], which reads the same pool: a schema expansion the
+ * user has collapsed holds its pooled connection for as long as the server takes,
+ * and four of those is the whole pool.
+ */
+internal suspend fun <T> Statement.cancelledWithScope(
+    onCancelFailure: () -> Unit = {},
+    body: () -> T,
+): T = coroutineScope {
+    val statement = this@cancelledWithScope
+    val owner = checkNotNull(coroutineContext[Job])
+    val guard = launch(start = CoroutineStart.UNDISPATCHED) {
+        try {
+            awaitCancellation()
+        } finally {
+            // Reached either because the scope was cancelled, or because body()
+            // finished and cancelled this guard. Only the first needs the server told.
+            if (owner.isCancelled) {
+                runCatching { statement.cancel() }.onFailure { onCancelFailure() }
+            }
+        }
+    }
+    try {
+        body()
+    } finally {
+        guard.cancel()
+    }
+}
+
+/**
+ * This duration as the whole seconds JDBC will accept, rounded *up*.
+ *
+ * `setQueryTimeout` takes an int of seconds and reads zero as "no limit", so the
+ * obvious conversion turns any timeout under a second into no timeout at all —
+ * a configuration that asks for the tightest possible limit and silently gets
+ * none. Rounding up means a sub-second limit is honoured as one second, which is
+ * the coarsest guarantee JDBC can make and is at least the right kind of wrong.
+ *
+ * A zero or negative duration is passed through as zero, because that is the only
+ * case where "no limit" is what was actually asked for.
+ */
+internal fun Duration.asQueryTimeoutSeconds(): Int {
+    if (this <= Duration.ZERO) return 0
+    val milliseconds = inWholeMilliseconds
+    if (milliseconds >= (Int.MAX_VALUE.toLong() - 1) * 1_000L) return Int.MAX_VALUE
+    return ((milliseconds + 999L) / 1_000L).toInt().coerceAtLeast(1)
 }

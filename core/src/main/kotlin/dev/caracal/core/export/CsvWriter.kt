@@ -12,6 +12,12 @@ private const val DELIMITER = ','
 private const val COPY_TERMINATOR = "\\."
 
 /**
+ * The characters that make a spreadsheet read a cell as a formula. `\t` and `\r`
+ * are here because Excel skips leading control characters before it decides.
+ */
+private val FORMULA_LEADS = charArrayOf('=', '+', '-', '@', '\t', '\r')
+
+/**
  * How a CSV file spells the things a database has and a spreadsheet does not.
  *
  * There is one option, and it is the one with no defensible default. An empty
@@ -27,10 +33,37 @@ private const val COPY_TERMINATOR = "\\."
  * characters at the front of the first column name in everything that does not
  * special-case it — Excel's convenience against everyone else's corruption.
  */
-data class CsvOptions(val nullText: String = "NULL") {
+data class CsvOptions(
+    val nullText: String = "NULL",
+    /**
+     * Whether a text cell that a spreadsheet would read as a formula is written so
+     * that it does not.
+     *
+     * On by default, and the trade is worth stating. A cell holding
+     * `=cmd|'/C calc'!A0` — which anyone with `INSERT` on a shared table can put
+     * there — is executed by Excel when the export is opened, and quoting does not
+     * help, because Excel strips the CSV quoting before it decides what the cell
+     * is. The only thing that stops it is a leading apostrophe, and that apostrophe
+     * is a character the database did not hold.
+     *
+     * So the exported cell is not byte-identical to the stored value in exactly the
+     * case where a byte-identical export is an execution. Only text is affected;
+     * numbers keep their leading minus sign.
+     */
+    val neutralizeFormulas: Boolean = true,
+) {
     init {
         require(nullText.none { it == DELIMITER || it == '"' || it == '\n' || it == '\r' }) {
             "A null representation is written unquoted, so it cannot contain a delimiter, a quote, or a line break."
+        }
+        // The sentinel is written unquoted by definition, so the two hazards
+        // `needsQuotes` guards a value against apply to it with no quoting available
+        // to fall back on.
+        require(nullText != COPY_TERMINATOR) {
+            "A null representation cannot be the sequence that ends a COPY stream."
+        }
+        require(nullText.isEmpty() || (!nullText.first().isWhitespace() && !nullText.last().isWhitespace())) {
+            "A null representation is written unquoted, so it cannot begin or end with whitespace."
         }
     }
 }
@@ -66,7 +99,7 @@ class CsvWriter(private val out: Appendable, private val options: CsvOptions = C
     fun header(columns: List<Column>) {
         columns.forEachIndexed { index, column ->
             if (index > 0) emit(DELIMITER)
-            writeField(column.name)
+            writeField(column.name, text = true)
         }
         endRecord()
     }
@@ -76,7 +109,14 @@ class CsvWriter(private val out: Appendable, private val options: CsvOptions = C
             if (index > 0) emit(DELIMITER)
             // The one field written without inspection: the sentinel is validated to
             // need no quoting, and quoting it would make it a value.
-            if (cell is CellValue.Null) emit(options.nullText) else writeField(textOf(cell))
+            // Only a text cell can be made to look like a formula. A number's leading
+            // minus sign is arithmetic no spreadsheet will run, and a bytea preview
+            // begins `\x`.
+            if (cell is CellValue.Null) {
+                emit(options.nullText)
+            } else {
+                writeField(textOf(cell), text = cell is CellValue.Text)
+            }
         }
         endRecord()
     }
@@ -108,18 +148,30 @@ class CsvWriter(private val out: Appendable, private val options: CsvOptions = C
         }
     }
 
-    private fun writeField(text: String) {
-        if (!needsQuotes(text)) {
-            emit(text)
+    private fun writeField(value: String, text: Boolean) {
+        val field = if (text && startsFormula(value)) "'$value" else value
+        if (!needsQuotes(field)) {
+            emit(field)
             return
         }
         emit('"')
-        for (character in text) {
+        for (character in field) {
             if (character == '"') emit('"')
             emit(character)
         }
         emit('"')
     }
+
+    /**
+     * Whether a spreadsheet opening this file would treat the cell as a formula
+     * rather than as the text it is.
+     *
+     * The four operators are Excel's, LibreOffice's, and Google Sheets'. Tab and
+     * carriage return are here because Excel skips leading control characters before
+     * deciding, so `\t=1+1` is a formula with a tab in front of it.
+     */
+    private fun startsFormula(text: String): Boolean =
+        options.neutralizeFormulas && text.isNotEmpty() && text.first() in FORMULA_LEADS
 
     /**
      * Whether [text] can be written bare.

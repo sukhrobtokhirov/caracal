@@ -87,9 +87,18 @@ internal class RedisReplyOutput(
 
     // --- Structure ------------------------------------------------------------
 
-    override fun multi(count: Int) = open(RedisReply.Items.Kind.ARRAY)
+    /**
+     * A negative count is RESP2's null array — `*-1` — which is a different answer
+     * from an empty one and frequently the opposite. `EXEC` on a transaction that
+     * `WATCH` aborted replies `*-1`, and so does a timed-out `BLPOP`; opening a frame
+     * for those printed "(empty array)", i.e. "it ran and returned nothing".
+     *
+     * Lettuce calls `multiArray` for it regardless and then ends the state, so the
+     * frame would never be closed by anything either.
+     */
+    override fun multi(count: Int) = openOrNil(count, RedisReply.Items.Kind.ARRAY)
 
-    override fun multiArray(count: Int) = open(RedisReply.Items.Kind.ARRAY)
+    override fun multiArray(count: Int) = openOrNil(count, RedisReply.Items.Kind.ARRAY)
 
     override fun multiPush(count: Int) = open(RedisReply.Items.Kind.PUSH)
 
@@ -106,6 +115,10 @@ internal class RedisReplyOutput(
      */
     override fun complete(depth: Int) {
         if (depth > 0 && depth < this.depth) close()
+    }
+
+    private fun openOrNil(count: Int, kind: RedisReply.Items.Kind) {
+        if (count < 0) add(RedisReply.Nil) else open(kind)
     }
 
     private fun open(kind: RedisReply.Items.Kind) {

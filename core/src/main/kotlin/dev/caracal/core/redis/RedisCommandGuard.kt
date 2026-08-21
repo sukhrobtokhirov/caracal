@@ -235,6 +235,46 @@ object RedisCommandGuard {
         // Exposes or changes credentials.
         "ACL" to "ACL reads and changes who may connect to this server and what they may do.",
 
+        // Takes over or blocks this connection. The session holds a single connection
+        // that the key browser, the INFO dashboard, the value viewer and the console
+        // all share, and Redis answers one connection's commands in order. A command
+        // that puts it into another mode, or parks it waiting for something that may
+        // never arrive, does not fail alone — it takes every later read on that
+        // connection with it, until the application is restarted. RESET was already
+        // here for this reason; these are the rest of the same class.
+        "SUBSCRIBE" to "SUBSCRIBE puts this connection into subscriber mode, where it can no " +
+            "longer run ordinary commands.",
+        "PSUBSCRIBE" to "PSUBSCRIBE puts this connection into subscriber mode, where it can no " +
+            "longer run ordinary commands.",
+        "SSUBSCRIBE" to "SSUBSCRIBE puts this connection into subscriber mode, where it can no " +
+            "longer run ordinary commands.",
+        "CLIENT REPLY" to "CLIENT REPLY stops the server replying on this connection, which " +
+            "leaves every later command waiting for an answer that never comes.",
+        "SYNC" to "SYNC turns this connection into a replication stream.",
+        "PSYNC" to "PSYNC turns this connection into a replication stream.",
+        "SELECT" to "SELECT moves this connection to another database, underneath the key " +
+            "browser and everything else sharing it.",
+        "WAIT" to "WAIT blocks this connection until replicas acknowledge, and blocks forever " +
+            "on a server that has none.",
+        "WAITAOF" to "WAITAOF blocks this connection until the append-only file is written, and " +
+            "blocks forever on a server not writing one.",
+        "BLPOP" to "BLPOP blocks this connection until an element arrives, and with a timeout " +
+            "of 0 that is indefinitely.",
+        "BRPOP" to "BRPOP blocks this connection until an element arrives, and with a timeout " +
+            "of 0 that is indefinitely.",
+        "BLMOVE" to "BLMOVE blocks this connection until an element arrives, and with a timeout " +
+            "of 0 that is indefinitely.",
+        "BRPOPLPUSH" to "BRPOPLPUSH blocks this connection until an element arrives, and with a " +
+            "timeout of 0 that is indefinitely.",
+        "BLMPOP" to "BLMPOP blocks this connection until an element arrives, and with a timeout " +
+            "of 0 that is indefinitely.",
+        "BZPOPMIN" to "BZPOPMIN blocks this connection until an element arrives, and with a " +
+            "timeout of 0 that is indefinitely.",
+        "BZPOPMAX" to "BZPOPMAX blocks this connection until an element arrives, and with a " +
+            "timeout of 0 that is indefinitely.",
+        "BZMPOP" to "BZMPOP blocks this connection until an element arrives, and with a timeout " +
+            "of 0 that is indefinitely.",
+
         // Loses history other people may be relying on.
         "CONFIG RESETSTAT" to "CONFIG RESETSTAT discards the server's accumulated statistics.",
         "CONFIG REWRITE" to "CONFIG REWRITE overwrites the server's configuration file.",
@@ -277,7 +317,7 @@ object RedisCommandGuard {
      */
     private val READS = setOf(
         // Connection and server introspection.
-        "PING", "ECHO", "TIME", "DBSIZE", "LASTSAVE", "INFO", "LOLWUT", "WAIT",
+        "PING", "ECHO", "TIME", "DBSIZE", "LASTSAVE", "INFO", "LOLWUT",
         // Keyspace.
         "TYPE", "TTL", "PTTL", "EXPIRETIME", "PEXPIRETIME", "EXISTS", "SCAN",
         "RANDOMKEY", "DUMP", "TOUCH", "SORT_RO",

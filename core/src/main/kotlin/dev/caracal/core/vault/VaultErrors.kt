@@ -25,6 +25,21 @@ class VaultLockedException :
 class AlreadySetUpException :
     VaultException("already_set_up", "A master password has already been set.")
 
+/**
+ * Vault metadata that is present but incomplete: a salt with no verifier.
+ *
+ * Distinct from [NotSetUpException] because the two look identical from the
+ * outside and want opposite handling. Nothing has been set up means choose a
+ * password; this means a password was chosen once, secrets may still be sealed
+ * under it, and choosing a new one would make them unopenable.
+ */
+class VaultDamagedException :
+    VaultException(
+        "vault_damaged",
+        "The vault's metadata is incomplete. Restore the configuration file from a backup " +
+            "rather than setting a new master password, which would make saved credentials unreadable.",
+    )
+
 /** An unlock attempt before a master password was ever chosen. */
 class NotSetUpException :
     VaultException("not_set_up", "No master password has been set.")

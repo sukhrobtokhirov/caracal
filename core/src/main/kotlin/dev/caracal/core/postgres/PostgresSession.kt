@@ -21,7 +21,7 @@ class PostgresSession(
     statementTimeout: Duration = PostgresAdapter.DEFAULT_STATEMENT_TIMEOUT,
 ) : AutoCloseable {
     private val dataSource = PostgresDataSources.create(config)
-    private val redaction = Redaction(config.secrets())
+    private val redaction = config.redaction()
 
     val adapter: PostgresAdapter = PostgresAdapter(
         dataSource = dataSource,

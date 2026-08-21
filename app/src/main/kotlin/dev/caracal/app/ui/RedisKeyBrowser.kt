@@ -97,7 +97,7 @@ fun RedisKeyBrowser(
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(vertical = 4.dp),
                 ) {
-                    items(rows, key = { it.path }) { row ->
+                    items(rows, key = { it.id }) { row ->
                         KeyRowLine(
                             row = row,
                             selected = row.key != null && row.key == model.selected,

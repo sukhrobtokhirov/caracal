@@ -395,6 +395,16 @@ class ResultGridState(val result: QueryResult) {
      * What a copy takes: the selected rows if any are selected, otherwise the focused
      * cell. One rule, so the keyboard shortcut and the button always agree.
      */
+    /**
+     * Whether there is anything to copy, without building it.
+     *
+     * The status bar needs the answer to enable a button, and asking [copyText] for
+     * it TSV-escaped every selected row and threw the result away — up to sixteen
+     * million characters, on the composition thread, on every recomposition of the
+     * bar. Which is every cell click and every focus change.
+     */
+    fun hasCopyText(): Boolean = selectedRows.isNotEmpty() || focused != null
+
     fun copyText(): String? = when {
         selectedRows.isNotEmpty() ->
             GridText.rows(selectedRows.sorted().mapNotNull { result.rows.getOrNull(it) })

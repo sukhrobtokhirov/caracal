@@ -97,7 +97,15 @@ object Seal {
             if (plaintext[0] != PAYLOAD_VERSION) {
                 throw MalformedEnvelopeException("unknown payload version ${plaintext[0]}")
             }
-            return secretOfBytes(plaintext.copyOfRange(1, plaintext.size))
+            // The copy is the whole decrypted secret in a second array. Wiping only
+            // `plaintext` would leave that one for the GC to hand to whatever reuses
+            // the page, which is the leak this class exists to avoid.
+            val payload = plaintext.copyOfRange(1, plaintext.size)
+            try {
+                return secretOfBytes(payload)
+            } finally {
+                payload.wipe()
+            }
         } finally {
             plaintext.wipe()
         }
@@ -116,9 +124,23 @@ object Seal {
         }
     }
 
-    /** Reports whether [key] opens the stored verifier. */
+    /**
+     * Reports whether [key] opens the stored verifier.
+     *
+     * Only a failed authentication answers `false`. A verifier that is not an
+     * envelope at all — truncated by a partial write, or carrying a version this
+     * build does not know — is the one case that must not be reported as a wrong
+     * password: doing so tells the user their correct password is wrong, forever,
+     * and spends the unlock cooldown on a file that no password can open. Those
+     * leave as [MalformedEnvelopeException] or [UnsupportedKdfException] instead.
+     */
     fun verifies(key: ByteArray, verifier: ByteArray): Boolean =
-        runCatching { open(key, SecretIdentity.VERIFIER, verifier).clear() }.isSuccess
+        try {
+            open(key, SecretIdentity.VERIFIER, verifier).clear()
+            true
+        } catch (_: SecretUnreadableException) {
+            false
+        }
 
     private fun payload(secret: Secret): ByteArray {
         val bytes = secret.toBytes()
