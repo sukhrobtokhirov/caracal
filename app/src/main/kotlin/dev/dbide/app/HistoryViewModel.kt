@@ -1,5 +1,6 @@
 package dev.dbide.app
 
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -90,10 +91,20 @@ class HistoryViewModel(
         get() = (state as? HistoryLoad.Ready)?.entries.orEmpty()
 
     /** What the list draws: the loaded pages, narrowed by whatever is in the search box. */
-    val visible: List<ExecutionRecord>
-        get() = search.trim().takeIf { it.isNotEmpty() }?.let { needle ->
+    /**
+     * Recomputed when something it reads changes, and not once per frame.
+     *
+     * §4.10's "excess re-rendering". This was a `get()`, which in a Compose read path
+     * means the whole list is rebuilt on every recomposition of the pane — every
+     * scroll, every hover, every keystroke in the box beside it. `derivedStateOf`
+     * caches the answer and invalidates it only when one of the snapshot values the
+     * computation actually read has changed, which for a list like this is rarely.
+     */
+    val visible: List<ExecutionRecord> by derivedStateOf {
+        search.trim().takeIf { it.isNotEmpty() }?.let { needle ->
             entries.filter { it.statement.contains(needle, ignoreCase = true) }
         } ?: entries
+    }
 
     /** Whether there is provably a page behind the ones on screen. */
     val hasMore: Boolean get() = cursor != null

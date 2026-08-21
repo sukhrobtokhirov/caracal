@@ -1,5 +1,6 @@
 package dev.dbide.app
 
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableStateSetOf
@@ -51,6 +52,20 @@ sealed interface ScanProgress {
      * show for it yet.
      */
     data class More(val stopped: ScanStop?, val empty: Boolean) : ScanProgress
+
+    /**
+     * The browser is holding as many keys as it will hold, and the keyspace has more.
+     *
+     * §4.10's unbounded-cache clause. Every other limit on a scan bounds one *page* —
+     * iterations, elapsed time, keys returned — and none of them bounds the pile the
+     * pages are added to, so a keyspace walked one **Load more** at a time grows in
+     * this process without end.
+     *
+     * This is a different ending from [More] and says a different thing. `More` means
+     * press the button again; this means the button will not help and the pattern is
+     * what has to change.
+     */
+    data object Full : ScanProgress
 }
 
 /**
@@ -148,8 +163,21 @@ class RedisBrowserViewModel(
     val hasMore: Boolean get() = progress is ScanProgress.More
 
     /** The list as it is drawn: grouped by prefix, or flat. */
-    val rows: List<KeyRow>
-        get() = RedisKeyTree.rows(keys, expanded, delimiter, grouped)
+    /**
+     * Recomputed when something it reads changes, and not once per frame.
+     *
+     * §4.10's "excess re-rendering". This was a `get()`, which in a Compose read path
+     * means the whole list is rebuilt on every recomposition of the pane — every
+     * scroll, every hover, every keystroke in the box beside it. `derivedStateOf`
+     * caches the answer and invalidates it only when one of the snapshot values the
+     * computation actually read has changed, which for a list like this is rarely.
+     *
+     * It matters most here: grouping builds a prefix trie over every key that has
+     * been scanned, and a keyspace walked for a while is thousands of them.
+     */
+    val rows: List<KeyRow> by derivedStateOf {
+        RedisKeyTree.rows(keys, expanded, delimiter, grouped)
+    }
 
     /** The metadata for [selected], as the last page reported it. */
     val selectedMetadata: KeyMetadata? get() = selected?.let { collected[it] }
@@ -310,7 +338,8 @@ class RedisBrowserViewModel(
                     // An empty page is not an ending and not a failure. It is the
                     // ordinary shape of a selective MATCH, and the only thing to do
                     // with one is to keep going — for a while.
-                    val keepGoing = page.keys.isEmpty() && !page.complete && pages <= AUTO_CONTINUATIONS
+                    val keepGoing =
+                        page.keys.isEmpty() && !page.complete && pages <= AUTO_CONTINUATIONS && !full
                     if (!keepGoing) break
                     progress = ScanProgress.Scanning(pages)
                 }
@@ -323,10 +352,13 @@ class RedisBrowserViewModel(
                 progress = ScanProgress.More(stopped = null, empty = keys.isEmpty())
                 return@launch
             }
-            progress = if (page.complete) {
-                ScanProgress.Complete
-            } else {
-                ScanProgress.More(page.stopped, empty = page.keys.isEmpty())
+            progress = when {
+                page.complete -> ScanProgress.Complete
+                // Said before "there is more", because both are true and only one of
+                // them is worth acting on: pressing Load more again would collect
+                // nothing.
+                full -> ScanProgress.Full
+                else -> ScanProgress.More(page.stopped, empty = page.keys.isEmpty())
             }
         }
     }
@@ -336,6 +368,9 @@ class RedisBrowserViewModel(
         page.forEach { metadata -> collected[metadata.key] = metadata }
         keys = collected.values.toList()
     }
+
+    /** Whether the pile has reached what this process is willing to hold. */
+    private val full: Boolean get() = collected.size >= MAX_COLLECTED_KEYS
 
     private fun reset() {
         job?.cancel()
@@ -353,7 +388,7 @@ class RedisBrowserViewModel(
         progress = ScanProgress.Idle
     }
 
-    private companion object {
+    internal companion object {
         /**
          * Extra pages one click may read while every batch comes back empty.
          *
@@ -363,5 +398,17 @@ class RedisBrowserViewModel(
          * without the user having asked twice.
          */
         const val AUTO_CONTINUATIONS = 4
+
+        /**
+         * How many keys the browser will hold at once.
+         *
+         * The scan is bounded per page and the pile it fills was not, so a keyspace
+         * walked one click at a time grew in this process for as long as someone kept
+         * clicking. Ten thousand is far past the point where a flat list is how anyone
+         * would find a key — the answer at that scale is a narrower pattern, which is
+         * what [ScanProgress.Full] says — and it is a keyspace-shaped number rather
+         * than a byte count because what a key costs is its name.
+         */
+        const val MAX_COLLECTED_KEYS = 10_000
     }
 }

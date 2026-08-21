@@ -116,6 +116,19 @@ class EditorTabs(
     private var sequence = 0L
     private var clock = 0L
 
+    private companion object {
+        /**
+         * How many tabs may hold a result at once.
+         *
+         * Chosen against what a person can actually be working in rather than
+         * against a memory figure: more than a handful of grids in play at one time
+         * is not a workflow, it is a pile. Eight is generous for the first and cheap
+         * for the second — at the worst a result is allowed to be, it is the
+         * difference between an eight-way cap and a twenty-way one.
+         */
+        const val RETAINED_RESULTS = 8
+    }
+
     /**
      * The connections that have been given their first tab already.
      *
@@ -171,6 +184,41 @@ class EditorTabs(
     /** Brings [tab] to the front of its connection's strip. */
     fun activate(tab: EditorTab) {
         tab.activated = ++clock
+        evict()
+    }
+
+    /**
+     * Lets go of the results in tabs nobody has been in for a while.
+     *
+     * §4.10 asks for a bounded number of result models in memory, and tabs are the
+     * only place this application keeps more than one. A single result is already
+     * bounded — `ResultLimits` caps it at a thousand rows and sixteen megabytes of
+     * characters — but twenty tabs holding one each is twenty times that, and twenty
+     * tabs is a number §4.10 names rather than one it considers unlikely.
+     *
+     * Recency rather than age: the tabs someone is moving between keep their grids,
+     * and the ones they opened this morning and have not looked at since give theirs
+     * up. Nothing is lost that cannot be got back — the script is untouched and Run
+     * sends it again — which is the whole reason this is allowed to be automatic.
+     *
+     * A tab with work in flight is skipped whatever its position. A statement on the
+     * server has no result to release yet and is about to want one; an export is
+     * streaming rows to a file somebody asked for, and cancelling it here would
+     * delete a half-written file because the tab had gone quiet — which is the one
+     * thing this must never do, since the whole justification for evicting
+     * automatically is that nothing is lost by it.
+     */
+    private fun evict() {
+        if (tabs.size <= RETAINED_RESULTS) return
+        tabs.sortedByDescending { it.activated }
+            .drop(RETAINED_RESULTS)
+            .filterNot { it.running || it.export.running }
+            .forEach { tab ->
+                // The export report goes with the result it describes. Leaving
+                // "Wrote 12 rows" under a pane that says the result is gone is two
+                // answers to one question.
+                if (tab.editor.release()) tab.export.clear()
+            }
     }
 
     /**

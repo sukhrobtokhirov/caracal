@@ -1,5 +1,6 @@
 package dev.dbide.app
 
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
@@ -131,11 +132,21 @@ class SchemaTreeViewModel(
     val reloading: Boolean get() = null in refreshing
 
     /** The tree, flattened to what is visible right now. */
-    val rows: List<TreeRow>
-        get() = buildList {
+    /**
+     * Recomputed when something it reads changes, and not once per frame.
+     *
+     * §4.10's "excess re-rendering". This was a `get()`, which in a Compose read path
+     * means the whole list is rebuilt on every recomposition of the pane — every
+     * scroll, every hover, every keystroke in the box beside it. `derivedStateOf`
+     * caches the answer and invalidates it only when one of the snapshot values the
+     * computation actually read has changed, which for a list like this is rarely.
+     */
+    val rows: List<TreeRow> by derivedStateOf {
+        buildList {
             val schemas = (root as? NodeState.Ready)?.items ?: return@buildList
             schemas.forEach { schema -> appendSchema(schema) }
         }
+    }
 
     /**
      * Points the browser at a connection, or at nothing.

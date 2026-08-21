@@ -32,6 +32,9 @@ object Announcements {
         // The message is already redacted by the time it reaches here — the same
         // string the banner shows — so this adds no exposure the screen does not.
         is EditorRun.Failed -> "Failed. ${run.failure.message}"
+        // Nothing happened. The result was let go to keep the window bounded, which
+        // is the application's business and not news the user needs read out.
+        is EditorRun.Released -> null
     }
 
     /**

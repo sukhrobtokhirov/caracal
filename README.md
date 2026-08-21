@@ -21,7 +21,7 @@ no JDK to install: the installer bundles its own trimmed runtime.
 > and CSV export; a Redis connection opens a bounded `SCAN` key browser with
 > prefix grouping, a paged viewer for each of the six value types, an `INFO`
 > summary, and a command console behind the dangerous-command guard. **M4, polish,
-> is under way** — query history is readable, paged, and reopenable; SQL work lives in
+> is done** — query history is readable, paged, and reopenable; SQL work lives in
 > tabs that keep their own connection, query, and result, and that will not close on
 > unsaved work or a running statement without asking; and the keyboard reaches all of
 > it, including a connection switcher that will not let Enter dial production; and a
@@ -36,8 +36,11 @@ no JDK to install: the installer bundles its own trimmed runtime.
 > remembers it is dark. The keyboard reaches both trees and both tab strips by their
 > arrow keys, a dialog takes the caret when it opens and gives it back when it goes,
 > a query that finishes announces how it ended without reading the result out, and at
-> 200% on a small laptop the panes give way rather than pushing Run off the edge. See
-> [`docs/mvp-steps/`](docs/mvp-steps/README.md).
+> 200% on a small laptop the panes give way rather than pushing Run off the edge.
+> Twenty open tabs hold eight results between them and say so where the other twelve
+> were, rather than holding twenty and hoping. What is left of M4 is the part no test
+> can sign off: [its exit criterion](docs/mvp-steps/04-product-polish.md#exit-criterion)
+> is a day of real use. See [`docs/mvp-steps/`](docs/mvp-steps/README.md).
 
 ## The shape of the product
 

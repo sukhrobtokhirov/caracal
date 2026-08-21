@@ -201,6 +201,27 @@ private fun ResultArea(model: EditorViewModel, export: ExportViewModel, onCopy: 
             }
         }
 
+        // §4.10's eviction, said out loud. The tab kept its script and lost its grid,
+        // and the difference between saying so and showing "No result yet" is the
+        // difference between a tab that let something go and a tab that looks like
+        // it was never used.
+        is EditorRun.Released -> EmptyState(
+            title = "Result released",
+            detail = "This tab had not been used for a while, so its result was let go " +
+                "to keep memory bounded. The statement is still in the editor — " +
+                "run it again to see the result.",
+            tag = "query-released",
+            action = {
+                ToolButton(
+                    text = "Run again",
+                    onClick = model::execute,
+                    tag = "rerun-released",
+                    enabled = model.runnable,
+                    emphasis = ToolEmphasis.PRIMARY,
+                )
+            },
+        )
+
         // Cancelled is not a failure and is not drawn as one: the user asked for the
         // statement to stop, and it stopped.
         EditorRun.Cancelled -> EmptyState(

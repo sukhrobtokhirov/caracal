@@ -494,6 +494,11 @@ private fun RedisBrowserViewModel.progressLine(): String {
         }
 
         ScanProgress.Complete -> "$found. Traversal complete."
+        // Not "there is more" — there is, and saying so beside a button that would
+        // collect nothing is worse than saying nothing. What has to change is the
+        // pattern.
+        ScanProgress.Full ->
+            "$found — as many as this browser holds. Narrow the pattern to see further."
         is ScanProgress.More -> when (progress.stopped) {
             ScanStop.PAGE_FULL -> "$found. The page filled; there is more."
             ScanStop.ITERATION_BUDGET ->

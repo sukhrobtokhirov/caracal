@@ -763,6 +763,80 @@ is also partial, and how much of this reaches a real screen reader today is not
 something these tests can answer. The tree being right is the half that is ours; it
 is the half that has to be right first either way.
 
+### 4.10 — performance and reliability
+
+**One result was already bounded; twenty were not.** `ResultLimits` caps a single
+result at a thousand rows and sixteen megabytes of characters, and has since M2 — but
+a tab holds one each, and §4.10 names twenty tabs as an ordinary number rather than
+an abusive one. Tabs are the only place in this application where memory grows with
+what someone did rather than with what they are looking at. Eight tabs now keep their
+grids, by recency; the rest are released. `EditorRun.Released` is a state of its own
+rather than a return to `Idle`, because the second half of the requirement is the
+important half: the pane says the result was let go, names the statement that
+produced it, and offers **Run again**. The script itself is never touched.
+
+**Eviction never touches work in flight.** A tab with a statement on the server has
+no result to release and is about to want one. A tab with an export running is
+streaming rows into a file somebody named, and cancelling that because the tab had
+gone quiet would delete a half-written file — a loss, where every other eviction
+costs one keypress. That distinction is the whole reason this is allowed to happen
+without asking, and it has its own test.
+
+**Three lists were rebuilt on every frame.** `SchemaTreeViewModel.rows`,
+`RedisBrowserViewModel.rows`, and `HistoryViewModel.visible` were `get()`
+computations read from composables, which means the whole list is recomputed on every
+recomposition of the pane — every scroll, every hover, every keystroke in the search
+box beside it. The Redis one is the worst of the three: it builds a prefix trie over
+every key that has been scanned, so a keyspace walked for a while rebuilt thousands
+of nodes per frame to draw thirty rows. All three are `derivedStateOf` now, which
+recomputes only when a snapshot value the computation actually read has changed.
+
+**The keyspace pile had no ceiling.** Every limit on a Redis scan bounds one *page* —
+iterations, elapsed time, keys returned — and none of them bounded the accumulation
+those pages are added to, so **Load more** grew this process for as long as anyone
+kept pressing it. Ten thousand keys is the cap, and `ScanProgress.Full` is a
+different ending from `More` saying a different thing: not "press again", but "the
+pattern is what has to change". `hasMore` is false in that state, so the button that
+would collect nothing is not offered.
+
+**The caches that were left alone, and why.** The schema tree keeps the children of
+every node ever expanded, and collapsing does not drop them — that is deliberate, and
+reopening a schema instantly is worth it. It is bounded by the catalog rather than by
+a constant: you cannot expand more nodes than the database has, and a listing is a
+name, a kind, and a nullable flag. `ScaleTest` pins the property that matters instead
+— four hundred schemas cost four hundred rows and one query, and a hundred of them
+opened costs two hundred and twenty rows rather than the 3,600 objects behind them.
+History accumulates pages too, and is bounded at the source: the store caps a
+connection's history at a thousand rows, so paging to the end of it is a few hundred
+kilobytes of SQL.
+
+**Nothing here asserts a duration.** A timing on a shared CI runner is a coin flip
+dressed as a measurement, and a suite that fails on a busy afternoon teaches people to
+re-run it rather than read it. What is asserted is the property that makes the timing
+fine: that work is proportional to what is on screen rather than to what is in memory,
+and that what is in memory has a ceiling.
+
+**The leak check is the test framework.** `runTest` fails if a coroutine started in
+its scope outlives the body, so twenty tabs each holding an unanswered statement,
+closed one at a time, is a direct test of whether closing a tab releases what it
+owned. The same for locking with twenty running. Both would have leaked quietly;
+neither can now.
+
+**Two of the listed workloads were browser-era and are gone rather than translated.**
+"Cancel obsolete frontend requests with `AbortController`" is coroutine cancellation,
+which is how every call in this application has worked since M0 — a cancelled job
+cancels the JDBC statement from another thread. "Expired session token / process
+replacement" has no counterpart: there is no session and no token, and its nearest
+equivalent — the vault locking out from under open work — is tested from §4.3. A
+backend restart is a connection dropping while the window stays open, which §4.7 gave
+its own pane.
+
+**Not measured against a real server at scale.** Everything above is asserted against
+the fake. A thousand rows of a hundred columns from a real PostgreSQL, and a keyspace
+of a million keys in a real Redis, are the integration tests this milestone did not
+add; the existing opt-in Testcontainers suites cover correctness at those paths, not
+size. Worth doing before v0.1 ships, and not something a unit test can stand in for.
+
 ## Completion checklist
 
 - [x] Query history is bounded, paged, filterable, reopenable, and clearable.
@@ -775,7 +849,7 @@ is the half that has to be right first either way.
 - [x] Every primary surface has intentional loading and empty states.
 - [x] Light/dark/system themes cover editor, grid, dialogs, and status colors.
 - [x] Core workflows are keyboard accessible and usable at zoom.
-- [ ] Large normal-use states stay responsive and memory-bounded.
+- [x] Large normal-use states stay responsive and memory-bounded.
 
 ## Exit criterion
 

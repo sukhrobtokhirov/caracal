@@ -5,6 +5,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.test.ComposeUiTest
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.onNodeWithTag
@@ -103,6 +104,43 @@ class QueryTabsUiTest {
         onNodeWithTag(tag).performClick()
         waitForIdle()
     }
+
+    // --- Released results -----------------------------------------------------
+
+    /**
+     * §4.10's eviction, from the side that matters: what a person sees when they come
+     * back to a tab whose grid the window let go.
+     *
+     * The requirement is not that the result survives — it is that its absence is
+     * explained and reversible. A tab that quietly said "No result yet" would be a
+     * tab that looks like it was never used, and its owner would go looking for work
+     * they had not lost.
+     */
+    @Test
+    fun `a released tab says what happened and offers to run it again`() =
+        runDesktopComposeUiTest(width = 1100, height = 800) {
+            val service = service()
+            val tabs = workspace(service)
+
+            val first = tabs.tabs.single()
+            type("select invoices;")
+            click("editor-run")
+
+            // Enough other tabs that the first one is past the cap.
+            repeat(12) { tabs.open(local) }
+            waitForIdle()
+
+            tabs.activate(first)
+            waitForIdle()
+
+            onNodeWithTag("query-released").assertIsDisplayed()
+            // The script is untouched: it is the same text, in the same editor.
+            onNodeWithTag("editor-text").assertTextContains("select invoices;")
+
+            click("rerun-released")
+            onNodeWithTag("query-released").assertDoesNotExist()
+            onNodeWithTag("grid-status").assertIsDisplayed()
+        }
 
     // --- Switching ------------------------------------------------------------
 

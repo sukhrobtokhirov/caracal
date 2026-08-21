@@ -65,6 +65,20 @@ sealed interface EditorRun {
 
     /** The user stopped it. Not a failure, and not drawn as one. */
     data object Cancelled : EditorRun
+
+    /**
+     * There was a result and it has been let go to keep the window's memory bounded.
+     *
+     * §4.10's rule, and the second half of it is what this state exists for: an
+     * evicted result must keep its query text and say that it has to be run again.
+     * A tab that quietly went back to "No result yet" would be a tab that looks like
+     * it was never used, and its owner would go looking for what they had lost.
+     *
+     * [target] is the statement that produced the result, so the pane can say what
+     * is missing and Run sends the same thing again. The script itself was never
+     * touched — it is in the editor, where the user left it.
+     */
+    data class Released(val target: ExecutionTarget) : EditorRun
 }
 
 /**
@@ -412,6 +426,24 @@ class EditorViewModel(
         job?.cancel()
         job = null
         run = EditorRun.Cancelled
+    }
+
+    /**
+     * Lets go of the result while keeping everything else.
+     *
+     * §4.10 bounds how many result models the window holds at once, and this is the
+     * one operation that does it. It is only ever applied to a finished result: a
+     * running statement is about to produce one, and a failure is a sentence rather
+     * than a grid, so neither is worth anything to evict.
+     *
+     * The export goes too. It reports on a file streamed from a statement the tab is
+     * no longer showing the result of, and leaving "Wrote 12 rows" under a pane that
+     * says the result is gone is two answers to one question.
+     */
+    fun release(): Boolean {
+        val done = run as? EditorRun.Done ?: return false
+        run = EditorRun.Released(done.target)
+        return true
     }
 
     /** Drops the script and everything run from it. Called when the vault locks. */
