@@ -1,4 +1,4 @@
-# Database IDE MVP — Implementation Steps
+# Caracal MVP — Implementation Steps
 
 This directory expands the milestones in [`db-ide-mvp-plan.md`](../../db-ide-mvp-plan.md) into implementation guides. Each milestone has its own scope, feature behavior, technical tasks, tests, and acceptance criteria.
 

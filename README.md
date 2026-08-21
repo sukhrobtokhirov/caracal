@@ -1,153 +1,137 @@
-# Database IDE
+# Caracal
 
-A desktop IDE for PostgreSQL and Redis.
+**A free desktop IDE for Postgres and Redis.**
 
-One application window where both engines sit side by side — the daily workflow
-of DataGrip or DBeaver without the license wall. Kotlin and Compose Desktop,
-rendered natively through Skia. No browser, no webview, no local web server, and
-no JDK to install: the installer bundles its own trimmed runtime.
+One native window where both engines sit side by side — the daily workflow of
+DataGrip or DBeaver without the license wall. No browser, no webview, no local web
+server, and no JDK to install: the installer carries its own trimmed runtime.
 
-> **Status: rebuilding on Kotlin.** M0 and M1 shipped in Go with a React SPA in a
-> browser window. On 2026-08-20 the project moved to Kotlin + Compose Desktop —
-> the language its author actually writes, and the route to JDBC's engine
-> breadth. That Go implementation is preserved under the `go-implementation` git
-> tag; the plan's [§10](db-ide-mvp-plan.md#10-stack-move-record--2026-08-20)
-> records exactly what the move simplified and what it made harder.
->
-> Kotlin **M0 through M3 are done**: a packaged window opens an encrypted
-> connection manager, where PostgreSQL and Redis connections are saved under a
-> master password, survive a restart, and reconnect on unlock. A PostgreSQL
-> connection then opens a schema browser, a SQL editor, a virtualized result grid,
-> and CSV export; a Redis connection opens a bounded `SCAN` key browser with
-> prefix grouping, a paged viewer for each of the six value types, an `INFO`
-> summary, and a command console behind the dangerous-command guard. **M4, polish,
-> is done** — query history is readable, paged, and reopenable; SQL work lives in
-> tabs that keep their own connection, query, and result, and that will not close on
-> unsaved work or a running statement without asking; and the keyboard reaches all of
-> it, including a connection switcher that will not let Enter dial production; and a
-> failure is shown where it happened, with the character PostgreSQL pointed at
-> underlined in the editor — and un-underlined, with a sentence saying why, the
-> moment the script moves out from under it. Every pane that waits on a server says
-> what it is waiting for, every empty one says how to fill it, and a connection that
-> drops says your open scripts are still here and offers the button that brings them
-> back. Light, dark, and system are one set of named tokens rather than a colour per
-> component, every readable pair in both of them is held to WCAG AA by a test that
-> does the arithmetic, and the window no longer opens with a frame of white before it
-> remembers it is dark. The keyboard reaches both trees and both tab strips by their
-> arrow keys, a dialog takes the caret when it opens and gives it back when it goes,
-> a query that finishes announces how it ended without reading the result out, and at
-> 200% on a small laptop the panes give way rather than pushing Run off the edge.
-> Twenty open tabs hold eight results between them and say so where the other twelve
-> were, rather than holding twenty and hoping. What is left of M4 is the part no test
-> can sign off: [its exit criterion](docs/mvp-steps/04-product-polish.md#exit-criterion)
-> is a day of real use. See [`docs/mvp-steps/`](docs/mvp-steps/README.md).
+<!--
+  The demo GIF goes here, immediately under the pitch, before anything else:
+  five seconds showing the connection list, a Redis key browsed, a SQL statement
+  run, and the result grid — in the application window, with no browser chrome
+  anywhere in frame, and with synthetic connection names, hostnames, and data.
+  Recording it is a blocking step in docs/RELEASING.md; it is deliberately not a
+  broken <img> until then.
+-->
 
-## The shape of the product
+## What it does
 
-| | |
-|---|---|
-| **Delivery** | A native installer per platform — `.dmg`, `.msi`, `.deb`. Install, launch, connect. |
-| **Interface** | A desktop window: connection sidebar, editor tabs, result grid, key browser. |
-| **Engines** | PostgreSQL and Redis in the same workspace, not two separate tools. |
-| **Data** | Everything is local. Credentials are encrypted on disk under a master password. |
-| **Scope** | Read-only by default, deliberately. A connection can be marked writable; writes are then gated by a confirmation, typed out on `prod`. See [`db-ide-mvp-plan.md`](db-ide-mvp-plan.md) §0. |
+- **PostgreSQL** — a schema browser read lazily from `pg_catalog`, a SQL editor
+  that splits and runs scripts, cancel that actually cancels, a virtualized result
+  grid that keeps `numeric` and `int8` at full precision, and CSV export.
+- **Redis** — a bounded `SCAN` key browser with prefix grouping and type filters,
+  paged viewers for all six value types with TTL, an `INFO` dashboard, and a
+  command console that refuses the commands that stop a server.
+- **Both at once** — one window, one connection list, one set of shortcuts. Not
+  two tools that happen to be installed on the same machine.
+- **Read-only until you say otherwise.** A connection is read-only when you create
+  it. Marking it writable makes a write ask first — and on a production-tagged
+  connection, ask you to type the connection's name.
+- **Tabs and history.** SQL work lives in tabs that keep their own connection,
+  query, and result, and will not close on unsaved work without asking. Every
+  execution is recorded, searchable, and reopenable without running anything.
+- **Local, and only local.** No account, no telemetry, no network listener.
+  Credentials are sealed on disk under a master password.
 
-There is no hosted service, no multi-user mode, and no network listener. The UI
-calls suspend functions in the same process as the database code.
+## Download
 
-## Stack
+Installers for the current release are on the
+[releases page](https://github.com/stohirov/caracal/releases/latest).
 
-| Layer | Choice |
-|---|---|
-| Language | Kotlin 2.x on JDK 25 (LTS) |
-| UI | Compose Multiplatform for Desktop |
-| PostgreSQL | pgjdbc + HikariCP |
-| Redis | Lettuce |
-| Local store | SQLite via `sqlite-jdbc` |
-| Crypto | Argon2id (BouncyCastle) + AES-256-GCM (JCA) |
-| Build | Gradle (Kotlin DSL), packaged with `jpackage` |
-| Tests | JUnit 5 + Testcontainers |
+| Platform | File | Size |
+|---|---|---|
+| macOS (Apple Silicon) | `caracal_0.1.0_macos_arm64.dmg` | ~105 MB |
+| macOS (Intel) | `caracal_0.1.0_macos_x86_64.dmg` | ~105 MB |
+| Linux (x86-64) | `caracal_0.1.0_linux_x86_64.deb` | ~100 MB |
+| Linux (ARM64) | `caracal_0.1.0_linux_arm64.deb` | ~100 MB |
+| Windows (x86-64) | `caracal_0.1.0_windows_x86_64.msi` | ~100 MB |
 
-## Requirements
+They are that size because each one contains a trimmed Java runtime, which is the
+reason you do not have to install one. Windows on ARM has no build of its own yet;
+the x86-64 installer runs there under emulation.
 
-Users of a released build need nothing installed — the installer carries its own
-runtime. To build from source:
-
-- JDK 25 (or 21+); the Gradle toolchain resolves it if configured
-- Docker, only for the opt-in integration tests
-
-## Build and run
+Every release also publishes `checksums.txt`. Verify before installing:
 
 ```sh
-./gradlew :app:run                              # launch from source
-./gradlew :app:packageDistributionForCurrentOS  # installer for this platform
+sha256sum --check --ignore-missing checksums.txt
 ```
 
-On first run you choose a master password. It encrypts every database credential
-you save and is never stored anywhere, so it cannot be recovered — if you forget
-it, your saved passwords are gone.
+On macOS that is `shasum -a 256 --check --ignore-missing checksums.txt`, and on
+Windows `Get-FileHash caracal_0.1.0_windows_x86_64.msi -Algorithm SHA256`.
 
-To keep development runs off your real configuration, point them at a scratch
-directory:
+> v0.1.0 has not been tagged yet, so the links above are where it will be rather
+> than where it is. Until then, [build from source](#build-from-source).
+
+## Run it
+
+The installers are **not signed**. Signing certificates cost money annually, and
+this project has none yet, so macOS and Windows will both warn you the first time.
+The steps below are the standard ones for unsigned software — they are not a way
+around a security check, and you should be as suspicious of them as you would be
+of any download.
+
+**macOS.** Open the `.dmg`, drag Caracal to Applications, and launch it. Gatekeeper
+will refuse it on the first attempt ("Apple could not verify…"). Open **System
+Settings → Privacy & Security**, scroll to the message naming Caracal, and choose
+**Open Anyway**. macOS asks once; every later launch is normal. Do not disable
+Gatekeeper globally.
+
+**Linux.** Install the package and launch Caracal from your applications menu:
 
 ```sh
-DBIDE_DATA_DIR=/tmp/dbide ./gradlew :app:run
+sudo apt install ./caracal_0.1.0_linux_x86_64.deb
 ```
 
-If the checkout lives in a folder synced by iCloud Drive, packaging needs an
-output directory outside it — `codesign` rejects the xattr the sync attaches:
+The `.deb` files are built on Ubuntu 24.04, so they need glibc 2.39 or newer —
+Ubuntu 24.04, Debian 13, or anything more recent. Older distributions should
+[build from source](#build-from-source).
+
+**Windows.** Run the `.msi`. SmartScreen will show "Windows protected your PC"
+because the installer is unsigned; choose **More info → Run anyway** if you are
+satisfied the checksum matches what the release page publishes.
+
+To check which build you have without opening the window:
 
 ```sh
-./gradlew :app:packageDistributionForCurrentOS -Pdbide.distributionsDir=/tmp/dbide
+caracal --version
 ```
 
-`jpackage` cannot cross-compile. Each platform's installer is built on that
-platform; CI does this on three runners.
+On macOS that is `/Applications/Caracal.app/Contents/MacOS/Caracal --version`. The
+same three facts are in **Settings → About** inside the application.
 
-## Development
+## Your first connection
 
-```sh
-./gradlew :core:test     # headless — no display server, no window
-./gradlew check          # everything, including Compose UI tests and the module-boundary check
-./gradlew :app:run       # launch from source
-```
+1. Launch Caracal. The first thing the window asks for is a **master password**,
+   which you choose now. It encrypts every database credential you save.
+   **It is never stored anywhere and cannot be recovered** — if you forget it, the
+   saved passwords are gone and the connections have to be entered again.
+2. **New connection** → pick PostgreSQL or Redis, fill in host, port, database, and
+   user, and tag the environment. **Test** tells you whether it works before you
+   save it.
+3. Save it, then open it. A PostgreSQL connection opens the schema browser and an
+   editor tab; a Redis connection opens the key browser.
+4. Run a statement with `Cmd/Ctrl+Enter`, or browse a key. `Cmd/Ctrl+K` switches
+   connections; `Cmd/Ctrl+/` lists every shortcut.
 
-`:core` has no Compose dependency and never will — `:core:assertNoComposeDependency`
-fails the build if one appears, and `:core`'s tests run with AWT headless so a
-window can never quietly become a requirement. Domain types, the vault, the
-store, the connection registry, and both engine adapters are plain JVM code that
-tests headlessly. If a test needs a window to run, it belongs in `:app`.
-
-Integration tests use Testcontainers and are opt-in, because they need Docker:
-
-```sh
-DBIDE_INTEGRATION=1 ./gradlew :core:test
-```
-
-Opt-in locally, mandatory in CI. `.github/workflows/ci.yml` runs `check` on Linux,
-macOS, and Windows, and sets `DBIDE_INTEGRATION=1` on the Linux runner — the only
-one of the three with a Docker daemon. Installers are built by the same workflow
-on all three, for a `v*` tag or on request.
+New connections are read-only. Untick that in the connection dialog when you
+actually need to write, and expect to be asked before each write.
 
 ## Security model
 
-The previous design served its UI over loopback HTTP, which needed a session
-token, an `Origin` check, and a defense against DNS rebinding. A native window
-needs none of that, and it is all gone. What remains is the part that always
-mattered — this process holds live database credentials.
+Caracal has no server, no network listener, no telemetry, and no account. What it
+does have is live database credentials, which is what the following protects.
 
 - Credentials are sealed on disk under a key derived from the master password.
 - Connection strings, credentials, Redis command arguments, and parameterized
   query values never appear in logs or error messages.
 - JDBC URLs are never assembled with a password in them; credentials are passed
   as `Properties` so they cannot leak into a stack trace.
-- Read-only and production guards are enforced in `:core`. A disabled button is
-  not a security boundary: a connection marked read only opens its whole pool in a
-  PostgreSQL `READ ONLY` transaction, so a write is refused by the server whether it
-  arrived as an `UPDATE`, inside a CTE, or inside a function body compiled last year.
-- New connections are read only until someone unticks the box, and a writable
-  connection asks before it runs a statement that modifies data — on `prod`, by
-  making you type the connection's name.
+- Read-only and production guards are enforced in the core, not in the UI. A
+  disabled button is not a security boundary: a connection marked read-only opens
+  its whole pool in a PostgreSQL `READ ONLY` transaction, so a write is refused by
+  the server whether it arrived as an `UPDATE`, inside a CTE, or inside a function
+  body compiled last year.
 - The database user's own grants remain the real boundary. A read-only role is
   still the right way to browse production.
 - Production-tagged connections are visibly and behaviorally distinct.
@@ -157,6 +141,9 @@ mattered — this process holds live database credentials.
   `WHERE email = '…'` is a record of a person as much as of a query. History is
   capped per connection and goes with the connection when it is deleted. Reading it
   back needs the vault open, and locking discards whatever the panel had loaded.
+- Redis console commands are deliberately not recorded — a command's arguments are
+  where its secrets are — so that transcript lives in memory for one session and is
+  discarded when the vault locks.
 
 ### Stored credentials
 
@@ -173,12 +160,83 @@ mattered — this process holds live database credentials.
 - Failed unlock attempts enter a widening cooldown.
 
 This defends against someone reading the configuration file. It does not defend
-against someone who already controls the running process.
+against someone who already controls the running process. Vulnerability reports go
+to [`SECURITY.md`](SECURITY.md), never to the issue tracker.
 
-## Layout
+### Where your data lives
+
+One SQLite file, created owner-only, in the platform's application data directory:
+
+| | |
+|---|---|
+| macOS | `~/Library/Application Support/caracal` |
+| Windows | `%AppData%\caracal` |
+| Linux | `$XDG_DATA_HOME/caracal`, or `~/.local/share/caracal` |
+
+`CARACAL_DATA_DIR` overrides it. Settings → About shows the path in use.
+
+Back it up by copying that directory while the application is closed. Deleting it
+resets Caracal to a first run — the connections and the sealed passwords go with
+it, and nothing can bring them back.
+
+## Build from source
+
+You need **JDK 25** (21+ works; the Gradle toolchain resolves it), and Docker only
+for the opt-in integration tests. Users of a released installer need neither.
+
+```sh
+./gradlew :app:run                              # launch from source
+./gradlew :app:packageDistributionForCurrentOS  # installer for this platform
+```
+
+To keep development runs off your real configuration, point them at a scratch
+directory:
+
+```sh
+CARACAL_DATA_DIR=/tmp/caracal ./gradlew :app:run
+```
+
+If the checkout lives in a folder synced by iCloud Drive, packaging needs an
+output directory outside it — `codesign` rejects the xattr the sync attaches:
+
+```sh
+./gradlew :app:packageDistributionForCurrentOS -Pcaracal.distributionsDir=/tmp/caracal
+```
+
+`jpackage` cannot cross-compile. Each installer is built on its own platform; the
+release workflow does that on five runners.
+
+## Development
+
+```sh
+./gradlew :core:test     # headless — no display server, no window
+./gradlew check          # everything, including Compose UI tests and the module-boundary check
+```
+
+`:core` has no Compose dependency and never will — `:core:assertNoComposeDependency`
+fails the build if one appears, and `:core`'s tests run with AWT headless so a
+window can never quietly become a requirement. Domain types, the vault, the
+store, the connection registry, and both engine adapters are plain JVM code that
+tests headlessly. If a test needs a window to run, it belongs in `:app`.
+
+Integration tests use Testcontainers and are opt-in, because they need Docker:
+
+```sh
+CARACAL_INTEGRATION=1 ./gradlew :core:test
+```
+
+Opt-in locally, mandatory in CI. `.github/workflows/ci.yml` runs `check` on Linux,
+macOS, and Windows, and sets `CARACAL_INTEGRATION=1` on the Linux runner — the only
+one of the three with a Docker daemon. `.github/workflows/release.yml` builds the
+five installers for a `v*` tag, or on request as a rehearsal.
+
+[`CONTRIBUTING.md`](CONTRIBUTING.md) has the architecture, the test commands, and
+the constraints a pull request must not weaken.
+
+### Layout
 
 ```
-core/src/main/kotlin/dev/dbide/core/
+core/src/main/kotlin/dev/caracal/core/
   postgres/      pgjdbc adapter, pooling, error classification, redaction   [M0]
   result/        QueryResult, CellValue, DbError                            [M0]
   catalog/       schemas, objects, and columns, as the browser sees them    [M2]
@@ -187,34 +245,65 @@ core/src/main/kotlin/dev/dbide/core/
   store/         SQLite configuration database and migrations               [M1]
   registry/      live HikariCP pools and Lettuce clients                    [M1]
   redis/         Lettuce adapter: bounded SCAN, paged values, command guard    [M3]
-  appdata/       platform configuration directory                           [M1]
+  appdata/       platform configuration directory, and the pre-rename move  [M1]
   sql/           statement splitter, editor execution rule, highlighting    [M2]
   policy/        what a statement may do, and what must be agreed to first  [M2]
   export/        CSV writing, export eligibility, bounded streaming         [M2]
   history/       what was executed, how it ended, and how much is kept   [M2, M4]
 
-app/src/main/kotlin/dev/dbide/app/
+app/src/main/kotlin/dev/caracal/app/
   ui/            connection screens [M1]; schema tree, SQL editor, result grid [M2];
                  key browser, value viewers, INFO dashboard, console          [M3];
                  query history, theme and contrast tokens                     [M4]
-  Main.kt        window, application lifecycle
+  Main.kt        window, application lifecycle, `--version`
+  BuildInfo.kt   which build this is                                          [M5]
 ```
 
-Query history is written from M2 and read from M4. **History** in the shell opens
-it: newest first, grouped by day, filtered by connection and by how each execution
-ended, and paged further back on request. An entry can be copied or reopened into
-the editor — reopening never runs anything, and it asks before replacing a script
-you are in the middle of. Clearing names its own scope and never touches the
-connections. Redis console commands are deliberately not recorded — a command's
-arguments are where its secrets are, so the console's history lives in memory for
-one session and is discarded when the vault locks.
+## Current limitations
 
-Configuration lives in the platform application data directory
-(`~/Library/Application Support/dbide` on macOS, `%AppData%\dbide` on Windows,
-`$XDG_DATA_HOME/dbide` or `~/.local/share/dbide` on Linux), in a SQLite file
-created owner-only. `DBIDE_DATA_DIR` overrides it.
+- The result grid is read-only. Editing data is not in v0.1.
+- Installers are unsigned; see [Run it](#run-it).
+- Windows on ARM has no native build yet.
+- PostgreSQL and Redis only. Tested against PostgreSQL 16 and Redis 7; other
+  versions are likely fine and untested — reports welcome.
+- A forgotten master password cannot be recovered.
+- No cloud sync, no accounts, no plugins, no AI. Several of these are permanent.
+
+What is planned, and what has been deliberately deferred, is in
+[`db-ide-mvp-plan.md`](db-ide-mvp-plan.md) and the milestone guides under
+[`docs/mvp-steps/`](docs/mvp-steps/README.md). Changes are recorded in
+[`CHANGELOG.md`](CHANGELOG.md).
+
+## Stack
+
+| Layer | Choice |
+|---|---|
+| Language | Kotlin 2.x on JDK 25 (LTS) |
+| UI | Compose Multiplatform for Desktop |
+| PostgreSQL | pgjdbc + HikariCP |
+| Redis | Lettuce |
+| Local store | SQLite via `sqlite-jdbc` |
+| Crypto | Argon2id (BouncyCastle) + AES-256-GCM (JCA) |
+| Build | Gradle (Kotlin DSL), packaged with `jpackage` |
+| Tests | JUnit 5 + Testcontainers |
+
+> **History.** M0 and M1 first shipped in Go with a React SPA in a browser window.
+> On 2026-08-20 the project moved to Kotlin + Compose Desktop; that implementation
+> is preserved under the `go-implementation` git tag, and plan
+> [§10](db-ide-mvp-plan.md#10-stack-move-record--2026-08-20) records what the move
+> simplified and what it made harder. The application was called Database IDE until
+> M5 named it Caracal; an installation under the old name is migrated on first
+> launch.
+
+## Contributing
+
+Bug reports and focused pull requests are welcome — start with
+[`CONTRIBUTING.md`](CONTRIBUTING.md), and open an issue before anything large.
+Participation is governed by the [Code of Conduct](CODE_OF_CONDUCT.md).
 
 ## License
 
-Apache-2.0 (see [`db-ide-mvp-plan.md`](db-ide-mvp-plan.md) §8; the `LICENSE`
-file lands in M5).
+Apache-2.0. See [`LICENSE`](LICENSE), [`NOTICE`](NOTICE), and
+[`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md) for the components a Caracal
+installer redistributes, including the GPL-with-Classpath-Exception Java runtime
+that makes it possible to ship without asking you to install one.

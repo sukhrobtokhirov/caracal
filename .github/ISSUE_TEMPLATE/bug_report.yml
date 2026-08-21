@@ -1,0 +1,90 @@
+name: Bug report
+description: Something in Caracal behaves incorrectly.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Before you paste anything: a stack trace, a log line, or a screenshot from
+        this application can carry a hostname, a username, or the text of a query.
+        Replace them with fake ones. Nothing here needs your real database.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what you got instead.
+      placeholder: |
+        1. Opened a PostgreSQL connection
+        2. Ran `SELECT …`
+        3. Expected the grid to show 12 rows; it showed an error saying …
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Caracal version
+      description: From Settings → About, or `--version` on the command line.
+      placeholder: 0.1.0 (commit 1a2b3c4)
+    validations:
+      required: true
+
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - macOS (Apple Silicon)
+        - macOS (Intel)
+        - Linux x86-64
+        - Linux ARM64
+        - Windows x86-64
+        - Windows ARM64
+        - Built from source
+    validations:
+      required: true
+
+  - type: input
+    id: os-version
+    attributes:
+      label: OS version
+      placeholder: macOS 15.2 / Ubuntu 24.04 / Windows 11 23H2
+    validations:
+      required: true
+
+  - type: dropdown
+    id: engine
+    attributes:
+      label: Which engine
+      options:
+        - PostgreSQL
+        - Redis
+        - Both
+        - Neither — the application itself
+    validations:
+      required: true
+
+  - type: input
+    id: server-version
+    attributes:
+      label: Server version
+      description: "`SELECT version()` or Redis `INFO server`, if the bug involves one."
+      placeholder: PostgreSQL 16.4 / Redis 7.4
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Errors or logs
+      description: Rendered as code; no backticks needed.
+      render: text
+
+  - type: checkboxes
+    id: hygiene
+    attributes:
+      label: Before submitting
+      options:
+        - label: I have removed hostnames, usernames, passwords, and real query text from everything above.
+          required: true
+        - label: I am on the latest release, or have said which older version this is.
+          required: true

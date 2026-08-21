@@ -1,4 +1,4 @@
-# Database IDE — MVP Plan
+# Caracal — MVP Plan
 
 A desktop IDE where PostgreSQL and Redis live side by side. Kotlin and Compose Desktop, one installer per platform, no license wall.
 
@@ -354,7 +354,7 @@ If you switch back, note exactly why. That's your v0.2 backlog, written by the o
 
 ## 8. Open-source mechanics
 
-- **License: Apache-2.0.** Includes an explicit patent grant, which MIT lacks. Contributors and companies both prefer it. Review the licenses of pgjdbc (BSD-2), Lettuce (Apache-2.0), HikariCP (Apache-2.0), sqlite-jdbc (Apache-2.0), BouncyCastle (MIT-like), and RSyntaxTextArea (BSD-3) during M5, and ship the required notices.
+- **License: Apache-2.0.** Includes an explicit patent grant, which MIT lacks. Contributors and companies both prefer it. Review the licenses of pgjdbc (BSD-2), Lettuce, HikariCP (Apache-2.0), sqlite-jdbc (Apache-2.0), BouncyCastle (MIT-like), and RSyntaxTextArea (BSD-3) during M5, and ship the required notices. **Done, and two entries here were wrong:** Lettuce 7.x is MIT, not Apache-2.0, and RSyntaxTextArea is not a dependency at all — the SQL editor is Compose code. The list that ships is [`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md), compiled from what the build resolves, and it includes the one this section never mentioned: the bundled Java runtime, GPLv2 with the Classpath Exception.
 - **Name it something searchable.** Check GitHub, Maven Central, and general search before committing. A generic name means nobody finds it.
 - **README leads with a GIF.** Nobody reads a feature list. Show the key browser and the result grid in five seconds, in the application window with no browser chrome in frame.
 - **State the positioning in one line:** "A free desktop IDE for Postgres and Redis." Say *desktop IDE*, not *tool* — the category is what tells someone in four words whether to click.

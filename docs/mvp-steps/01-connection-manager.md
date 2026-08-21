@@ -304,14 +304,14 @@ Everything else is unchanged from [M0](00-skeleton.md#versions-used).
 
 | Deviation | Reason |
 |---|---|
-| The configuration directory is overridden by `DBIDE_DATA_DIR`, not a CLI flag | The guide asked for "a CLI override for development and tests". A packaged desktop application is started by the platform's launcher, not a terminal, so a flag would be unreachable exactly where it is needed. Tests pass a `Path` directly; `./gradlew :app:run` passes the variable through. |
+| The configuration directory is overridden by `CARACAL_DATA_DIR`, not a CLI flag | The guide asked for "a CLI override for development and tests". A packaged desktop application is started by the platform's launcher, not a terminal, so a flag would be unreachable exactly where it is needed. Tests pass a `Path` directly; `./gradlew :app:run` passes the variable through. |
 | A failed client close during delete is logged, not returned as a warning | The guide asks for a warning that does not leave a phantom registry entry. The entry is always dropped, which is the part that matters; surfacing "the connection was deleted, but closing its pool complained" is noise a user cannot act on. Revisit if it ever proves otherwise. |
 | `jlink` keeps three more platform modules than M0 | Netty, under Lettuce, pulls in `java.instrument`, `java.security.jgss`, and `jdk.jfr`. `:app:suggestRuntimeModules` reports them; `jdk.crypto.ec` stays hand-added because TLS providers load reflectively and never appear in that analysis. |
 | Registry state tests use Redis rather than PostgreSQL | HikariCP retries a refused connection for its whole five-second connect timeout, so eight concurrent failed dials took 41 seconds. Lettuce reports a refusal at once. The registry cannot tell the engines apart, so the cheap one proves the same state machine; PostgreSQL keeps the tests that are actually about pgjdbc's messages. |
 
 ### M0 scaffolding removed
 
-- `DBIDE_DEV_POSTGRES_*` and `PostgresConnectionConfig.fromEnvironment`, along with
+- `CARACAL_DEV_POSTGRES_*` and `PostgresConnectionConfig.fromEnvironment`, along with
   the environment pass-through in `:app`'s build file.
 - `BootstrapViewModel`, `BootstrapScreen`, and their tests. All database work now
   routes through a stored connection ID and the runtime registry.
@@ -324,7 +324,7 @@ Everything else is unchanged from [M0](00-skeleton.md#versions-used).
 
 - `./gradlew check`: 247 tests pass — 187 in `:core`, 60 in `:app` — with
   `:core:assertNoComposeDependency` and `java.awt.headless=true` both holding.
-- `DBIDE_INTEGRATION=1 ./gradlew check`: the same 247 including the Testcontainers
+- `CARACAL_INTEGRATION=1 ./gradlew check`: the same 247 including the Testcontainers
   suites against PostgreSQL 16 and Redis 7. `ConnectionManagerIntegrationTest`
   runs the manual acceptance scenario end to end: create one connection per engine,
   mark one `prod` and `read_only`, test and open both, restart the process, unlock,
@@ -334,7 +334,7 @@ Everything else is unchanged from [M0](00-skeleton.md#versions-used).
   `0700`, journal mode is WAL, `app_metadata` holds only the salt, parameters,
   verifier, and schema version, and neither database password nor master password
   appears anywhere in the file or its WAL sidecar.
-- The application was run against a scratch `DBIDE_DATA_DIR` and driven by hand:
+- The application was run against a scratch `CARACAL_DATA_DIR` and driven by hand:
   master password chosen, a PostgreSQL connection created, tested, opened, and
   deleted, then the window closed with no lingering JVM. First frame at 616 ms.
 - `.dmg` installer: 105 MB, up from M0's 80 MB. Lettuce brings Netty, and
@@ -360,7 +360,7 @@ and the packaged application still could not start.
    switched to `Dispatchers.IO`; `PostgresSession.open` did not, so pool
    construction and, on the failure path, `HikariDataSource.close()` ran on whichever
    thread called them. The log said it outright:
-   `[AWT-EventQueue-0] dbide-postgres - Starting...`. Found by reading the log of a
+   `[AWT-EventQueue-0] caracal-postgres - Starting...`. Found by reading the log of a
    successful run, not by anything failing.
 
 The lesson for M2 is about the first one. It was reported as verified on the

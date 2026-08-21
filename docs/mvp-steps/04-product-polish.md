@@ -603,7 +603,7 @@ is a guess the user has to unlearn when the real thing arrives.
 
 **The theme itself arrived early and is unchanged.** Light, dark, and system have
 been in the application since the M2 visual pass: two colour systems side by side —
-Material's scheme for what its own components read, and `DbideColors` for the dozen
+Material's scheme for what its own components read, and `CaracalColors` for the dozen
 things Material has no word for, a hairline between panes, a zebra stripe, an editor
 keyword. The section asks for tokens rather than component-specific colour patches
 and that is what was already there; what §4.8 found was not missing tokens but
@@ -627,7 +627,7 @@ is on is the line being read. A translucent token is composited first: `currentL
 is white at four percent, which sounds like nothing and costs the old comment colour
 another third of a point.
 
-**Not every hairline was a divider.** `Dbide.colors.hairline` is documented as the
+**Not every hairline was a divider.** `Caracal.colors.hairline` is documented as the
 divider token and was also drawing the border of the theme toggle and of every
 inline text field — controls whose boundary is the only thing saying they are there.
 Those two now use `colorScheme.outline`, which is what Material means by the role and

@@ -18,7 +18,7 @@ That is why M0 ends at an *installer*, not at a `./gradlew run`. Running from Gr
 
 When the user launches the application:
 
-1. A native window opens, titled `Database IDE`, with the platform's own title bar.
+1. A native window opens, titled `Caracal`, with the platform's own title bar.
 2. A single **Run SELECT 1** button executes the query.
 3. The window shows the returned column, value, duration, and any error.
 
@@ -96,7 +96,7 @@ Requirements:
 - HikariCP with a small pool and a short connection timeout. Do not open a raw `DriverManager` connection — the pool is where the timeout and validation settings live, and you want them from day one.
 - Credentials passed as `Properties`, never concatenated into the JDBC URL.
 - `use {}` on `Connection`, `Statement`, and `ResultSet`. There is no `defer`; leaks here are silent until the pool is exhausted.
-- Read the temporary database configuration from an environment variable (`DBIDE_DEV_POSTGRES_*`). Nothing that resembles a credential enters the repository.
+- Read the temporary database configuration from an environment variable (`CARACAL_DEV_POSTGRES_*`). Nothing that resembles a credential enters the repository.
 
 ### 0.3 Classify errors safely
 
@@ -221,7 +221,7 @@ PostgreSQL 16 in Docker. The Go implementation of this milestone is tagged
 | Cold start to first frame | 1,511 ms on the first launch, 901 ms warm |
 
 Cold start is measured from JVM start to the first rendered frame, so it excludes the
-launcher's own process spawn. Set `DBIDE_LOG_STARTUP=1` to have the application report
+launcher's own process spawn. Set `CARACAL_LOG_STARTUP=1` to have the application report
 it; the measurement stays in the code because M5 has to check this number again.
 
 ### Decisions this guide left open
@@ -252,7 +252,7 @@ it; the measurement stays in the code because M5 has to check this number again.
 | Deviation | Reason |
 |---|---|
 | The macOS bundle is versioned `1.0.0`, not `0.1.0` | macOS rejects an app version whose first number is zero. The real version rides along as the bundle build version. M5 decides what the released version string is. |
-| Packaging output can be redirected out of `build/` | `codesign` refuses to sign an app image carrying a `com.apple.FinderInfo` xattr, and iCloud Drive attaches one to everything it syncs — which breaks `jpackage` for any checkout inside a synced folder. `-Pdbide.distributionsDir=…` (or `DBIDE_DISTRIBUTIONS_DIR`) points the output somewhere local. Default behaviour is unchanged. |
+| Packaging output can be redirected out of `build/` | `codesign` refuses to sign an app image carrying a `com.apple.FinderInfo` xattr, and iCloud Drive attaches one to everything it syncs — which breaks `jpackage` for any checkout inside a synced folder. `-Pcaracal.distributionsDir=…` (or `CARACAL_DISTRIBUTIONS_DIR`) points the output somewhere local. Default behaviour is unchanged. |
 | The installer was not yet installed on a machine with no JDK | The exit criterion's final step is a clean-machine install. The bundle carries its own 13-module runtime and was launched from the packaged binary, but a JDK exists on this machine, so that step is still owed. |
 
 ### Carried over from the Go implementation
@@ -274,12 +274,12 @@ The Go M0 carried a loopback HTTP server, a session token, an `Origin` check, a 
   than on a CI runner with no display.
 - `:core:assertNoComposeDependency` was proven to fail by temporarily adding
   Material 3 to `:core`, then restored.
-- `DBIDE_INTEGRATION=1 ./gradlew :core:test`: 8 Testcontainers tests against
+- `CARACAL_INTEGRATION=1 ./gradlew :core:test`: 8 Testcontainers tests against
   PostgreSQL 16 pass — `SELECT 1`, wrong password, unknown database, unreachable host,
   statement timeout, scope cancellation, and pool release on both the success and the
   failure path.
 - The packaged `.app` was launched from its bundle: it opened its window, held an
-  `idle` connection in `pg_stat_activity` under the application name `Database IDE`,
+  `idle` connection in `pg_stat_activity` under the application name `Caracal`,
   and exited with no lingering JVM.
 
 ### Still owed before M1 is called done

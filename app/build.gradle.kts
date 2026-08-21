@@ -21,16 +21,77 @@ dependencies {
     testRuntimeOnly(libs.junit.platform.launcher)
 }
 
+/**
+ * A git command's output, or null where there is no answer — an unpacked source
+ * archive, a machine without git, a repository with no commits yet. Every caller
+ * has a defensible fallback, because a build that fails for want of version
+ * decoration is a build that fails for nothing.
+ */
+fun git(vararg arguments: String): String? = try {
+    val process = ProcessBuilder(listOf("git") + arguments)
+        .directory(rootDir)
+        .redirectErrorStream(false)
+        .start()
+    val output = process.inputStream.bufferedReader().use { it.readText() }.trim()
+    process.errorStream.close()
+    if (process.waitFor() == 0 && output.isNotEmpty()) output else null
+} catch (_: Exception) {
+    null
+}
+
+/**
+ * Version, commit, and date, written where the running application can read them
+ * without a build system present.
+ *
+ * "Built" is the commit's own timestamp rather than the moment the compiler ran, so
+ * that two builds of the same commit describe themselves identically — the same
+ * reason the checksums in a release are worth publishing. A working tree with
+ * uncommitted changes says so in the commit field, because a build that is not the
+ * commit it names is exactly the build a bug report needs to distinguish.
+ */
+val generateBuildInfo = tasks.register("generateBuildInfo") {
+    val version = project.version.toString()
+    val head = git("rev-parse", "--short=7", "HEAD")
+    // `git status --porcelain` prints nothing for a clean tree, which [git] reports
+    // as null along with every other kind of no-answer. A machine without git
+    // therefore looks clean here, and correctly so: its commit is "unknown" already.
+    val dirty = git("status", "--porcelain") != null
+    val commit = head?.let { if (dirty) "$it-dirty" else it } ?: "unknown"
+    val date = git("log", "-1", "--format=%cI").orEmpty()
+    val output = layout.buildDirectory.dir("generated/buildInfo")
+
+    inputs.property("version", version)
+    inputs.property("commit", commit)
+    inputs.property("date", date)
+    outputs.dir(output)
+
+    doLast {
+        output.get().file("caracal-build.properties").asFile.apply {
+            parentFile.mkdirs()
+            writeText(
+                """
+                |version=$version
+                |commit=$commit
+                |date=$date
+                |
+                """.trimMargin(),
+            )
+        }
+    }
+}
+
+sourceSets.main { resources.srcDir(generateBuildInfo) }
+
 // macOS codesign refuses to sign an app image carrying a com.apple.FinderInfo xattr,
 // which iCloud Drive attaches to everything it syncs. When the checkout lives in a
 // synced folder, point the packaging output somewhere local:
-//   ./gradlew :app:packageDistributionForCurrentOS -Pdbide.distributionsDir=/tmp/dbide
-val distributionsDir = providers.gradleProperty("dbide.distributionsDir")
-    .orElse(providers.environmentVariable("DBIDE_DISTRIBUTIONS_DIR"))
+//   ./gradlew :app:packageDistributionForCurrentOS -Pcaracal.distributionsDir=/tmp/caracal
+val distributionsDir = providers.gradleProperty("caracal.distributionsDir")
+    .orElse(providers.environmentVariable("CARACAL_DISTRIBUTIONS_DIR"))
 
 compose.desktop {
     application {
-        mainClass = "dev.dbide.app.MainKt"
+        mainClass = "dev.caracal.app.MainKt"
 
         // Skiko loads its native library directly; without this JDK 25 prints a
         // restricted-method warning on every launch and will block the call later.
@@ -42,10 +103,15 @@ compose.desktop {
                     .orElse(layout.buildDirectory.dir("compose/binaries")),
             )
             targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
-            packageName = "Database IDE"
-            packageVersion = "0.1.0"
-            vendor = "Database IDE"
+            packageName = "Caracal"
+            packageVersion = project.version.toString()
+            vendor = "Caracal"
             description = "A desktop IDE for PostgreSQL and Redis"
+            copyright = "Copyright 2026 the Caracal authors. Apache-2.0."
+            // Shown by the Windows installer and written into the Debian package,
+            // which is where someone installing an unsigned binary looks to find
+            // out what they are agreeing to.
+            licenseFile.set(rootProject.file("LICENSE"))
 
             // jlink keeps only these platform modules. java.sql and java.naming are
             // pgjdbc's; java.instrument, java.security.jgss, and jdk.jfr arrived with
@@ -64,30 +130,41 @@ compose.desktop {
             )
 
             macOS {
-                bundleID = "dev.dbide.app"
-                dockName = "Database IDE"
-                // macOS rejects an app version whose first number is zero, so the
-                // marketing version starts at 1.0.0 there while the build version
-                // carries the real one. Revisit when M5 sets the release version.
-                packageVersion = "1.0.0"
-                packageBuildVersion = "0.1.0"
+                bundleID = "dev.caracal.app"
+                dockName = "Caracal"
+                // macOS rejects an app version whose first number is zero, so a 0.x
+                // release shows 1.0.0 as its marketing version while the build
+                // version carries the real one. Finder is then the one place that
+                // disagrees with `--version`, About, and the installer's file name;
+                // the arithmetic disappears at 1.0.0, which is the first release
+                // where it can.
+                packageVersion = project.version.toString()
+                    .takeUnless { it.startsWith("0.") } ?: "1.0.0"
+                packageBuildVersion = project.version.toString()
             }
             windows {
                 menu = true
                 upgradeUuid = "6f2e3a54-9d4f-4f3f-9d0b-0a1f3b6c8e21"
             }
             linux {
-                packageName = "database-ide"
+                packageName = "caracal"
             }
         }
     }
 }
 
+// The generated resource is what About and `--version` read, so a test asserts it
+// carries the version Gradle was told to build — that wiring is invisible right up
+// until a release names the wrong number.
+tasks.test {
+    systemProperty("caracal.expectedVersion", project.version.toString())
+}
+
 // Development runs can point at a scratch configuration directory instead of the
 // real one under ~/Library/Application Support:
-//   DBIDE_DATA_DIR=/tmp/dbide ./gradlew :app:run
+//   CARACAL_DATA_DIR=/tmp/caracal ./gradlew :app:run
 tasks.withType<JavaExec>().configureEach {
-    listOf("DBIDE_DATA_DIR", "DBIDE_LOG_STARTUP").forEach { key ->
+    listOf("CARACAL_DATA_DIR", "CARACAL_LOG_STARTUP").forEach { key ->
         environment(key, providers.environmentVariable(key).getOrElse(""))
     }
 }

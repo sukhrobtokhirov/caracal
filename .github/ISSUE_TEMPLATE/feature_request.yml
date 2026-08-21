@@ -1,0 +1,44 @@
+name: Feature request
+description: Something Caracal should do that it does not.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        v0.1 is deliberately narrow: a local, single-user, read-first client for
+        PostgreSQL and Redis. Other engines, grid editing, cloud sync, telemetry,
+        AI query generation, and a plugin system are all out of scope for now —
+        which does not mean the case for one cannot be made here.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What you were trying to do, and what made it awkward. Not the solution — the situation.
+    validations:
+      required: true
+
+  - type: textarea
+    id: workflow
+    attributes:
+      label: What you would do instead
+      description: The steps you would take in Caracal if this existed.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: What you do today
+      description: The workaround, the other tool you switch to, or the reason there is no answer.
+
+  - type: dropdown
+    id: fit
+    attributes:
+      label: How it fits the current scope
+      options:
+        - It improves something Caracal already does
+        - It is new, but within a local read-first client
+        - It is outside the stated scope and I am arguing for widening it
+    validations:
+      required: true

@@ -1,4 +1,4 @@
-rootProject.name = "database-ide"
+rootProject.name = "caracal"
 
 pluginManagement {
     repositories {

@@ -1,0 +1,541 @@
+package dev.caracal.app.ui
+
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.TooltipArea
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.hoverable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusDirection
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.collapse
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.expand
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEvent
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.pointer.PointerIcon
+import androidx.compose.ui.input.pointer.pointerHoverIcon
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.DpOffset
+import androidx.compose.ui.unit.dp
+import java.awt.Cursor
+
+/**
+ * The pieces every pane is built from.
+ *
+ * They are here rather than repeated per file for the reason any of this is: a
+ * divider, a pane header, and a hovered row should be the same divider, header, and
+ * hover in the tree, the grid, and the sidebar, and the only way that stays true
+ * through a change is if there is one of each.
+ */
+
+/** The application's divider: a true hairline, dimmer than Material's rule. */
+@Composable
+fun Hairline(modifier: Modifier = Modifier) {
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(Sizes.hairline)
+            .background(Caracal.colors.hairline),
+    )
+}
+
+/** The same rule, standing up between two panes. */
+@Composable
+fun VerticalHairline(modifier: Modifier = Modifier) {
+    Box(
+        modifier = modifier
+            .fillMaxHeight()
+            .width(Sizes.hairline)
+            .background(Caracal.colors.hairline),
+    )
+}
+
+/**
+ * A pane's title strip.
+ *
+ * Fixed height and a shade of its own, so that three panes side by side line up
+ * across the top and read as three panes rather than three documents.
+ */
+@Composable
+fun PaneHeader(
+    title: String,
+    modifier: Modifier = Modifier,
+    glyph: String? = null,
+    actions: @Composable RowScope.() -> Unit = {},
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(Sizes.paneHeader)
+            .background(Caracal.colors.paneHeader)
+            .padding(start = Space.lg, end = Space.sm),
+        horizontalArrangement = Arrangement.spacedBy(Space.md),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        // The glyph is what tells three identically-shaped header strips apart at the
+        // speed the eye moves between panes, before any of the three words is read.
+        glyph?.let { Glyph(it) }
+        Text(
+            text = title,
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.weight(1f),
+        )
+        actions()
+    }
+}
+
+/**
+ * A dense action in a header or a status strip.
+ *
+ * Material's `TextButton` carries a 12dp vertical inset and a 40dp minimum height,
+ * which is a touch target. In a 32dp header strip there is no room for it, and
+ * three of them in a row is a header twice the height of the pane title it sits
+ * beside.
+ *
+ * [tooltip] is §4.4's requirement that a chord be discoverable from the control it
+ * belongs to. It is offered rather than mandatory because most of these buttons have
+ * no chord, and a tooltip that repeats the label is a tooltip that teaches the user
+ * to ignore tooltips.
+ *
+ * [name] is §4.9's, and is for the handful of buttons whose [text] is a glyph. `✕`
+ * announces as "multiplication sign" and `▾` as "black down-pointing triangle";
+ * neither is what pressing it does. Giving one a name also gives it a tooltip, if it
+ * has not asked for a different one — the section wants an icon-only action to be
+ * legible to someone who is looking at it as well as to someone who is not, and
+ * requiring the caller to say the same thing twice is how one of them ends up
+ * missing.
+ */
+@Composable
+fun ToolButton(
+    text: String,
+    onClick: () -> Unit,
+    tag: String,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    emphasis: ToolEmphasis = ToolEmphasis.NORMAL,
+    tooltip: String? = null,
+    name: String? = null,
+) {
+    val color = when {
+        !enabled -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+        emphasis == ToolEmphasis.PRIMARY -> MaterialTheme.colorScheme.primary
+        emphasis == ToolEmphasis.DANGER -> MaterialTheme.colorScheme.error
+        else -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
+
+    Tip(tooltip ?: name) {
+        Box(
+            modifier = modifier
+                .clip(MaterialTheme.shapes.small)
+                .hoverHighlight(MaterialTheme.shapes.small, enabled = enabled)
+                .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
+                .handCursor(enabled)
+                .padding(horizontal = Space.md, vertical = Space.sm)
+                .testTag(tag)
+                // Set on the button rather than on the glyph, so it replaces what the
+                // glyph would have been read as instead of being read out after it.
+                .then(if (name == null) Modifier else Modifier.semantics { contentDescription = name }),
+        ) {
+            Text(text = text, style = MaterialTheme.typography.labelMedium, color = color)
+        }
+    }
+}
+
+enum class ToolEmphasis { NORMAL, PRIMARY, DANGER }
+
+/**
+ * Left and right move along a strip of tabs.
+ *
+ * §4.9's arrow keys. Compose Desktop binds Tab to focus movement and nothing else —
+ * the arrow keys are not wired to it, which is worth stating because it is the
+ * opposite of what the documentation for `FocusDirection` leads you to expect.
+ *
+ * Focus moves; selection does not follow it. A tab that activates as it is passed
+ * swaps the pane underneath five times on the way to the sixth tab, and each swap
+ * here is a schema tree and a result grid. Enter and space choose one, which is
+ * `selectable`'s own behaviour and needs nothing from this.
+ */
+@Composable
+fun Modifier.arrowsWalkTabs(): Modifier {
+    val focus = LocalFocusManager.current
+    return onKeyEvent { event ->
+        if (event.type != KeyEventType.KeyDown) {
+            false
+        } else {
+            when (event.key) {
+                Key.DirectionRight -> focus.moveFocus(FocusDirection.Next)
+                Key.DirectionLeft -> focus.moveFocus(FocusDirection.Previous)
+                else -> false
+            }
+        }
+    }
+}
+
+/**
+ * The four arrow keys, on a row of a tree.
+ *
+ * Up and down walk the rows. Right opens a closed node and steps into an open one;
+ * left closes an open node and goes back up from a closed one — which is how someone
+ * leaves a schema they opened by mistake without scrolling past everything in it.
+ *
+ * Both of this application's trees get the same four keys from here, because a
+ * keyspace and a catalog are the same shape to a keyboard even though nothing else
+ * about them is alike.
+ *
+ * Enter and space are not handled: they are the row's own click, which is already
+ * what a focusable clickable does with them.
+ */
+@Composable
+fun Modifier.arrowsWalkTree(expandable: Boolean, expanded: Boolean, onToggle: () -> Unit): Modifier {
+    val focus = LocalFocusManager.current
+    return onKeyEvent { event ->
+        if (event.type != KeyEventType.KeyDown) {
+            false
+        } else {
+            when (event.key) {
+                Key.DirectionDown -> focus.moveFocus(FocusDirection.Down)
+                Key.DirectionUp -> focus.moveFocus(FocusDirection.Up)
+                Key.DirectionRight ->
+                    if (expandable && !expanded) {
+                        onToggle()
+                        true
+                    } else {
+                        focus.moveFocus(FocusDirection.Down)
+                    }
+
+                Key.DirectionLeft ->
+                    if (expandable && expanded) {
+                        onToggle()
+                        true
+                    } else {
+                        focus.moveFocus(FocusDirection.Up)
+                    }
+
+                else -> false
+            }
+        }
+    }
+}
+
+/**
+ * Whether a row opens, and whether it is open — for something reading it out.
+ *
+ * The triangle beside the name is stripped from the accessibility tree as
+ * decoration, which is right: it says nothing a word cannot say better. This is the
+ * word.
+ */
+fun Modifier.expansion(expandable: Boolean, expanded: Boolean, onToggle: () -> Unit): Modifier =
+    if (!expandable) this else semantics {
+        stateDescription = if (expanded) "Expanded" else "Collapsed"
+        if (expanded) collapse { onToggle(); true } else expand { onToggle(); true }
+    }
+
+/**
+ * A sentence for someone who is not looking at the pane it belongs to.
+ *
+ * §4.9's live region. It draws nothing: everything it says is already on screen in
+ * a form a sighted user reads without being interrupted, and the point of a live
+ * region is to interrupt. Announcing the visible status line *itself* would have
+ * been tidier and wrong — that line changes as a result is scrolled and filtered,
+ * and a region that speaks every time something moves is one people turn off.
+ *
+ * Polite rather than assertive, deliberately. A query that finished is worth saying
+ * at the next pause; it is not worth cutting the user off mid-word to say.
+ *
+ * Passing `null` removes the node rather than emptying it, so nothing is announced
+ * when a pane goes back to having nothing to report.
+ */
+@Composable
+fun Announcement(text: String?, tag: String) {
+    if (text == null) return
+    Box(
+        modifier = Modifier
+            .size(0.dp)
+            .semantics {
+                liveRegion = LiveRegionMode.Polite
+                contentDescription = text
+            }
+            .testTag(tag),
+    )
+}
+
+/**
+ * [content] with [text] under the pointer, or [content] alone when there is nothing
+ * to say.
+ *
+ * The wrapper disappears entirely when [text] is null rather than becoming an empty
+ * tooltip, because `TooltipArea` installs a pointer-input node and a popup of its
+ * own, and every `ToolButton` in the application goes through here.
+ *
+ * `TooltipArea` is Compose Desktop's own and is still marked experimental. Material's
+ * `TooltipBox` is the alternative and is a worse fit: it is built around a touch
+ * long-press as well as a hover, and it wants an anchor slot and a state object per
+ * button. This is one composable wrapping one Box, and if it changes shape it changes
+ * shape in one file.
+ */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun Tip(text: String?, content: @Composable () -> Unit) {
+    if (text == null) {
+        content()
+        return
+    }
+    TooltipArea(
+        tooltip = {
+            Surface(
+                shape = MaterialTheme.shapes.small,
+                color = Caracal.colors.chrome,
+                border = BorderStroke(Sizes.hairline, Caracal.colors.hairline),
+            ) {
+                Text(
+                    text = text,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.padding(horizontal = Space.md, vertical = Space.sm),
+                )
+            }
+        },
+        content = content,
+    )
+}
+
+/**
+ * The theme control, in the shell and on the lock screen.
+ *
+ * On the lock screen because that is the first thing drawn: someone who wants light
+ * should not have to unlock in the dark to ask for it.
+ */
+@Composable
+fun ThemeToggle(mode: ThemeMode, onCycle: () -> Unit, modifier: Modifier = Modifier) {
+    Box(
+        modifier = modifier
+            .clip(MaterialTheme.shapes.small)
+            // `outline`, not `hairline`: this border is the only thing saying there is
+            // a button here, and a boundary that identifies a control owes 3:1.
+            .border(Sizes.hairline, MaterialTheme.colorScheme.outline, MaterialTheme.shapes.small)
+            .hoverHighlight(MaterialTheme.shapes.small)
+            .clickable(onClick = onCycle)
+            .handCursor()
+            .padding(horizontal = Space.md, vertical = Space.sm)
+            .testTag("theme-toggle"),
+    ) {
+        Text(
+            // The word rather than a glyph: a sun and a moon are two more characters
+            // that can arrive as an empty box on a machine with a minimal font set.
+            text = mode.label,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+/**
+ * A pane with nothing in it yet, saying what would put something there.
+ *
+ * §4.7's rule, applied early: a blank pane is indistinguishable from a broken one,
+ * and the difference between "no rows matched" and "nothing has been run" is the
+ * difference between a finished action and an unstarted one.
+ */
+@Composable
+fun EmptyState(
+    title: String,
+    tag: String,
+    modifier: Modifier = Modifier,
+    detail: String? = null,
+    action: @Composable (() -> Unit)? = null,
+) {
+    Box(modifier = modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(Space.md),
+            modifier = Modifier.widthIn(max = 340.dp).padding(Space.xxl),
+        ) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.onSurface,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.testTag(tag),
+            )
+            detail?.let {
+                Text(
+                    text = it,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                )
+            }
+            action?.invoke()
+        }
+    }
+}
+
+/**
+ * The background a row takes under the pointer.
+ *
+ * Hover is the cheapest affordance a desktop application has and the one a web-era
+ * layout most often forgets: it is how a list of forty names tells you which one a
+ * click would land on before you spend the click.
+ */
+@Composable
+fun Modifier.hoverHighlight(shape: Shape = RectangleShape, enabled: Boolean = true): Modifier {
+    val source = remember { MutableInteractionSource() }
+    val hovered by source.collectIsHoveredAsState()
+    return this
+        .hoverable(source, enabled = enabled)
+        .background(if (hovered && enabled) Caracal.colors.hover else Color.Transparent, shape)
+}
+
+/** The pointer a clickable thing deserves. Desktop users read the cursor. */
+fun Modifier.handCursor(enabled: Boolean = true): Modifier =
+    if (enabled) pointerHoverIcon(PointerIcon(Cursor(Cursor.HAND_CURSOR))) else this
+
+/**
+ * A single-line input sized for a header strip.
+ *
+ * Material's `OutlinedTextField` is 56dp tall before its label, which is the right
+ * size for a form and twice the height of the toolbar this has to sit in. The form
+ * keeps Material's; the search box and the command line get this.
+ *
+ * [onSubmit] is Enter, and it is handled as a preview so the key never reaches the
+ * field as a character. [onKey] is for the console's history recall, which needs the
+ * arrows before the field decides they move the caret — and for the connection
+ * switcher, which needs them before that for the same reason.
+ *
+ * [focus] is how a caller that opened this field with a chord puts the caret in it.
+ */
+@Composable
+fun InlineField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    tag: String,
+    modifier: Modifier = Modifier,
+    placeholder: String = "",
+    enabled: Boolean = true,
+    monospace: Boolean = true,
+    focus: FocusRequester? = null,
+    onSubmit: (() -> Unit)? = null,
+    onKey: ((KeyEvent) -> Boolean)? = null,
+) {
+    val style = MaterialTheme.typography.bodySmall.copy(
+        color = MaterialTheme.colorScheme.onSurface,
+        fontFamily = if (monospace) FontFamily.Monospace else FontFamily.Default,
+    )
+
+    Box(
+        modifier = modifier
+            .clip(MaterialTheme.shapes.small)
+            .background(MaterialTheme.colorScheme.surface)
+            // As above: an empty field is a rectangle, and the rectangle is the field.
+            .border(Sizes.hairline, MaterialTheme.colorScheme.outline, MaterialTheme.shapes.small)
+            .padding(horizontal = Space.md, vertical = Space.sm),
+        contentAlignment = Alignment.CenterStart,
+    ) {
+        if (value.isEmpty() && placeholder.isNotEmpty()) {
+            Text(
+                text = placeholder,
+                style = style.copy(color = MaterialTheme.colorScheme.onSurfaceVariant),
+                maxLines = 1,
+            )
+        }
+        BasicTextField(
+            value = value,
+            onValueChange = onValueChange,
+            enabled = enabled,
+            singleLine = true,
+            textStyle = style,
+            cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+            modifier = Modifier
+                .fillMaxWidth()
+                .then(focus?.let { Modifier.focusRequester(it) } ?: Modifier)
+                .onPreviewKeyEvent { event ->
+                    if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                    if (onKey?.invoke(event) == true) return@onPreviewKeyEvent true
+                    if (event.key != Key.Enter || onSubmit == null) return@onPreviewKeyEvent false
+                    onSubmit()
+                    true
+                }
+                .testTag(tag),
+        )
+    }
+}
+
+/**
+ * A [ToolButton] that opens a menu underneath itself.
+ *
+ * The same menu the right-click gesture opens, because a filter with seven values is
+ * seven chips wide and the pane it belongs in is 320 device-independent pixels.
+ */
+@Composable
+fun MenuButton(
+    text: String,
+    tag: String,
+    actions: List<MenuAction>,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+) {
+    var open by remember { mutableStateOf(false) }
+    Box(modifier = modifier) {
+        ToolButton(
+            text = "$text ▾",
+            onClick = { open = true },
+            tag = tag,
+            enabled = enabled,
+        )
+        ContextMenu(
+            expanded = open,
+            at = DpOffset.Zero,
+            actions = actions,
+            onDismiss = { open = false },
+            tag = "$tag-menu",
+        )
+    }
+}

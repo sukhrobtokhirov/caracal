@@ -1,0 +1,233 @@
+name: Release
+
+# A release is built from a tag and from nothing else. The manual trigger exists to
+# rehearse the whole thing — every installer, every smoke test — without creating a
+# release, because the first time these five runners are exercised together should
+# not be the day of the tag.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  # Cheap, and first: a tag that disagrees with the version in the build would
+  # produce five installers named after a version nothing inside them claims.
+  version:
+    name: version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.resolve.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: resolve
+        shell: bash
+        run: |
+          declared=$(grep -E '^version=' gradle.properties | cut -d= -f2-)
+          echo "gradle.properties declares $declared"
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            tagged=${GITHUB_REF_NAME#v}
+            if [ "$tagged" != "$declared" ]; then
+              echo "::error::tag ${GITHUB_REF_NAME} does not match version=$declared in gradle.properties"
+              exit 1
+            fi
+          fi
+          echo "version=$declared" >> "$GITHUB_OUTPUT"
+
+  # The same gate that guards every push, run again against the tagged commit.
+  check:
+    name: check
+    needs: version
+    uses: ./.github/workflows/ci.yml
+
+  # jpackage cannot cross-compile: one runner per artifact, no exceptions. Windows
+  # on ARM is missing from this matrix deliberately — see the README; the x86-64
+  # installer runs there under emulation until a Temurin build makes it worth its
+  # own runner.
+  package:
+    name: ${{ matrix.platform }} ${{ matrix.arch }}
+    needs: [version, check]
+    runs-on: ${{ matrix.os }}
+    strategy:
+      # One platform failing is a fact worth having about the other four.
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            platform: macos
+            arch: arm64
+            ext: dmg
+          # The only Intel Mac GitHub hosts. If this label is retired, an Intel
+          # dmg needs a self-hosted runner or an honest note in the README that
+          # Intel Macs run the ARM build under Rosetta — it cannot be
+          # cross-built from an Apple Silicon runner.
+          - os: macos-13
+            platform: macos
+            arch: x86_64
+            ext: dmg
+          - os: ubuntu-latest
+            platform: linux
+            arch: x86_64
+            ext: deb
+          - os: ubuntu-24.04-arm
+            platform: linux
+            arch: arm64
+            ext: deb
+          - os: windows-latest
+            platform: windows
+            arch: x86_64
+            ext: msi
+
+    steps:
+      # The default single-commit checkout is enough: the build stamps HEAD's short
+      # hash and its date into the application, and both are in a depth-1 clone.
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "25"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      # jpackage shells out to dpkg-deb under fakeroot to build a .deb.
+      - name: Install Debian packaging tools
+        if: matrix.platform == 'linux'
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends fakeroot binutils
+
+      # jpackage builds an .msi by shelling out to WiX. The runner image usually
+      # carries it; when it does not, the failure arrives deep inside jpackage
+      # with no useful message, so it is established here instead.
+      - name: Ensure WiX is available
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        run: |
+          if (Get-Command candle.exe -ErrorAction SilentlyContinue) {
+            Write-Host "WiX already on PATH"
+          } else {
+            choco install wixtoolset --no-progress -y
+            $bin = Get-ChildItem "C:\Program Files (x86)" -Filter "WiX Toolset*" |
+              Sort-Object Name -Descending |
+              Select-Object -First 1
+            if (-not $bin) { throw "WiX did not install where it was expected" }
+            "$($bin.FullName)\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          }
+
+      - name: Package installer
+        shell: bash
+        run: ./gradlew :app:packageDistributionForCurrentOS
+
+      # The build's own answer, before anything is packaged around it: this proves
+      # the generated build-information resource reached the jar.
+      - name: Verify the version the build reports
+        shell: bash
+        run: |
+          reported=$(./gradlew -q :app:run --args=--version | tail -1)
+          echo "$reported"
+          case "$reported" in
+            "Caracal ${{ needs.version.outputs.version }} "*) ;;
+            *) echo "::error::expected Caracal ${{ needs.version.outputs.version }}, got: $reported"; exit 1 ;;
+          esac
+
+      # And the packaged launcher's answer, which is a different claim: that jlink
+      # kept enough of the runtime for the application to start at all. A
+      # cross-compilation success has never proved a runtime success.
+      - name: Launch the packaged application
+        shell: bash
+        run: |
+          image=app/build/compose/binaries/main/app
+          case "${{ matrix.platform }}" in
+            macos)   launcher="$image/Caracal.app/Contents/MacOS/Caracal" ;;
+            linux)   launcher="$image/Caracal/bin/Caracal" ;;
+            windows) launcher="$image/Caracal/Caracal.exe" ;;
+          esac
+          if [ ! -x "$launcher" ]; then
+            echo "::error::no launcher at $launcher"; ls -R "$image" | head -50; exit 1
+          fi
+          if [ "${{ matrix.platform }}" = "windows" ]; then
+            # A jpackage launcher on Windows is a GUI subsystem binary: it writes
+            # to no console its parent can read. Starting and exiting cleanly is
+            # the whole of what can be asserted here.
+            "$launcher" --version
+            echo "launcher started and exited $?"
+          else
+            reported=$("$launcher" --version)
+            echo "$reported"
+            case "$reported" in
+              "Caracal ${{ needs.version.outputs.version }} "*) ;;
+              *) echo "::error::packaged launcher reported: $reported"; exit 1 ;;
+            esac
+          fi
+
+      # One installer per runner, named the same way on all of them. jpackage names
+      # its own output after the platform's version conventions — on macOS that is
+      # the marketing version, which for a 0.x release is not the release number —
+      # so the file is found by extension and renamed, never matched by version.
+      - name: Name the artifact
+        id: artifact
+        shell: bash
+        run: |
+          mkdir -p dist
+          found=$(find app/build/compose/binaries/main/${{ matrix.ext }} -maxdepth 1 -name "*.${{ matrix.ext }}" | head -2)
+          count=$(echo "$found" | grep -c .)
+          if [ "$count" != "1" ]; then
+            echo "::error::expected one .${{ matrix.ext }}, found $count: $found"; exit 1
+          fi
+          name="caracal_${{ needs.version.outputs.version }}_${{ matrix.platform }}_${{ matrix.arch }}.${{ matrix.ext }}"
+          mv "$found" "dist/$name"
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+          ls -lh "dist/$name"
+
+      - name: Upload installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.artifact.outputs.name }}
+          path: dist/${{ steps.artifact.outputs.name }}
+          if-no-files-found: error
+          retention-days: 14
+
+  # Every installer, one checksum file, and a release left as a draft. Publishing is
+  # a human decision taken after downloading these artifacts and launching them —
+  # the ones on the release page, not the ones in a local build directory.
+  release:
+    name: draft release
+    if: github.ref_type == 'tag'
+    needs: [version, package]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Collect installers
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Checksum
+        working-directory: dist
+        run: |
+          ls -lh
+          sha256sum * > checksums.txt
+          cat checksums.txt
+
+      - name: Draft the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          notes=docs/release-notes/$VERSION.md
+          if [ -f "$notes" ]; then
+            gh release create "$GITHUB_REF_NAME" dist/* \
+              --draft --title "Caracal $VERSION" --notes-file "$notes"
+          else
+            echo "::warning::no prepared notes at $notes; generating them from commits"
+            gh release create "$GITHUB_REF_NAME" dist/* \
+              --draft --title "Caracal $VERSION" --generate-notes
+          fi

@@ -507,7 +507,7 @@ Assert that key-browser code never issues `KEYS`, `HGETALL`, `SMEMBERS`, or unbo
 >   delivers both through one driver hook, so `RedisReply.Status` appears only on a
 >   RESP3 connection and callers should ask a reply for its text rather than match on
 >   the case.
-> - **`Redaction` moved to `dev.dbide.core.text`.** It was never PostgreSQL-specific,
+> - **`Redaction` moved to `dev.caracal.core.text`.** It was never PostgreSQL-specific,
 >   and Lettuce is if anything freer with the address than pgjdbc — it writes the URI
 >   it dialled, password included, into most connection failures. A `redis` package
 >   importing scrubbing from a `postgres` one would have been the wrong shape.
