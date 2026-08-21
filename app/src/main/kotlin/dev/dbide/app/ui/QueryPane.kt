@@ -39,6 +39,7 @@ import androidx.compose.ui.unit.dp
 import dev.dbide.app.EditorRun
 import dev.dbide.app.EditorTab
 import dev.dbide.app.EditorViewModel
+import dev.dbide.app.ErrorMarker
 import dev.dbide.app.ExportRun
 import dev.dbide.app.ExportText
 import dev.dbide.app.ExportViewModel
@@ -209,7 +210,15 @@ private fun ResultArea(model: EditorViewModel, export: ExportViewModel, onCopy: 
                 .verticalScroll(rememberScrollState()),
             contentAlignment = Alignment.TopCenter,
         ) {
-            ErrorBanner(failure = run.failure, modifier = Modifier.fillMaxWidth())
+            ErrorBanner(
+                failure = run.failure,
+                // §4.6: the server named a character and the script no longer reads
+                // the way it read when it was sent, so the editor is not pointing at
+                // one. Saying so is the whole point — an error with no underline and
+                // no explanation looks like an error the editor failed to locate.
+                note = STALE_POSITION.takeIf { model.marker is ErrorMarker.Moved },
+                modifier = Modifier.fillMaxWidth(),
+            )
         }
     }
 }
@@ -351,6 +360,10 @@ private fun firstLine(sql: String, limit: Int = 90): String {
     val line = sql.lineSequence().firstOrNull { it.isNotBlank() }?.trim().orEmpty()
     return if (line.length <= limit) line else line.take(limit - 1) + "…"
 }
+
+/** Said when the position the server reported can no longer be trusted to point anywhere. */
+private const val STALE_POSITION =
+    "The script changed after this ran, so the place the server pointed at is not shown."
 
 private const val DEFAULT_SPLIT = 0.42f
 private const val MIN_SPLIT = 0.15f

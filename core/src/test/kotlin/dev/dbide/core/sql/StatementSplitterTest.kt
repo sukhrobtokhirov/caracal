@@ -2,6 +2,7 @@ package dev.dbide.core.sql
 
 import kotlin.random.Random
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import org.junit.jupiter.api.Test
@@ -282,6 +283,24 @@ class StatementSplitterTest {
         val characters = statement.text.codePointCount(0, statement.text.length)
 
         assertEquals(statement.end, statement.documentIndex(characters + 1))
+    }
+
+    @Test
+    fun `a statement is intact only where its own text still sits`() {
+        val script = "select 1;\nselect frm t;"
+        val second = split(script)[1]
+
+        assertTrue(second.isIntactIn(script))
+        // Edited below it: the span is untouched, so the marker stays.
+        assertTrue(second.isIntactIn(script + "\nselect 3;"))
+        // Edited above it: everything shifted, and the offsets now describe the wrong
+        // characters. This is the case that would otherwise underline an innocent word.
+        assertFalse(second.isIntactIn("-- note\n$script"))
+        // Edited inside it: the ordinary case of someone starting to fix the error.
+        assertFalse(second.isIntactIn(script.replace("frm", "from")))
+        // Gone entirely.
+        assertFalse(second.isIntactIn("select 1;"))
+        assertFalse(second.isIntactIn(""))
     }
 
     @Test

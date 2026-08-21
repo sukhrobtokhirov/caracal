@@ -34,6 +34,27 @@ data class Statement(val text: String, val start: Int, val end: Int) {
         if (postgresPosition > characters + 1) return null
         return start + text.offsetByCodePoints(0, minOf(postgresPosition - 1, characters))
     }
+
+    /**
+     * Whether this statement is still exactly where it was in [document].
+     *
+     * The question a highlight has to answer before it is drawn. [start] and [end]
+     * describe the script as it read when the statement was sent, and a script is
+     * editable while its statement is on the server — so by the time an error comes
+     * back with a position in it, those offsets may point at a character the user
+     * typed after pressing Run. Pointing at it anyway is worse than pointing at
+     * nothing: an underline under an innocent word is a claim, and the user has no
+     * way to tell it apart from a correct one.
+     *
+     * So the text is compared rather than the length. An edit above the statement
+     * shifts it, an edit inside it changes it, and both answer `false` — the second
+     * one being the ordinary case of someone starting to fix the error, where the
+     * marker has done its job and should go. An edit *below* it leaves it intact,
+     * which is the case worth keeping: a failure in statement two stays marked while
+     * statement three is being written.
+     */
+    fun isIntactIn(document: String): Boolean =
+        document.regionMatches(start, text, 0, text.length)
 }
 
 /** A PostgreSQL lexical construct that can be left open at the end of a script. */

@@ -21,6 +21,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.unit.dp
 import dev.dbide.core.connections.TestResult
 import dev.dbide.core.result.DbError
@@ -40,7 +41,12 @@ import dev.dbide.core.result.Failure
  * message that says only that a column does not exist.
  */
 @Composable
-fun ErrorBanner(failure: Failure, onDismiss: (() -> Unit)? = null, modifier: Modifier = Modifier) {
+fun ErrorBanner(
+    failure: Failure,
+    onDismiss: (() -> Unit)? = null,
+    note: String? = null,
+    modifier: Modifier = Modifier,
+) {
     Banner(
         background = MaterialTheme.colorScheme.errorContainer,
         foreground = MaterialTheme.colorScheme.onErrorContainer,
@@ -54,6 +60,18 @@ fun ErrorBanner(failure: Failure, onDismiss: (() -> Unit)? = null, modifier: Mod
             color = MaterialTheme.colorScheme.onErrorContainer,
         )
         failure.query?.let { QueryErrorDetail(it) }
+        // Something the application has to say about the error rather than something
+        // the server said, so it is set apart from the report above it in italic. The
+        // only one so far is §4.6's: the script moved, so the position is not drawn.
+        note?.let {
+            Text(
+                text = it,
+                style = MaterialTheme.typography.bodySmall,
+                fontStyle = FontStyle.Italic,
+                color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.9f),
+                modifier = Modifier.semantics { contentDescription = "error-note" },
+            )
+        }
         Text(
             // The SQLSTATE, when there is one, is more useful to quote than the
             // application's own code: it is the identifier PostgreSQL's documentation

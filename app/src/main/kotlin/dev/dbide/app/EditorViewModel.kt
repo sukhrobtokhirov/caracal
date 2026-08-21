@@ -16,6 +16,7 @@ import dev.dbide.core.sql.Execution
 import dev.dbide.core.sql.ExecutionTarget
 import dev.dbide.core.sql.EditorExecution
 import dev.dbide.core.sql.SplitScript
+import dev.dbide.core.sql.Statement
 import dev.dbide.core.sql.StatementSplitter
 import dev.dbide.core.sql.TargetSource
 import kotlinx.coroutines.CancellationException
@@ -48,11 +49,43 @@ sealed interface EditorRun {
      * the server reported no position, it reported one inside a query it generated
      * itself, or the failure never reached a server at all. §2.9's rule for all
      * three is the same — show the message, and do not guess at a place to point at.
+     *
+     * [statement] is the text that was sent, at the offsets it was sent from, and it
+     * is kept for one reason: [errorAt] was computed against a script that can be
+     * edited while the statement is still on the server. [ErrorMarker] uses it to
+     * decide whether that offset still describes anything. `null` for a failure that
+     * never had a statement — the read-only refusal below is raised before one is
+     * chosen.
      */
-    data class Failed(val failure: Failure, val errorAt: Int? = null) : EditorRun
+    data class Failed(
+        val failure: Failure,
+        val errorAt: Int? = null,
+        val statement: Statement? = null,
+    ) : EditorRun
 
     /** The user stopped it. Not a failure, and not drawn as one. */
     data object Cancelled : EditorRun
+}
+
+/**
+ * Where the editor should point for the last failure, if anywhere.
+ *
+ * Three answers rather than a nullable offset, because "nowhere to point" and
+ * "there was somewhere and it is gone" are different things to say to a user. The
+ * first is ordinary — most failures carry no position at all. The second means the
+ * server did name a character and the script has since moved out from under it, and
+ * §4.6 asks for that to be said rather than papered over: an underline drawn at a
+ * stale offset is a confident claim about the wrong word.
+ */
+sealed interface ErrorMarker {
+    /** Nothing to point at: no failure, or a failure the server gave no position for. */
+    data object None : ErrorMarker
+
+    /** The character the server named, at its place in the document as it reads now. */
+    data class At(val index: Int) : ErrorMarker
+
+    /** The server named a character; the text it counted into is no longer there. */
+    data object Moved : ErrorMarker
 }
 
 /**
@@ -148,6 +181,32 @@ class EditorViewModel(
     val target: ExecutionTarget? get() = (execution as? Execution.Ready)?.target
 
     val running: Boolean get() = run is EditorRun.Running
+
+    /**
+     * Where the editor should draw the last failure, checked against the text as it
+     * reads now.
+     *
+     * The check is here rather than in the composable because it is a rule, not a
+     * drawing decision: the same answer has to hold for the message beside the
+     * result as for the underline in the script, and two surfaces deciding it
+     * separately is how they come to disagree.
+     *
+     * A marker deliberately survives edits *elsewhere* in the script. A failure you
+     * are in the middle of reading is not something to snatch away because the caret
+     * moved into the statement below it.
+     */
+    val marker: ErrorMarker
+        get() {
+            val failed = run as? EditorRun.Failed ?: return ErrorMarker.None
+            val index = failed.errorAt ?: return ErrorMarker.None
+            val statement = failed.statement ?: return ErrorMarker.None
+            if (!statement.isIntactIn(text.text)) return ErrorMarker.Moved
+            // One past the last character is a place, not an overrun: PostgreSQL
+            // reports an error at end of input that way, and `documentIndex` maps it
+            // to the statement's end. There is no character there to underline, and
+            // the editor draws it as a position rather than a span.
+            return if (index <= text.text.length) ErrorMarker.At(index) else ErrorMarker.Moved
+        }
 
     /**
      * Whether closing this tab would lose work.
@@ -336,6 +395,7 @@ class EditorViewModel(
                 run = EditorRun.Failed(
                     failure = failure,
                     errorAt = failure.query?.position?.let { target.statement.documentIndex(it) },
+                    statement = target.statement,
                 )
             }
         }

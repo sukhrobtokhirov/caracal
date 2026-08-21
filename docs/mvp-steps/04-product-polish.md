@@ -483,6 +483,59 @@ requesting focus on an unattached requester throws. `FocusRequest` is raised by 
 switcher and consumed by whichever pane turns up — once, so returning to a tab later
 does not pull the caret out of wherever the user has since put it.
 
+### 4.6 — error presentation
+
+**The normalized model was already there, and it is `Failure`.** The section asks for
+a frontend error model matching the backend envelope; there is no envelope and no
+frontend, so `:core` throws and `Throwable.toFailure()` classifies. Every surface
+renders the same `Failure` — code, message, and the structured server report when
+there is one — through the same `ErrorBanner`. What M4 added is the one field the
+banner had no way to carry: a note the *application* is making about the error, as
+opposed to something the server said, set in italic below the report.
+
+**Presentation by scope was settled surface by surface as each was built,** and the
+section's five levels map onto four. A field error is `Failure.fields`, drawn on the
+input. An inline panel error is the banner inside the pane that failed — the schema
+node, the result area, the Redis value viewer, the `INFO` dashboard, the key browser.
+A banner is the workspace-level one above the working area, dismissible, for a
+connection that would not open. There are no toasts: nothing in this application
+reports success transiently, and the section's own rule is that a toast must never be
+an actionable error's only home.
+
+**There is no fatal boundary, because Compose Desktop has no equivalent to one.** A
+React error boundary catches a render failure in a subtree and swaps in a fallback;
+a composition that throws here takes the window with it, and there is no supported
+way to isolate a subtree. What exists instead is the one failure that can happen
+before there is a UI to fail in: `Startup.Failed` renders the vault-unavailable
+screen rather than a stack trace on a terminal nobody is watching.
+
+**A highlight is drawn only while the script still reads the way it was sent.**
+This is the section's hardest requirement and the reason it was left until last. The
+server counts its error position into the statement it received, `Statement.documentIndex`
+maps that onto the document, and both are computed the moment the failure arrives —
+while the statement that was sent is still in hand. But the editor stays usable while
+a query is on the server, so by the time an error comes back those offsets may
+describe characters the user typed after pressing Run.
+
+`Statement.isIntactIn(document)` is the check: the submitted text, compared against
+the same span of the script as it reads now. `EditorViewModel.marker` answers with
+one of three things — nowhere to point, a place, or *there was a place and it is
+gone* — and both the underline in the editor and the sentence under the result read
+that one property, so they cannot disagree. An edit below the failed statement leaves
+the marker alone, which is the case worth keeping: a failure in statement two stays
+marked while statement three is being written. An edit above it or inside it removes
+it, and the banner says why. Underlining an innocent word is worse than underlining
+nothing, because the user has no way to tell a stale marker from a correct one.
+
+**A position one past the last character is scrolled to and not underlined.**
+PostgreSQL reports an error at end of input that way. There is no character there;
+marking the one before it would be pointing at the wrong thing.
+
+**Redis partial failures were already local** and needed nothing here. A restricted
+`INFO` is a success with fewer sections rather than a failed dashboard, and a key that
+changed type between being selected and being read reloads the viewer as the type it
+now is — `DbError.KeyTypeChanged` carries it. Neither reaches the workspace.
+
 ## Completion checklist
 
 - [x] Query history is bounded, paged, filterable, reopenable, and clearable.
@@ -490,8 +543,8 @@ does not pull the caret out of wherever the user has since put it.
 - [x] Dirty/running tabs cannot be lost silently.
 - [x] Required shortcuts work without breaking editor or dialog behavior.
 - [x] Connection switching preserves production/read-only context.
-- [ ] Errors are normalized and presented at the correct scope.
-- [ ] PostgreSQL error highlighting is accurate and never stale/misleading.
+- [x] Errors are normalized and presented at the correct scope.
+- [x] PostgreSQL error highlighting is accurate and never stale/misleading.
 - [ ] Every primary surface has intentional loading and empty states.
 - [ ] Light/dark/system themes cover editor, grid, dialogs, and status colors.
 - [ ] Core workflows are keyboard accessible and usable at zoom.

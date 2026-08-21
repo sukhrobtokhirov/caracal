@@ -24,7 +24,10 @@ no JDK to install: the installer bundles its own trimmed runtime.
 > is under way** — query history is readable, paged, and reopenable; SQL work lives in
 > tabs that keep their own connection, query, and result, and that will not close on
 > unsaved work or a running statement without asking; and the keyboard reaches all of
-> it, including a connection switcher that will not let Enter dial production. See
+> it, including a connection switcher that will not let Enter dial production; and a
+> failure is shown where it happened, with the character PostgreSQL pointed at
+> underlined in the editor — and un-underlined, with a sentence saying why, the
+> moment the script moves out from under it. See
 > [`docs/mvp-steps/`](docs/mvp-steps/README.md).
 
 ## The shape of the product

@@ -502,6 +502,101 @@ class EditorViewModelTest {
     }
 
     @Test
+    fun `the marker stays while the script around the failed statement is edited`() = runTest {
+        val service = service()
+        service.nextFailure = DbException(
+            DbError.QueryFailed("column \"totl\" does not exist", position = 8),
+        )
+        val editor = editor(service)
+        editor.type("select totl from invoices;|")
+
+        editor.execute()
+        advanceUntilIdle()
+
+        val marked = assertIs<ErrorMarker.At>(editor.marker)
+        assertEquals(editor.text.text.indexOf("totl"), marked.index)
+
+        // Writing the next statement below is not a reason to take the error away —
+        // it is frequently what the user does while still reading it.
+        editor.type("select totl from invoices;\nselect 2;|")
+        assertEquals(marked, editor.marker)
+    }
+
+    @Test
+    fun `the marker goes when the text it counted into changes`() = runTest {
+        val service = service()
+        service.nextFailure = DbException(
+            DbError.QueryFailed("column \"totl\" does not exist", position = 8),
+        )
+        val editor = editor(service)
+        editor.type("select totl from invoices;|")
+
+        editor.execute()
+        advanceUntilIdle()
+        assertIs<ErrorMarker.At>(editor.marker)
+
+        // The fix. Offset 7 is now the `f` of `from` in a longer script, and drawing
+        // an underline there would be the editor confidently pointing at the wrong
+        // word — §4.6's rule is that it says the position is gone instead.
+        editor.type("select total from invoices;|")
+
+        assertIs<ErrorMarker.Moved>(editor.marker)
+    }
+
+    @Test
+    fun `an insertion above the failed statement moves the marker rather than sliding it`() =
+        runTest {
+            val service = service()
+            service.nextFailure = DbException(
+                DbError.QueryFailed("column \"totl\" does not exist", position = 8),
+            )
+            val editor = editor(service)
+            editor.type("select totl from invoices;|")
+
+            editor.execute()
+            advanceUntilIdle()
+
+            // The statement is character-for-character what was sent, four characters
+            // to the right. Its old offsets now describe the comment.
+            editor.type("-- x\nselect totl from invoices;|")
+
+            assertIs<ErrorMarker.Moved>(editor.marker)
+        }
+
+    @Test
+    fun `a failure raised before a statement was chosen points at nothing`() = runTest {
+        val editor = editor(connection = connection(readOnly = true))
+        editor.type("delete from invoices;|")
+
+        editor.execute()
+
+        assertIs<EditorRun.Failed>(editor.run)
+        // Refused by the policy, so nothing was sent and no server named a character.
+        assertIs<ErrorMarker.None>(editor.marker)
+    }
+
+    @Test
+    fun `running again clears the marker before the next answer arrives`() = runTest {
+        val service = service()
+        service.nextFailure = DbException(
+            DbError.QueryFailed("column \"totl\" does not exist", position = 8),
+        )
+        val editor = editor(service)
+        editor.type("select totl from invoices;|")
+        editor.execute()
+        advanceUntilIdle()
+        assertIs<ErrorMarker.At>(editor.marker)
+
+        service.gate = CompletableDeferred()
+        editor.execute()
+
+        assertIs<ErrorMarker.None>(editor.marker)
+
+        service.gate?.complete(Unit)
+        advanceUntilIdle()
+    }
+
+    @Test
     fun `the structured server report reaches the editor intact`() = runTest {
         // §2.9's point: a server error is not one sentence, and flattening it into one
         // on the way to the UI throws away the hint that is often the whole answer.

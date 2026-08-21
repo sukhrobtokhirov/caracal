@@ -50,8 +50,8 @@ import androidx.compose.ui.text.input.TransformedText
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.dp
-import dev.dbide.app.EditorRun
 import dev.dbide.app.EditorViewModel
+import dev.dbide.app.ErrorMarker
 import dev.dbide.app.FocusRequest
 import dev.dbide.app.Shortcut
 import dev.dbide.app.Shortcuts
@@ -172,10 +172,10 @@ private fun EditorText(
         if (model.text.selection.collapsed) SqlHighlighting.matchingBracket(script, caret) else null
     }
     val target = model.target
-    // Where the server said the problem was, if it said. It survives editing on
-    // purpose: a syntax error you are in the middle of fixing is exactly when you
-    // want to still be able to see where it was.
-    val errorAt = (model.run as? EditorRun.Failed)?.errorAt?.takeIf { it in script.indices }
+    // Where the server said the problem was, if it said and if the script still
+    // reads the way it read when it was sent. §4.6: the model answers that, so the
+    // underline here and the sentence under the result cannot disagree about it.
+    val errorAt = (model.marker as? ErrorMarker.At)?.index
     val styled = remember(script, tokens, bracket, target, errorAt, colors) {
         annotate(script, tokens, bracket, target?.start, target?.end, errorAt, colors)
     }
@@ -380,7 +380,10 @@ private fun annotate(
     }
     // Last, so it wins wherever it lands. A syntax error is frequently reported on a
     // keyword, and a keyword already has a colour of its own.
-    errorAt?.let { index ->
+    // A position one past the last character is where PostgreSQL reports an error at
+    // end of input. It is scrolled to and it is not underlined: there is no character
+    // there, and underlining the one before it would be pointing at the wrong thing.
+    errorAt?.takeIf { it in script.indices }?.let { index ->
         addStyle(
             SpanStyle(
                 color = colors.error,

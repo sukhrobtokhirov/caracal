@@ -280,6 +280,36 @@ class SqlEditorUiTest {
             onNodeWithContentDescription("failure-query_failed").assertIsDisplayed()
         }
 
+    @Test
+    fun `editing the failed statement replaces the marker with a sentence saying why`() =
+        runDesktopComposeUiTest(width = 1000, height = 800) {
+            val service = service()
+            service.nextFailure = DbException(
+                DbError.QueryFailed("column \"totl\" does not exist", position = 8),
+            )
+            pane(service)
+            type("select totl from invoices;")
+
+            onNodeWithContentDescription("editor-run").performClick()
+            waitForIdle()
+
+            // While the script still reads as it was sent, the banner says only what
+            // the server said — the editor is doing the pointing.
+            onNodeWithContentDescription("failure-query_failed").assertIsDisplayed()
+            onNodeWithContentDescription("error-note").assertDoesNotExist()
+
+            // Fixing the column moves every character after it. The underline goes,
+            // and the reason it went is on screen rather than left to be inferred.
+            onNodeWithContentDescription("editor-text").performTextInputSelection(
+                TextRange("select ".length, "select totl".length),
+            )
+            onNodeWithContentDescription("editor-text").performTextInput("total")
+            waitForIdle()
+
+            onNodeWithContentDescription("failure-query_failed").assertIsDisplayed()
+            onNodeWithContentDescription("error-note").assertIsDisplayed()
+        }
+
     // --- With the rest of the workspace ---------------------------------------
 
     @Test
