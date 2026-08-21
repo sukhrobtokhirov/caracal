@@ -20,15 +20,19 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import dev.dbide.app.FocusRequest
 import dev.dbide.app.KeyRow
 import dev.dbide.app.RedisBrowserViewModel
 import dev.dbide.app.RedisFormat
@@ -56,6 +60,7 @@ fun RedisKeyBrowser(
     model: RedisBrowserViewModel,
     onOpenKey: (RedisKey) -> Unit,
     modifier: Modifier = Modifier,
+    focus: FocusRequest = remember { FocusRequest() },
 ) {
     Column(modifier = modifier.fillMaxSize().semantics { contentDescription = "redis-browser" }) {
         PaneHeader(title = "Keys", glyph = Glyphs.KEYS) {
@@ -70,7 +75,7 @@ fun RedisKeyBrowser(
             ToolButton(text = "Refresh", onClick = model::refresh, description = "keys-refresh")
         }
         Hairline()
-        Filters(model)
+        Filters(model, focus)
         Hairline()
 
         Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
@@ -126,7 +131,13 @@ fun RedisKeyBrowser(
  * traversal of the keyspace for every letter of `user:*`.
  */
 @Composable
-private fun Filters(model: RedisBrowserViewModel) {
+private fun Filters(model: RedisBrowserViewModel, focus: FocusRequest) {
+    val patternHere = remember { FocusRequester() }
+    // §4.4's focus-the-search chord, and §4.5's "move focus to the browser" after a
+    // switch. Both arrive as a request rather than a call, because the pane they mean
+    // is not always on screen when the decision is taken.
+    LaunchedEffect(focus.pending) { if (focus.consume()) patternHere.requestFocus() }
+
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -143,6 +154,7 @@ private fun Filters(model: RedisBrowserViewModel) {
                 onValueChange = model::edit,
                 description = "keys-pattern",
                 placeholder = "user:*",
+                focus = patternHere,
                 onSubmit = model::search,
                 modifier = Modifier.weight(1f),
             )

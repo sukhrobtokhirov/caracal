@@ -27,8 +27,10 @@ import dev.dbide.app.EditorViewModel
 import dev.dbide.app.ExportViewModel
 import dev.dbide.app.HistoryViewModel
 import dev.dbide.app.FakeConnectionService
+import dev.dbide.app.Platform
 import dev.dbide.app.RedisWorkspace
 import dev.dbide.app.SchemaTreeViewModel
+import dev.dbide.app.Shortcuts
 import dev.dbide.app.ThemeViewModel
 import dev.dbide.core.catalog.ColumnInfo
 import dev.dbide.core.connections.ConnectionConfig
@@ -94,17 +96,32 @@ class SqlEditorUiTest {
         )
     }
 
-    /** Mounts the query pane on its own and hands back the model the test can read. */
+    /**
+     * Mounts the query pane on its own and hands back the model the test can read.
+     *
+     * [platform] is named rather than read off the host, because the Run chord is one
+     * of the few things in this application that is deliberately different on the two
+     * — Meta on macOS, Control everywhere else — and a test that read the host would
+     * assert whichever half the machine it ran on happened to have.
+     */
     private fun ComposeUiTest.pane(
         service: FakeConnectionService,
         connection: ConnectionConfig = connection(),
+        platform: Platform = Platform.MAC,
     ): EditorViewModel {
         lateinit var model: EditorViewModel
         setContent {
             val scope = rememberCoroutineScope()
             model = remember { EditorViewModel(service, scope).also { it.show(connection) } }
             val export = remember { ExportViewModel(service, scope) { null } }
-            DbideTheme { QueryPane(model, export, onCopy = {}) }
+            DbideTheme {
+                QueryPane(
+                    model,
+                    export,
+                    onCopy = {},
+                    shortcuts = remember { Shortcuts(platform) },
+                )
+            }
         }
         waitForIdle()
         return model
@@ -139,14 +156,39 @@ class SqlEditorUiTest {
     fun `the chord runs the statement instead of typing into it`() =
         runDesktopComposeUiTest(width = 1000, height = 800) {
             val service = service()
-            val model = pane(service)
+            val model = pane(service, platform = Platform.MAC)
             type("select 1;")
+
+            onNodeWithContentDescription("editor-text").performKeyInput {
+                withKeyDown(Key.MetaLeft) { pressKey(Key.Enter) }
+            }
+            waitForIdle()
+
+            assertEquals(listOf("select 1;"), service.executed)
+            // And it did not also put a newline in the script.
+            assertEquals("select 1;", model.text.text)
+        }
+
+    @Test
+    fun `off macOS the same chord is Control, and Meta is left alone`() =
+        runDesktopComposeUiTest(width = 1000, height = 800) {
+            val service = service()
+            val model = pane(service, platform = Platform.OTHER)
+            type("select 1;")
+
+            // Meta is the foreign modifier here. It must not run anything — and,
+            // because the editor declines it, the field is free to do whatever it
+            // would normally do with it.
+            onNodeWithContentDescription("editor-text").performKeyInput {
+                withKeyDown(Key.MetaLeft) { pressKey(Key.Enter) }
+            }
+            waitForIdle()
+            assertEquals(emptyList(), service.executed)
 
             onNodeWithContentDescription("editor-text").performKeyInput {
                 withKeyDown(Key.CtrlLeft) { pressKey(Key.Enter) }
             }
             waitForIdle()
-
             assertEquals(listOf("select 1;"), service.executed)
             assertEquals("select 1;", model.text.text)
         }

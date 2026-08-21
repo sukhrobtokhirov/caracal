@@ -28,13 +28,9 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.input.key.Key
-import androidx.compose.ui.input.key.KeyEventType
-import androidx.compose.ui.input.key.isCtrlPressed
-import androidx.compose.ui.input.key.isMetaPressed
-import androidx.compose.ui.input.key.key
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.input.key.onPreviewKeyEvent
-import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -56,6 +52,9 @@ import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.dp
 import dev.dbide.app.EditorRun
 import dev.dbide.app.EditorViewModel
+import dev.dbide.app.FocusRequest
+import dev.dbide.app.Shortcut
+import dev.dbide.app.Shortcuts
 import dev.dbide.core.sql.BracketPair
 import dev.dbide.core.sql.SqlHighlighting
 import dev.dbide.core.sql.SqlToken
@@ -80,11 +79,16 @@ import dev.dbide.core.sql.TokenKind
  * the server pointed at when it refused the last one.
  */
 @Composable
-fun SqlEditor(model: EditorViewModel, modifier: Modifier = Modifier) {
+fun SqlEditor(
+    model: EditorViewModel,
+    modifier: Modifier = Modifier,
+    shortcuts: Shortcuts = remember { Shortcuts() },
+    focus: FocusRequest = remember { FocusRequest() },
+) {
     Column(modifier = modifier.fillMaxSize().semantics { contentDescription = "sql-editor" }) {
-        EditorToolbar(model)
+        EditorToolbar(model, shortcuts)
         Hairline()
-        EditorText(model, modifier = Modifier.weight(1f))
+        EditorText(model, shortcuts, focus, modifier = Modifier.weight(1f))
     }
 }
 
@@ -96,7 +100,7 @@ fun SqlEditor(model: EditorViewModel, modifier: Modifier = Modifier) {
  * rather than after it.
  */
 @Composable
-private fun EditorToolbar(model: EditorViewModel) {
+private fun EditorToolbar(model: EditorViewModel, shortcuts: Shortcuts) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -120,28 +124,31 @@ private fun EditorToolbar(model: EditorViewModel) {
                 onClick = model::cancel,
                 description = "editor-cancel",
                 emphasis = ToolEmphasis.DANGER,
+                tooltip = "${Shortcut.CANCEL.action}  ${shortcuts.chord(Shortcut.CANCEL)}",
             )
         }
         // The chord is on the button rather than only in the documentation nobody
-        // opens. It is also the only shortcut the editor has, so there is room to say
-        // it in full.
+        // opens, and it is spelled by [Shortcut] rather than here — a label that
+        // disagreed with the handler would be an instruction that does not work.
         ToolButton(
-            text = "Run  $RUN_CHORD",
+            text = "Run  ${shortcuts.chord(Shortcut.RUN)}",
             onClick = model::execute,
             description = "editor-run",
             enabled = model.runnable,
             emphasis = ToolEmphasis.PRIMARY,
+            tooltip = Shortcut.RUN.detail,
         )
     }
 }
 
-/** What the Run chord is called on this machine. */
-private val RUN_CHORD: String =
-    if (System.getProperty("os.name").orEmpty().startsWith("Mac")) "⌘↵" else "Ctrl+↵"
-
 /** The document itself, with its gutter, sharing one vertical scroll. */
 @Composable
-private fun EditorText(model: EditorViewModel, modifier: Modifier = Modifier) {
+private fun EditorText(
+    model: EditorViewModel,
+    shortcuts: Shortcuts,
+    focus: FocusRequest,
+    modifier: Modifier = Modifier,
+) {
     val style = MaterialTheme.typography.bodyMedium.copy(
         fontFamily = FontFamily.Monospace,
         color = MaterialTheme.colorScheme.onSurface,
@@ -149,6 +156,14 @@ private fun EditorText(model: EditorViewModel, modifier: Modifier = Modifier) {
     val colors = editorColors()
     var layout: TextLayoutResult? by remember { mutableStateOf(null) }
     val scroll = rememberScrollState()
+    val caretHere = remember { FocusRequester() }
+
+    // §4.5's "move focus to the most relevant editor". The request is picked up here
+    // rather than made by the switcher, because the switcher closes before this pane
+    // exists — the connection it chose may still be being dialled — and it is taken
+    // rather than merely read, so coming back to this tab later does not steal the
+    // caret from wherever the user has since put it.
+    LaunchedEffect(focus.pending) { if (focus.consume()) caretHere.requestFocus() }
 
     val script = model.text.text
     val caret = model.text.selection.end
@@ -207,15 +222,16 @@ private fun EditorText(model: EditorViewModel, modifier: Modifier = Modifier) {
             cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
             modifier = Modifier
                 .weight(1f)
+                .focusRequester(caretHere)
                 .padding(horizontal = Space.md, vertical = Space.sm)
-                // Preview, so the chord runs the statement instead of inserting a
-                // newline into it. Meta is the macOS chord and Ctrl everywhere else;
-                // both are accepted on both.
+                // Preview, and only for Run: the chord has to beat the field's own
+                // handling of Enter, which would otherwise put a newline in the
+                // script. Every other chord is left to bubble past the field to the
+                // workspace, which is what lets a text field keep the keys it needs.
                 .onPreviewKeyEvent { event ->
-                    val running = event.type == KeyEventType.KeyDown &&
-                        event.key == Key.Enter &&
-                        (event.isCtrlPressed || event.isMetaPressed)
-                    if (!running) return@onPreviewKeyEvent false
+                    if (Shortcut.of(event, shortcuts.platform) != Shortcut.RUN) {
+                        return@onPreviewKeyEvent false
+                    }
                     model.execute()
                     true
                 }

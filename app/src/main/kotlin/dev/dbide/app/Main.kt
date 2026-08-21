@@ -77,8 +77,18 @@ fun main() = application {
     // `false` only while there is a script open that closing would lose.
     val exit = remember { ExitGuard() }
 
+    // §4.4's chords. The window is where a key press with nothing focused arrives, so
+    // it is where the last-resort handler goes; the workspace registers what the
+    // chords mean and answers the ones that reach it first.
+    val shortcuts = remember { Shortcuts() }
+
     Window(
         onCloseRequest = { if (exit.mayClose()) exitApplication() },
+        // Bubble rather than preview, so a key the editor or a search box wanted has
+        // already been taken by the time it gets here. Nothing fires while the quit
+        // question is on screen: that dialog owns the keyboard until it is answered,
+        // and it is the one modal the workspace underneath cannot see.
+        onKeyEvent = { !exit.pending && shortcuts.dispatch(it) },
         title = "Database IDE",
         state = rememberWindowState(width = 1100.dp, height = 720.dp),
     ) {
@@ -103,6 +113,7 @@ fun main() = application {
                     theme = theme,
                     scope = scope,
                     exit = exit,
+                    shortcuts = shortcuts,
                     onQuit = ::exitApplication,
                 )
             }
@@ -120,6 +131,7 @@ private fun FrameWindowScope.Workspace(
     theme: ThemeViewModel,
     scope: CoroutineScope,
     exit: ExitGuard,
+    shortcuts: Shortcuts,
     onQuit: () -> Unit,
 ) {
     val connections = remember(service) { ConnectionsViewModel(service, scope) }
@@ -149,6 +161,7 @@ private fun FrameWindowScope.Workspace(
             redis = redis,
             history = history,
             theme = theme,
+            shortcuts = shortcuts,
             onLock = {
                 connections.clear()
                 // Locking closes every client, so the tree is describing a server this

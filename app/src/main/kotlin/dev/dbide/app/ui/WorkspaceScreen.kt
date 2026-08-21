@@ -16,9 +16,11 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -28,6 +30,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.semantics.contentDescription
@@ -36,10 +39,13 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.dbide.app.ConnectionsViewModel
 import dev.dbide.app.EditorTabs
+import dev.dbide.app.FocusRequest
 import dev.dbide.app.HistoryViewModel
 import dev.dbide.app.Pane
 import dev.dbide.app.RedisWorkspace
 import dev.dbide.app.SchemaTreeViewModel
+import dev.dbide.app.Shortcut
+import dev.dbide.app.Shortcuts
 import dev.dbide.app.ThemeViewModel
 import dev.dbide.core.connections.ConnectionId
 import dev.dbide.core.connections.ConnectionView
@@ -99,6 +105,7 @@ fun WorkspaceScreen(
     history: HistoryViewModel,
     theme: ThemeViewModel,
     onLock: () -> Unit,
+    shortcuts: Shortcuts = remember { Shortcuts() },
 ) {
     LaunchedEffect(Unit) { viewModel.refresh() }
 
@@ -159,6 +166,109 @@ fun WorkspaceScreen(
     // because that is what the user was looking at a moment ago.
     var historyOpen: Boolean by remember { mutableStateOf(false) }
 
+    // §4.5's switcher and §4.4's shortcut reference. Both are windows over the
+    // workspace, and both are opened by a chord and by a button, because a control
+    // that only has a chord is a control most people never find.
+    var switcherOpen: Boolean by remember { mutableStateOf(false) }
+    var shortcutsOpen: Boolean by remember { mutableStateOf(false) }
+
+    // Where the keyboard goes after a chord that opens something. Left as a request
+    // rather than taken directly, because the pane being asked for may not be on
+    // screen yet — choosing a closed connection has to dial it first.
+    val editorFocus = remember { FocusRequest() }
+    val keyFocus = remember { FocusRequest() }
+
+    // The tab a chord would act on: the one in front, on the connection in front.
+    val editor = postgres?.let { tabs.active(it.id) }
+    val querying = tab == WorkspaceTab.QUERY
+
+    // Whether something is currently asking the user a question.
+    //
+    // §4.4: a shortcut must not fire while a dialog needs the keyboard. Every window
+    // and confirmation this screen can raise is listed here, and anything added later
+    // belongs in the list — a chord that opens a second window over the first, or
+    // starts a query behind a confirmation the user is still reading, is worse than a
+    // chord that does nothing.
+    val modal = viewModel.pane is Pane.Form ||
+        settings ||
+        historyOpen ||
+        switcherOpen ||
+        shortcutsOpen ||
+        viewModel.pendingDelete != null ||
+        tabs.closing != null ||
+        editor?.editor?.pending != null ||
+        editor?.editor?.pendingScript != null ||
+        redis.console.pending != null
+
+    // The chords stop meaning anything when this screen is not on screen. Locking
+    // takes the workspace out of the composition and leaves the same window behind it,
+    // and a binding that outlived it would let ⌘K open a connection switcher over the
+    // lock screen — the one place in the application that must show nothing.
+    DisposableEffect(shortcuts) { onDispose { shortcuts.bind { false } } }
+
+    // Re-registered every composition, so the handler answers with what is on screen
+    // now rather than what was when the window opened.
+    SideEffect {
+        shortcuts.bind { shortcut ->
+            if (modal) return@bind false
+            when (shortcut) {
+                Shortcut.HELP -> {
+                    shortcutsOpen = true
+                    true
+                }
+
+                Shortcut.SWITCH -> {
+                    switcherOpen = true
+                    true
+                }
+
+                // The schema tree has no search box to focus, so this is the key
+                // browser's or it is nothing. Answering `false` leaves the chord to
+                // whatever else wants it rather than swallowing it into a no-op.
+                Shortcut.FIND -> if (redisView != null) {
+                    keyFocus.raise()
+                    true
+                } else {
+                    false
+                }
+
+                Shortcut.NEW_TAB -> if (postgres != null) {
+                    tab = WorkspaceTab.QUERY
+                    tabs.open(postgres.config)
+                    editorFocus.raise()
+                    true
+                } else {
+                    false
+                }
+
+                // Everything below acts on the tab in front of the user, so it fires
+                // only while that tab is what is on screen. The same chord with the
+                // connection's own details showing would be acting on a pane behind
+                // the one being looked at.
+                Shortcut.CLOSE_TAB -> if (querying && editor != null) {
+                    tabs.requestClose(editor)
+                    true
+                } else {
+                    false
+                }
+
+                Shortcut.RUN -> if (querying && editor != null) {
+                    editor.editor.execute()
+                    true
+                } else {
+                    false
+                }
+
+                Shortcut.CANCEL -> if (querying && editor?.running == true) {
+                    editor.editor.cancel()
+                    true
+                } else {
+                    false
+                }
+            }
+        }
+    }
+
     // What a row can do to itself. Opening also selects, so double-clicking one row
     // while another is selected does not leave the shell naming the wrong server.
     val actions = ConnectionActions(
@@ -178,16 +288,26 @@ fun WorkspaceScreen(
         delete = viewModel::confirmDelete,
     )
 
-    Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surface) {
+    // The workspace answers chords itself, in the bubble phase, so a key the editor
+    // or a search box wanted has already been taken by the time it arrives here. The
+    // window in `Main` hands over the events that reach nothing at all — the ones
+    // pressed when focus is nowhere.
+    Surface(
+        modifier = Modifier.fillMaxSize().onKeyEvent(shortcuts::dispatch),
+        color = MaterialTheme.colorScheme.surface,
+    ) {
         Column(modifier = Modifier.fillMaxSize()) {
             WorkspaceBar(
                 selected = current,
                 sidebar = sidebar,
+                shortcuts = shortcuts,
                 onToggleSidebar = { sidebar = !sidebar },
+                onOpenSwitcher = { switcherOpen = true },
                 onOpenHistory = {
                     history.open(current?.id)
                     historyOpen = true
                 },
+                onOpenShortcuts = { shortcutsOpen = true },
                 onOpenSettings = { settings = true },
                 onLock = onLock,
             )
@@ -236,6 +356,7 @@ fun WorkspaceScreen(
                 if (redisView != null) {
                     RedisKeyBrowser(
                         model = redis.browser,
+                        focus = keyFocus,
                         // Clicking a key opens it, which means showing the pane its
                         // value is in: a browser that selected a key and left the
                         // console on screen would look like it had done nothing.
@@ -310,6 +431,8 @@ fun WorkspaceScreen(
                                             .map { it.config },
                                         onMoved = viewModel::select,
                                         onCopy = copy,
+                                        shortcuts = shortcuts,
+                                        focus = editorFocus,
                                     )
                                 }
                                 WorkspaceTab.KEY -> RedisValueViewer(redis.value, onCopy = copy)
@@ -338,6 +461,35 @@ fun WorkspaceScreen(
     }
 
     if (settings) SettingsDialog(theme = theme, onDismiss = { settings = false })
+
+    if (shortcutsOpen) ShortcutsDialog(shortcuts = shortcuts, onDismiss = { shortcutsOpen = false })
+
+    if (switcherOpen) {
+        ConnectionSwitcher(
+            connections = viewModel.connections,
+            shortcuts = shortcuts,
+            onChoose = { view ->
+                switcherOpen = false
+                viewModel.select(view.id)
+                // Opened if it is not, exactly as double-clicking the row does — and
+                // nothing else. §4.5 is explicit that switching is about where new
+                // work goes; the tabs already pointed at other servers stay pointed
+                // at them, because retargeting one is a decision taken on the tab.
+                if (!view.runtime.isOpen) {
+                    viewModel.open(view.id)
+                } else {
+                    tab = tabsFor(view.config.engine).first()
+                }
+                // And the keyboard follows, into whichever pane the engine lands in.
+                // The request waits if the connection is still being dialled.
+                when (view.config.engine) {
+                    Engine.POSTGRES -> editorFocus.raise()
+                    Engine.REDIS -> keyFocus.raise()
+                }
+            },
+            onDismiss = { switcherOpen = false },
+        )
+    }
 
     if (historyOpen) {
         HistoryWindow(
@@ -407,8 +559,11 @@ private fun clipEntryOf(text: String) = ClipEntry(StringSelection(text))
 private fun WorkspaceBar(
     selected: ConnectionView?,
     sidebar: Boolean,
+    shortcuts: Shortcuts,
     onToggleSidebar: () -> Unit,
+    onOpenSwitcher: () -> Unit,
     onOpenHistory: () -> Unit,
+    onOpenShortcuts: () -> Unit,
     onOpenSettings: () -> Unit,
     onLock: () -> Unit,
 ) {
@@ -469,13 +624,27 @@ private fun WorkspaceBar(
             horizontalArrangement = Arrangement.spacedBy(Space.sm),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            // The theme moved inside the settings window. A button that cycles three
-            // values can only be understood by pressing it repeatedly, and the window
-            // it now lives in shows all three with what each one is for.
+            // §4.4 asks that every chord also be reachable by pointer, and the two
+            // that open a window of their own are the two that would otherwise have
+            // nowhere to be clicked. Both carry their chord in a tooltip rather than
+            // in the label: the bar is read once a session and the labels have to
+            // stay short enough to leave room for the connection's name.
+            ToolButton(
+                text = "Go to…",
+                onClick = onOpenSwitcher,
+                description = "open-switcher",
+                tooltip = "${Shortcut.SWITCH.action}  ${shortcuts.chord(Shortcut.SWITCH)}",
+            )
             ToolButton(
                 text = "History",
                 onClick = onOpenHistory,
                 description = "open-history",
+            )
+            ToolButton(
+                text = "Shortcuts",
+                onClick = onOpenShortcuts,
+                description = "open-shortcuts",
+                tooltip = "${Shortcut.HELP.action}  ${shortcuts.chord(Shortcut.HELP)}",
             )
             ToolButton(
                 text = "Settings",

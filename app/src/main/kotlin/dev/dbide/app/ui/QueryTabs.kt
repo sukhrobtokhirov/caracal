@@ -41,7 +41,10 @@ import androidx.compose.ui.unit.dp
 import dev.dbide.app.CloseReason
 import dev.dbide.app.EditorTab
 import dev.dbide.app.EditorTabs
+import dev.dbide.app.FocusRequest
 import dev.dbide.app.PendingClose
+import dev.dbide.app.Shortcut
+import dev.dbide.app.Shortcuts
 import dev.dbide.core.connections.ConnectionConfig
 import dev.dbide.core.connections.ConnectionId
 
@@ -63,6 +66,8 @@ fun QueryWorkspace(
     onMoved: (ConnectionId) -> Unit,
     onCopy: (String) -> Unit,
     modifier: Modifier = Modifier,
+    shortcuts: Shortcuts = remember { Shortcuts() },
+    focus: FocusRequest = remember { FocusRequest() },
 ) {
     val open = tabs.of(connection.id)
     val active = tabs.active(connection.id)
@@ -71,6 +76,7 @@ fun QueryWorkspace(
         EditorTabStrip(
             tabs = open,
             active = active,
+            shortcuts = shortcuts,
             onSelect = tabs::activate,
             onClose = tabs::requestClose,
             onNew = { tabs.open(connection) },
@@ -83,7 +89,7 @@ fun QueryWorkspace(
             // Keyed on the tab, so each one keeps its own split and its own export
             // report. Without it, switching tabs would hand the tab arriving on screen
             // the state of the one leaving it.
-            key(active.id) { QueryPane(active, onCopy) }
+            key(active.id) { QueryPane(active, onCopy, shortcuts = shortcuts, focus = focus) }
         }
     }
 
@@ -152,6 +158,7 @@ private fun tabActions(
 private fun EditorTabStrip(
     tabs: List<EditorTab>,
     active: EditorTab?,
+    shortcuts: Shortcuts,
     onSelect: (EditorTab) -> Unit,
     onClose: (EditorTab) -> Unit,
     onNew: () -> Unit,
@@ -177,6 +184,9 @@ private fun EditorTabStrip(
                     tab = tab,
                     index = index,
                     active = tab === active,
+                    // Only the tab the chord would actually close names the chord.
+                    closeTip = "${Shortcut.CLOSE_TAB.action}  ${shortcuts.chord(Shortcut.CLOSE_TAB)}"
+                        .takeIf { tab === active },
                     onSelect = { onSelect(tab) },
                     onClose = { onClose(tab) },
                     actions = { menu(tab) },
@@ -188,6 +198,7 @@ private fun EditorTabStrip(
             text = "＋ New",
             onClick = onNew,
             description = "editor-tab-new",
+            tooltip = "${Shortcut.NEW_TAB.action}  ${shortcuts.chord(Shortcut.NEW_TAB)}",
             modifier = Modifier.padding(horizontal = Space.sm),
         )
     }
@@ -206,6 +217,7 @@ private fun EditorTabItem(
     tab: EditorTab,
     index: Int,
     active: Boolean,
+    closeTip: String?,
     onSelect: () -> Unit,
     onClose: () -> Unit,
     actions: () -> List<MenuAction>,
@@ -272,6 +284,7 @@ private fun EditorTabItem(
                 text = "✕",
                 onClick = onClose,
                 description = "editor-tab-close-$index",
+                tooltip = closeTip,
             )
         }
         ContextMenu(

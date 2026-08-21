@@ -414,13 +414,82 @@ composable: `onCloseRequest` arrives from AWT at a moment that is nobody's
 recomposition. The workspace registers the question, the window asks it, and asking
 twice does not stack two dialogs.
 
+### 4.4 — keyboard shortcuts
+
+**The command key is the platform's, and only the platform's.** The editor's Run chord
+accepted Meta *or* Control on both platforms since M2, and that rule does not survive
+being generalised to seven chords. Compose's own macOS text-field keymap binds
+`Ctrl+K` to delete-to-line-end and `Ctrl+Shift+F` to extend-selection — emacs bindings
+AppKit has carried for decades — so accepting Control as a command modifier on macOS
+would put the connection switcher and the search chord on keys the text field under
+them has already spoken for, and the user would get whichever won, differently
+depending on where the caret was. One rule instead: Meta on macOS, Control everywhere
+else, matched and drawn from the same table.
+
+**The `Cmd/Ctrl+T` and `Cmd/Ctrl+W` caveats do not apply and have not been carried
+forward.** The section marks both provisional because the milestone "still runs in a
+browser tab" and points at M5 to revisit them. The stack move removed the browser
+before M0 shipped, and there is no M5 to revisit anything — this is a Compose window,
+`⌘T` and `⌘W` reach it, and nothing else wants them. Both are ordinary shortcuts here.
+
+**`Cmd/Ctrl+Shift+F` focuses the key search only.** The schema tree has no search box
+to focus. Adding one is not in this milestone's included scope, and a chord that
+sometimes does nothing is worse than one that is honestly described, so the reference
+window names it "Focus the key search" and says it is for Redis connections.
+
+**Nothing is registered while a dialog is open, and the list of dialogs is written out
+rather than inferred.** Compose renders a `Dialog` into a layer of its own, and whether
+a key event bubbles past it is an implementation detail this application should not be
+betting a `DELETE` on. The workspace enumerates every window and confirmation it can
+raise and declines every chord while one is up; the quit confirmation is checked in
+`Main`, because it is the one modal the workspace underneath cannot see.
+
+**The binding is dropped when the workspace leaves the composition.** Locking replaces
+the screen and keeps the window, and a handler that outlived it would put a connection
+switcher over the lock screen — the one surface in the application that must show
+nothing.
+
+**One table, read by everything.** `Shortcut` carries the key, the words, the group,
+and how the chord is spelled on each platform. The Run button's label, the tooltips,
+and the reference window all read it rather than restating it, because a help window
+is the one screen that can be wrong for a year without anyone noticing.
+
+### 4.5 — connection switcher
+
+**It is a palette, not an `AppDialog`.** Every other window in this application is a
+place you go — history, settings, the connection form — and is shaped like one. This is
+a chord, three letters, and Enter, and it is over in a second.
+
+**Enter on a freshly opened switcher never lands on a production connection.** The
+saved list is ordered production first, deliberately, so that in a list you *read* the
+dangerous servers are never buried. This is a control you *act* in, where the identical
+ordering makes the default gesture dial production. The list order is kept — it is the
+sidebar's, and two orders would be one for the user to learn — and the preselection
+skips the red rows instead. Typing a name overrides it, and so does arrowing onto one:
+both are the user saying which server they mean. When every match is production nothing
+is preselected, and the footer says to type or use the arrows rather than leaving Enter
+looking broken.
+
+**Only the name is matched.** Substring rather than fuzzy, which the section permits,
+and over the name alone: a connection surfacing under a word that appears nowhere on
+its row reads as a bug, and the fix — printing the host on every row to explain the
+match — would cost the switcher the scannability it exists for. A name that begins with
+what was typed is promoted above one that merely contains it.
+
+**Focus is left as a request rather than taken.** The section asks that choosing move
+focus to the editor or browser it lands in, and the switcher cannot do that itself: it
+closes before that pane exists, because the connection may still be being dialled, and
+requesting focus on an unattached requester throws. `FocusRequest` is raised by the
+switcher and consumed by whichever pane turns up — once, so returning to a tab later
+does not pull the caret out of wherever the user has since put it.
+
 ## Completion checklist
 
 - [x] Query history is bounded, paged, filterable, reopenable, and clearable.
 - [x] SQL tabs retain their own connection, editor, query, and result state.
 - [x] Dirty/running tabs cannot be lost silently.
-- [ ] Required shortcuts work without breaking editor or dialog behavior.
-- [ ] Connection switching preserves production/read-only context.
+- [x] Required shortcuts work without breaking editor or dialog behavior.
+- [x] Connection switching preserves production/read-only context.
 - [ ] Errors are normalized and presented at the correct scope.
 - [ ] PostgreSQL error highlighting is accurate and never stale/misleading.
 - [ ] Every primary surface has intentional loading and empty states.

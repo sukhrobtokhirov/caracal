@@ -42,6 +42,7 @@ object Glyphs {
     const val SETTINGS = "🧰"
     const val APPEARANCE = "🎨"
     const val ABOUT = "💡"
+    const val SHORTCUTS = "🔣"
 
     // Schema objects.
     const val SCHEMA = "📁"

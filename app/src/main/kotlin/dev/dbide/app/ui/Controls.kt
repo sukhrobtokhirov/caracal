@@ -1,5 +1,8 @@
 package dev.dbide.app.ui
 
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.TooltipArea
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -20,6 +23,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -29,6 +33,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.RectangleShape
@@ -122,6 +128,11 @@ fun PaneHeader(
  * which is a touch target. In a 32dp header strip there is no room for it, and
  * three of them in a row is a header twice the height of the pane title it sits
  * beside.
+ *
+ * [tooltip] is §4.4's requirement that a chord be discoverable from the control it
+ * belongs to. It is offered rather than mandatory because most of these buttons have
+ * no chord, and a tooltip that repeats the label is a tooltip that teaches the user
+ * to ignore tooltips.
  */
 @Composable
 fun ToolButton(
@@ -131,6 +142,7 @@ fun ToolButton(
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
     emphasis: ToolEmphasis = ToolEmphasis.NORMAL,
+    tooltip: String? = null,
 ) {
     val color = when {
         !enabled -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
@@ -139,20 +151,62 @@ fun ToolButton(
         else -> MaterialTheme.colorScheme.onSurfaceVariant
     }
 
-    Box(
-        modifier = modifier
-            .clip(MaterialTheme.shapes.small)
-            .hoverHighlight(MaterialTheme.shapes.small, enabled = enabled)
-            .clickable(enabled = enabled, onClick = onClick)
-            .handCursor(enabled)
-            .padding(horizontal = Space.md, vertical = Space.sm)
-            .semantics { contentDescription = description },
-    ) {
-        Text(text = text, style = MaterialTheme.typography.labelMedium, color = color)
+    Tip(tooltip) {
+        Box(
+            modifier = modifier
+                .clip(MaterialTheme.shapes.small)
+                .hoverHighlight(MaterialTheme.shapes.small, enabled = enabled)
+                .clickable(enabled = enabled, onClick = onClick)
+                .handCursor(enabled)
+                .padding(horizontal = Space.md, vertical = Space.sm)
+                .semantics { contentDescription = description },
+        ) {
+            Text(text = text, style = MaterialTheme.typography.labelMedium, color = color)
+        }
     }
 }
 
 enum class ToolEmphasis { NORMAL, PRIMARY, DANGER }
+
+/**
+ * [content] with [text] under the pointer, or [content] alone when there is nothing
+ * to say.
+ *
+ * The wrapper disappears entirely when [text] is null rather than becoming an empty
+ * tooltip, because `TooltipArea` installs a pointer-input node and a popup of its
+ * own, and every `ToolButton` in the application goes through here.
+ *
+ * `TooltipArea` is Compose Desktop's own and is still marked experimental. Material's
+ * `TooltipBox` is the alternative and is a worse fit: it is built around a touch
+ * long-press as well as a hover, and it wants an anchor slot and a state object per
+ * button. This is one composable wrapping one Box, and if it changes shape it changes
+ * shape in one file.
+ */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun Tip(text: String?, content: @Composable () -> Unit) {
+    if (text == null) {
+        content()
+        return
+    }
+    TooltipArea(
+        tooltip = {
+            Surface(
+                shape = MaterialTheme.shapes.small,
+                color = Dbide.colors.chrome,
+                border = BorderStroke(Sizes.hairline, Dbide.colors.hairline),
+            ) {
+                Text(
+                    text = text,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.padding(horizontal = Space.md, vertical = Space.sm),
+                )
+            }
+        },
+        content = content,
+    )
+}
 
 /**
  * The theme control, in the shell and on the lock screen.
@@ -252,7 +306,10 @@ fun Modifier.handCursor(enabled: Boolean = true): Modifier =
  *
  * [onSubmit] is Enter, and it is handled as a preview so the key never reaches the
  * field as a character. [onKey] is for the console's history recall, which needs the
- * arrows before the field decides they move the caret.
+ * arrows before the field decides they move the caret — and for the connection
+ * switcher, which needs them before that for the same reason.
+ *
+ * [focus] is how a caller that opened this field with a chord puts the caret in it.
  */
 @Composable
 fun InlineField(
@@ -263,6 +320,7 @@ fun InlineField(
     placeholder: String = "",
     enabled: Boolean = true,
     monospace: Boolean = true,
+    focus: FocusRequester? = null,
     onSubmit: (() -> Unit)? = null,
     onKey: ((KeyEvent) -> Boolean)? = null,
 ) {
@@ -295,6 +353,7 @@ fun InlineField(
             cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
             modifier = Modifier
                 .fillMaxWidth()
+                .then(focus?.let { Modifier.focusRequester(it) } ?: Modifier)
                 .onPreviewKeyEvent { event ->
                     if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
                     if (onKey?.invoke(event) == true) return@onPreviewKeyEvent true

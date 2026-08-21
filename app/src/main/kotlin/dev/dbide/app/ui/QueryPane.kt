@@ -42,6 +42,8 @@ import dev.dbide.app.EditorViewModel
 import dev.dbide.app.ExportRun
 import dev.dbide.app.ExportText
 import dev.dbide.app.ExportViewModel
+import dev.dbide.app.FocusRequest
+import dev.dbide.app.Shortcuts
 import dev.dbide.core.export.ExportEligibility
 import java.awt.Cursor
 
@@ -52,8 +54,14 @@ import java.awt.Cursor
  * for it, and that switching tabs while a query runs does not move the query.
  */
 @Composable
-fun QueryPane(tab: EditorTab, onCopy: (String) -> Unit, modifier: Modifier = Modifier) {
-    QueryPane(tab.editor, tab.export, onCopy, modifier)
+fun QueryPane(
+    tab: EditorTab,
+    onCopy: (String) -> Unit,
+    modifier: Modifier = Modifier,
+    shortcuts: Shortcuts = remember { Shortcuts() },
+    focus: FocusRequest = remember { FocusRequest() },
+) {
+    QueryPane(tab.editor, tab.export, onCopy, modifier, shortcuts, focus)
 }
 
 /**
@@ -69,6 +77,8 @@ fun QueryPane(
     export: ExportViewModel,
     onCopy: (String) -> Unit,
     modifier: Modifier = Modifier,
+    shortcuts: Shortcuts = remember { Shortcuts() },
+    focus: FocusRequest = remember { FocusRequest() },
 ) {
     var fraction by remember { mutableFloatStateOf(DEFAULT_SPLIT) }
 
@@ -90,7 +100,12 @@ fun QueryPane(
     BoxWithConstraints(modifier = modifier.fillMaxSize()) {
         val height = constraints.maxHeight.toFloat()
         Column(modifier = Modifier.fillMaxSize()) {
-            SqlEditor(model, modifier = Modifier.weight(fraction))
+            SqlEditor(
+                model,
+                shortcuts = shortcuts,
+                focus = focus,
+                modifier = Modifier.weight(fraction),
+            )
             Splitter(
                 onDrag = { delta ->
                     if (height > 0) fraction = (fraction + delta / height).coerceIn(MIN_SPLIT, MAX_SPLIT)
