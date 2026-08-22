@@ -76,7 +76,7 @@ class RedisValueViewModelTest {
 
         // §3.5: the metadata is read fresh rather than taken from the scan page, so a
         // key with five seconds left shows a countdown rather than a fiction.
-        assertEquals(listOf("redisKey", "redisValue(hash)"), service.calls)
+        assertEquals(listOf("keyMetadata", "readValue(hash)"), service.calls)
     }
 
     @Test
@@ -324,7 +324,7 @@ class RedisValueViewModelTest {
 
         assertIs<ValueState.Missing>(model.state)
         // The value was never asked for: there is nothing to read.
-        assertEquals(listOf("redisKey"), service.calls)
+        assertEquals(listOf("keyMetadata"), service.calls)
     }
 
     @Test

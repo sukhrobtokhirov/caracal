@@ -3,7 +3,7 @@ package dev.caracal.app
 import dev.caracal.core.connections.ConnectionId
 import dev.caracal.core.connections.Environment
 import dev.caracal.core.policy.Acknowledgement
-import dev.caracal.core.redis.CommandClearance
+import dev.caracal.core.policy.CommandClearance
 import dev.caracal.engine.api.CommandConsent
 import dev.caracal.engine.api.TextValue
 import dev.caracal.core.result.DbError
@@ -87,7 +87,7 @@ class RedisConsoleViewModelTest {
 
         assertIs<ParsedLine.Invalid>(model.parsed)
         assertFalse(model.runnable)
-        assertTrue(service.calls.none { it.startsWith("redisCommand") })
+        assertTrue(service.calls.none { it.startsWith("runCommand") })
     }
 
     @Test

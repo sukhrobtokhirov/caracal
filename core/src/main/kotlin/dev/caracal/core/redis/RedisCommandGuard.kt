@@ -3,49 +3,9 @@ package dev.caracal.core.redis
 import dev.caracal.core.connections.ConnectionConfig
 import dev.caracal.core.connections.Environment
 import dev.caracal.core.policy.Acknowledgement
+import dev.caracal.core.policy.CommandClearance
 import dev.caracal.core.result.DbError
 import dev.caracal.engine.api.RawCommand
-
-/** What has to happen before a console command is sent. */
-sealed interface CommandClearance {
-    /** Send it. */
-    data object Granted : CommandClearance
-
-    /**
-     * Ask first, in these terms.
-     *
-     * [warning] says what the command does, because "are you sure?" above a command
-     * the user just typed adds nothing. Knowing that `SWAPDB` exchanges two whole
-     * databases might.
-     */
-    data class Confirm(
-        val command: String,
-        val acknowledgement: Acknowledgement,
-        val connectionName: String,
-        val environment: Environment,
-        val warning: String,
-    ) : CommandClearance {
-        /**
-         * The exact text the user must type, or `null` when a click is enough.
-         *
-         * §3.10 asks for the connection name *plus the command name*, and the second
-         * half is what makes it more than a formality: a phrase that is only the
-         * connection name is one a user learns and retypes by rote, and the command is
-         * the part that differs between the flush they meant and the flush they did
-         * not.
-         */
-        val phrase: String? = "$connectionName $command".takeIf { acknowledgement == Acknowledgement.TYPED }
-
-        /** Whether [typed] satisfies this confirmation. Trimmed, but not case-folded. */
-        fun satisfiedBy(typed: String): Boolean {
-            val phrase = phrase ?: return true
-            return typed.trim() == phrase
-        }
-    }
-
-    /** Do not send it. [error] is what to say, and carries whether an override could ever help. */
-    data class Refused(val error: DbError.CommandNotAllowed) : CommandClearance
-}
 
 /**
  * Decides whether a raw console command may be sent, and what the user must agree to

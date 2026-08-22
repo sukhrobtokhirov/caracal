@@ -28,8 +28,8 @@ import dev.caracal.core.history.HistoryScope
 import dev.caracal.core.history.cursor
 import dev.caracal.core.export.CsvOptions
 import dev.caracal.core.export.ExportLimits
-import dev.caracal.core.redis.CommandClearance
-import dev.caracal.core.redis.CommandConfirmationRequired
+import dev.caracal.core.policy.CommandClearance
+import dev.caracal.core.policy.CommandConfirmationRequired
 import dev.caracal.engine.api.CommandConsent
 import dev.caracal.engine.api.CommandResult
 import dev.caracal.engine.api.KeyMetadata
@@ -348,7 +348,7 @@ open class FakeConnectionService(
 
     // --- Redis, M3 -----------------------------------------------------------
 
-    /** What [redisScan] hands back. A test that cares sets it; most do not. */
+    /** What [scanKeys] hands back. A test that cares sets it; most do not. */
     var scanPage: ScanPage = ScanPage(
         cursor = ScanCursor.START,
         keys = emptyList(),
@@ -357,7 +357,7 @@ open class FakeConnectionService(
     )
 
     /**
-     * Pages [redisScan] hands back in order, one per call, before falling back to
+     * Pages [scanKeys] hands back in order, one per call, before falling back to
      * [scanPage].
      *
      * A queue rather than one page, because the behaviour §3.2 is most emphatic about
@@ -366,33 +366,33 @@ open class FakeConnectionService(
      */
     val scanPages = mutableListOf<ScanPage>()
 
-    /** The metadata [redisKey] answers with, for keys not on the current scan page. */
+    /** The metadata [keyMetadata] answers with, for keys not on the current scan page. */
     val keyMetadata = mutableMapOf<KeyRef, KeyMetadata>()
 
     /**
-     * Metadata [redisKey] answers with in order, one per call, before [keyMetadata].
+     * Metadata [keyMetadata] answers with in order, one per call, before [keyMetadata].
      *
      * For the one sequence that cannot be expressed as a fixed answer: a key that is a
      * string when it is opened and a list when the viewer looks again.
      */
     val metadataPages = mutableListOf<KeyMetadata>()
 
-    /** What [redisInfo] hands back. Restricted by default, which is the harder case. */
+    /** What [serverMetrics] hands back. Restricted by default, which is the harder case. */
     var serverInfo: ServerInfo = ServerInfo(restricted = true)
 
-    /** What [redisValue] hands back, or `null` to have it report a missing key. */
+    /** What [readValue] hands back, or `null` to have it report a missing key. */
     var valuePage: ValuePage? = null
 
-    /** Pages [redisValue] hands back in order, for asserting continuation. */
+    /** Pages [readValue] hands back in order, for asserting continuation. */
     val valuePages = mutableListOf<ValuePage>()
 
     /** Every value request made, so a test can prove which continuation was sent. */
     val valueRequests = mutableListOf<ValueRequest>()
 
-    /** Set to fail the next [redisValue] alone, leaving the metadata read intact. */
+    /** Set to fail the next [readValue] alone, leaving the metadata read intact. */
     var nextValueFailure: Throwable? = null
 
-    /** What [redisCommand] hands back when the guard is satisfied. */
+    /** What [runCommand] hands back when the guard is satisfied. */
     var commandResult: CommandResult = CommandResult(
         command = "PING",
         reply = CommandReply.Status("PONG"),
@@ -409,28 +409,28 @@ open class FakeConnectionService(
      */
     val consents = mutableListOf<CommandConsent>()
 
-    override suspend fun redisInfo(id: ConnectionId): ServerInfo {
-        calls += "redisInfo"
+    override suspend fun serverMetrics(id: ConnectionId): ServerInfo {
+        calls += "serverMetrics"
         await()
         requireUnlocked()
         return serverInfo
     }
 
-    override suspend fun redisScan(
+    override suspend fun scanKeys(
         id: ConnectionId,
         cursor: ScanCursor,
         match: String?,
         type: KeyType?,
         pageSize: Int?,
     ): ScanPage {
-        calls += "redisScan($cursor, $match, ${type?.wire})"
+        calls += "scanKeys($cursor, $match, ${type?.wire})"
         await()
         requireUnlocked()
         return if (scanPages.isEmpty()) scanPage else scanPages.removeAt(0)
     }
 
-    override suspend fun redisKey(id: ConnectionId, key: KeyRef): KeyMetadata {
-        calls += "redisKey"
+    override suspend fun keyMetadata(id: ConnectionId, key: KeyRef): KeyMetadata {
+        calls += "keyMetadata"
         await()
         requireUnlocked()
         if (metadataPages.isNotEmpty()) return metadataPages.removeAt(0)
@@ -439,8 +439,8 @@ open class FakeConnectionService(
             ?: KeyMetadata(key = key, type = null, ttl = Ttl.Gone, memory = MemoryEstimate.Absent)
     }
 
-    override suspend fun redisValue(id: ConnectionId, request: ValueRequest): ValuePage {
-        calls += "redisValue(${request.type.wire})"
+    override suspend fun readValue(id: ConnectionId, request: ValueRequest): ValuePage {
+        calls += "readValue(${request.type.wire})"
         valueRequests += request
         await()
         requireUnlocked()
@@ -453,12 +453,12 @@ open class FakeConnectionService(
             ?: throw DbException(DbError.KeyTypeChanged(expected = request.type.wire, actual = null))
     }
 
-    override suspend fun redisCommand(
+    override suspend fun runCommand(
         id: ConnectionId,
         command: RawCommand,
         consent: CommandConsent,
     ): CommandResult {
-        calls += "redisCommand(${command.label})"
+        calls += "runCommand(${command.label})"
         consents += consent
         await()
         requireUnlocked()

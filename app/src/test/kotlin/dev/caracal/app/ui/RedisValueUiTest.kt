@@ -147,7 +147,7 @@ class RedisValueUiTest {
             onNodeWithTag("value-more").performClick()
             waitForIdle()
 
-            assertEquals(2, service.calls.count { it.startsWith("redisValue") })
+            assertEquals(2, service.calls.count { it.startsWith("readValue") })
         }
 
     @Test

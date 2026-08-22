@@ -1,6 +1,8 @@
 package dev.caracal.core.redis
 
 import dev.caracal.core.connections.ConnectionConfig
+import dev.caracal.core.policy.CommandClearance
+import dev.caracal.core.policy.CommandConfirmationRequired
 import dev.caracal.core.result.DbError
 import dev.caracal.core.result.DbException
 import dev.caracal.core.result.asDbError
@@ -43,17 +45,6 @@ import kotlinx.coroutines.future.await
 import org.slf4j.LoggerFactory
 
 /**
- * Reported when a console command needs an acknowledgement that was not given.
- *
- * Carries the [clearance] so the UI can put the right question on screen — which
- * button, which phrase to type, and what the command actually does. Everything else
- * sees an ordinary [DbException] saying the command was not allowed, which is true.
- */
-class CommandConfirmationRequired(val clearance: CommandClearance.Confirm) : DbException(
-    DbError.CommandNotAllowed(message = clearance.warning, command = clearance.command),
-)
-
-/**
  * Browses one Redis server: bounded traversal, paged values, and a guarded console.
  *
  * The rule the whole of M3 is built around is here rather than stated anywhere else:
@@ -78,7 +69,9 @@ class RedisAdapter(
     private val connection: StatefulRedisConnection<ByteArray, ByteArray>,
     private val config: ConnectionConfig,
     private val redaction: Redaction = Redaction.NONE,
-    private val limits: KeyValueLimits = KeyValueLimits(),
+    /** Public because [dev.caracal.engine.api.KeyValueFacet] publishes it: a caller
+     *  that has to say what a page was cut at needs the number it was cut at. */
+    val limits: KeyValueLimits = KeyValueLimits(),
 ) {
     private val log = LoggerFactory.getLogger(RedisAdapter::class.java)
 

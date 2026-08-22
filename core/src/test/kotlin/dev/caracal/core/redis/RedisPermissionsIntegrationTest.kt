@@ -1,6 +1,7 @@
 package dev.caracal.core.redis
 
 import dev.caracal.core.connections.Secret
+import dev.caracal.core.policy.CommandConfirmationRequired
 import dev.caracal.core.result.DbException
 import dev.caracal.engine.api.MemoryEstimate
 import dev.caracal.engine.api.RawCommand

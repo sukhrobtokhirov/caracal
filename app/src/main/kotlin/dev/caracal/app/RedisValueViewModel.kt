@@ -358,12 +358,12 @@ class RedisValueViewModel(
     private suspend fun load(id: ConnectionId, key: KeyRef, from: LoadedValue?) {
         try {
             val metadata = if (from == null) {
-                service.redisKey(id, key).also { if (!it.settled()) return }
+                service.keyMetadata(id, key).also { if (!it.settled()) return }
             } else {
                 (state as? ValueState.Ready)?.metadata ?: return
             }
             val type = metadata.type ?: return
-            val page = service.redisValue(id, request(key, type, from))
+            val page = service.readValue(id, request(key, type, from))
             currentCoroutineContext().ensureActive()
             val value = from.append(page)
             state = ValueState.Ready(metadata, value)

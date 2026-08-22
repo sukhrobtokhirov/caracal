@@ -25,14 +25,19 @@ import kotlinx.coroutines.flow.StateFlow
  * if (session.engineId == EngineId("postgres")) { TransactionToolbar(...) }
  * ```
  *
- * The facets the SPI declares today are the ones backed by behaviour that ships:
- * [QueryFacet] and [CatalogFacet]. The spec's catalogue also names transaction,
- * mutation, explain, key-value, command, and metrics facets. Those are not here yet
- * and not because they were forgotten: four of them describe features the product
- * does not have, and the other two — Redis's key browser and console — have exactly
- * one consumer, which is the UI, and their shape is decided by what that UI needs.
- * Inventing it blind, one phase before the flip that would tell us, is the failure
- * mode §12 is about. They arrive in Phase 2, with a caller.
+ * The facets the SPI declares are the ones backed by behaviour that ships:
+ * [QueryFacet] and [CatalogFacet] for the SQL engines, and [KeyValueFacet],
+ * [CommandFacet] and [MetricsFacet] for the key-value one. The last three arrived in
+ * Phase 2 rather than Phase 1 because that is when they got a caller: their shape is
+ * decided entirely by what the key browser, the console and the dashboard need to
+ * draw, and declaring them a phase earlier would have meant guessing at a paged value
+ * model and a reply tree in the module nobody may change without touching every
+ * engine.
+ *
+ * The spec's catalogue also names transaction, mutation and explain facets. Those are
+ * still not here, for the reason §12 gives: there is no user-driven begin/commit, no
+ * editable grid, and no plan viewer, so all three would be interfaces with no
+ * implementation and no caller.
  */
 interface DatabaseSession : AutoCloseable {
     val engineId: EngineId

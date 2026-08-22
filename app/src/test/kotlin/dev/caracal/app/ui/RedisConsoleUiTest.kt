@@ -18,7 +18,7 @@ import dev.caracal.app.RedisConsoleViewModel
 import dev.caracal.core.connections.ConnectionId
 import dev.caracal.core.connections.Environment
 import dev.caracal.core.policy.Acknowledgement
-import dev.caracal.core.redis.CommandClearance
+import dev.caracal.core.policy.CommandClearance
 import dev.caracal.engine.api.CommandConsent
 import dev.caracal.engine.api.CommandResult
 import dev.caracal.engine.api.TextValues

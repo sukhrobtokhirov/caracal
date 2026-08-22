@@ -14,12 +14,14 @@ import dev.caracal.core.history.ExecutionRecord
 import dev.caracal.core.history.HistoryPage
 import dev.caracal.core.history.HistoryQuery
 import dev.caracal.core.history.HistoryScope
-import dev.caracal.core.postgres.PostgresCatalog
+import dev.caracal.engine.api.CatalogFacet
 import dev.caracal.engine.api.CommandConsent
+import dev.caracal.engine.api.CommandFacet
 import dev.caracal.engine.api.CommandResult
 import dev.caracal.engine.api.KeyMetadata
 import dev.caracal.engine.api.KeyType
-import dev.caracal.core.redis.RedisAdapter
+import dev.caracal.engine.api.KeyValueFacet
+import dev.caracal.engine.api.MetricsFacet
 import dev.caracal.engine.api.RawCommand
 import dev.caracal.engine.api.ScanCursor
 import dev.caracal.engine.api.KeyRef
@@ -31,6 +33,7 @@ import dev.caracal.core.postgres.PostgresConnectionConfig
 import dev.caracal.core.postgres.PostgresProbe
 import dev.caracal.core.redis.RedisSession
 import dev.caracal.core.registry.ConnectionRegistry
+import dev.caracal.core.registry.WrongEngineException
 import dev.caracal.core.result.QueryResult
 import dev.caracal.core.result.toFailure
 import dev.caracal.core.store.ConfigStore
@@ -182,7 +185,7 @@ interface ConnectionService {
      * working when the dashboard cannot be drawn — and an ACL that grants read access
      * and withholds `INFO` is the ordinary way to hand someone a production cache.
      */
-    suspend fun redisInfo(id: ConnectionId): ServerInfo
+    suspend fun serverMetrics(id: ConnectionId): ServerInfo
 
     /**
      * One page of an open Redis connection's keyspace, with each key's metadata.
@@ -192,7 +195,7 @@ interface ConnectionService {
      * selective pattern produces empty batches while the cursor advances, and only
      * [ScanPage.complete] means the traversal is over.
      */
-    suspend fun redisScan(
+    suspend fun scanKeys(
         id: ConnectionId,
         cursor: ScanCursor = ScanCursor.START,
         match: String? = null,
@@ -201,7 +204,7 @@ interface ConnectionService {
     ): ScanPage
 
     /** One key's type, TTL, and size estimate, read fresh. */
-    suspend fun redisKey(id: ConnectionId, key: KeyRef): KeyMetadata
+    suspend fun keyMetadata(id: ConnectionId, key: KeyRef): KeyMetadata
 
     /**
      * One page of one Redis value, in the shape its type has.
@@ -211,7 +214,7 @@ interface ConnectionService {
      * [dev.caracal.core.result.DbError.KeyTypeChanged] with the type it is now, rather
      * than a bare `WRONGTYPE`.
      */
-    suspend fun redisValue(id: ConnectionId, request: ValueRequest): ValuePage
+    suspend fun readValue(id: ConnectionId, request: ValueRequest): ValuePage
 
     /**
      * Runs a raw Redis command, once [dev.caracal.core.redis.RedisCommandGuard] is
@@ -223,7 +226,7 @@ interface ConnectionService {
      * question to put on screen; the guard is consulted inside `:core`, so a caller
      * cannot reach the server by declining to ask.
      */
-    suspend fun redisCommand(
+    suspend fun runCommand(
         id: ConnectionId,
         command: RawCommand,
         consent: CommandConsent = CommandConsent.None,
@@ -400,21 +403,21 @@ class DefaultConnectionService(
      * a stale tree is not permission to dial production again.
      */
     override suspend fun schemas(id: ConnectionId, includeSystem: Boolean): Listing<SchemaInfo> =
-        catalog(id).schemas(includeSystem)
+        facet<CatalogFacet>(id).schemas(includeSystem)
 
     /** The objects of one kind in one schema of an open PostgreSQL connection. */
     override suspend fun objects(
         id: ConnectionId,
         schema: String,
         kind: ObjectKind,
-    ): Listing<CatalogObject> = catalog(id).objects(schema, kind)
+    ): Listing<CatalogObject> = facet<CatalogFacet>(id).objects(schema, kind)
 
     /** The columns of one relation of an open PostgreSQL connection. */
     override suspend fun columns(
         id: ConnectionId,
         schema: String,
         relation: String,
-    ): List<ColumnInfo> = catalog(id).columns(schema, relation)
+    ): List<ColumnInfo> = facet<CatalogFacet>(id).columns(schema, relation)
 
     /**
      * Runs one statement on an open PostgreSQL connection.
@@ -426,7 +429,7 @@ class DefaultConnectionService(
      */
     override suspend fun execute(id: ConnectionId, sql: String): QueryResult {
         requireUnlocked()
-        val adapter = registry.postgres(id).adapter
+        val adapter = registry.postgresAdapter(id)
         val executedAt = clock()
         val started = TimeSource.Monotonic.markNow()
         try {
@@ -464,7 +467,7 @@ class DefaultConnectionService(
         limits: ExportLimits,
     ): CsvExportReport {
         requireUnlocked()
-        val adapter = registry.postgres(id).adapter
+        val adapter = registry.postgresAdapter(id)
         return CsvExport.writeToFile(destination) { out -> adapter.exportCsv(sql, out, options, limits) }
     }
 
@@ -523,49 +526,54 @@ class DefaultConnectionService(
         }
     }
 
-    // --- Redis, M3 -----------------------------------------------------------
+    // --- Key-value, M3 -------------------------------------------------------
     //
-    // Like the PostgreSQL catalog reads, none of these needs a decrypted password and
-    // all of them refuse a connection that is not open rather than dialing one: a
-    // stale key list is not permission to reconnect to production.
+    // Like the catalog reads, none of these needs a decrypted password and all of
+    // them refuse a connection that is not open rather than dialing one: a stale key
+    // list is not permission to reconnect to production.
 
-    override suspend fun redisInfo(id: ConnectionId): ServerInfo = redis(id).info()
+    override suspend fun serverMetrics(id: ConnectionId): ServerInfo = facet<MetricsFacet>(id).info()
 
-    override suspend fun redisScan(
+    override suspend fun scanKeys(
         id: ConnectionId,
         cursor: ScanCursor,
         match: String?,
         type: KeyType?,
         pageSize: Int?,
-    ): ScanPage = redis(id).scan(cursor = cursor, match = match, type = type, pageSize = pageSize)
+    ): ScanPage = facet<KeyValueFacet>(id).scan(cursor = cursor, match = match, type = type, pageSize = pageSize)
 
-    override suspend fun redisKey(id: ConnectionId, key: KeyRef): KeyMetadata = redis(id).metadata(key)
+    override suspend fun keyMetadata(id: ConnectionId, key: KeyRef): KeyMetadata =
+        facet<KeyValueFacet>(id).metadata(key)
 
-    override suspend fun redisValue(id: ConnectionId, request: ValueRequest): ValuePage =
-        redis(id).value(request)
+    override suspend fun readValue(id: ConnectionId, request: ValueRequest): ValuePage =
+        facet<KeyValueFacet>(id).value(request)
 
     /**
      * Runs a console command.
      *
-     * Not recorded in query history, and §3.9 is explicit about why: a Redis command's
+     * Not recorded in query history, and §3.9 is explicit about why: a command's
      * arguments are where its secrets are — `AUTH`, `CONFIG SET requirepass`, a session
      * token being written to a key — and a history that stored them would be a file of
      * credentials on disk. The console's own history stays in memory for the session.
      */
-    override suspend fun redisCommand(
+    override suspend fun runCommand(
         id: ConnectionId,
         command: RawCommand,
         consent: CommandConsent,
-    ): CommandResult = redis(id).execute(command, consent)
+    ): CommandResult = facet<CommandFacet>(id).execute(command, consent)
 
-    private suspend fun redis(id: ConnectionId): RedisAdapter {
+    /**
+     * One facet of an open connection, or [WrongEngineException].
+     *
+     * The whole of the engine dispatch, and it is a lookup rather than a `when`: an
+     * engine either provides a facet or it does not, and nothing here has to have
+     * heard of PostgreSQL or Redis to ask. Asking a key-value connection for a
+     * catalog fails exactly as it did when this was a typed accessor and with the
+     * same exception — what changed is that adding a third engine does not add an arm.
+     */
+    private suspend inline fun <reified F : Any> facet(id: ConnectionId): F {
         requireUnlocked()
-        return registry.redis(id).adapter
-    }
-
-    private suspend fun catalog(id: ConnectionId): PostgresCatalog {
-        requireUnlocked()
-        return registry.postgres(id).catalog
+        return registry.session(id).facet(F::class) ?: throw WrongEngineException()
     }
 
     private fun requireUnlocked() {

@@ -58,7 +58,7 @@ class RedisBrowserViewModelTest {
         stopped = stopped,
     )
 
-    private fun FakeConnectionService.scans() = calls.filter { it.startsWith("redisScan") }
+    private fun FakeConnectionService.scans() = calls.filter { it.startsWith("scanKeys") }
 
     @Test
     fun `an empty page does not end a traversal`() = runTest {
@@ -108,7 +108,7 @@ class RedisBrowserViewModelTest {
         model.loadMore()
         advanceUntilIdle()
 
-        assertEquals(listOf("redisScan(0, null, null)", "redisScan(512, null, null)"), service.scans())
+        assertEquals(listOf("scanKeys(0, null, null)", "scanKeys(512, null, null)"), service.scans())
         assertEquals(listOf("a", "b"), model.keys.map { it.key.text })
     }
 
@@ -147,7 +147,7 @@ class RedisBrowserViewModelTest {
         // A key deleted since the last page would otherwise stay on screen forever:
         // nothing in a SCAN result says a key is gone.
         assertEquals(listOf("b"), model.keys.map { it.key.text })
-        assertEquals("redisScan(0, null, null)", service.scans().last())
+        assertEquals("scanKeys(0, null, null)", service.scans().last())
     }
 
     @Test
@@ -165,7 +165,7 @@ class RedisBrowserViewModelTest {
         model.search()
         advanceUntilIdle()
 
-        assertEquals("redisScan(0, user:*, null)", service.scans().last())
+        assertEquals("scanKeys(0, user:*, null)", service.scans().last())
     }
 
     @Test
@@ -179,7 +179,7 @@ class RedisBrowserViewModelTest {
         model.filterBy(KeyType.HASH)
         advanceUntilIdle()
 
-        assertEquals("redisScan(0, null, hash)", service.scans().last())
+        assertEquals("scanKeys(0, null, hash)", service.scans().last())
     }
 
     @Test
@@ -201,7 +201,7 @@ class RedisBrowserViewModelTest {
 
         // Both filters, and the box as well as the applied pattern — leaving the text
         // in it would make the button look like it had done nothing.
-        assertEquals("redisScan(0, null, null)", service.scans().last())
+        assertEquals("scanKeys(0, null, null)", service.scans().last())
         assertEquals("", model.pattern)
         assertEquals("", model.appliedPattern)
         assertNull(model.typeFilter)

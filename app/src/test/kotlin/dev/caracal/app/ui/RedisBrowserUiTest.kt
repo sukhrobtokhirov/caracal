@@ -143,8 +143,8 @@ class RedisBrowserUiTest {
             onNodeWithTag("keys-load-more").performClick()
             waitForIdle()
 
-            assertTrue(service.calls.count { it.startsWith("redisScan") } >= 2)
-            assertTrue(service.calls.last { it.startsWith("redisScan") }.contains("88"))
+            assertTrue(service.calls.count { it.startsWith("scanKeys") } >= 2)
+            assertTrue(service.calls.last { it.startsWith("scanKeys") }.contains("88"))
         }
 
     @Test
@@ -190,7 +190,7 @@ class RedisBrowserUiTest {
 
             // Both the box and the traversal, so the browser is back where it started.
             assertEquals("", model.pattern)
-            assertEquals("redisScan(0, null, null)", service.calls.last { it.startsWith("redisScan") })
+            assertEquals("scanKeys(0, null, null)", service.calls.last { it.startsWith("scanKeys") })
             onNodeWithTag("keys-clear-filters").assertDoesNotExist()
         }
 
@@ -222,8 +222,8 @@ class RedisBrowserUiTest {
             waitForIdle()
 
             assertEquals(
-                "redisScan(0, session:*, null)",
-                service.calls.last { it.startsWith("redisScan") },
+                "scanKeys(0, session:*, null)",
+                service.calls.last { it.startsWith("scanKeys") },
             )
         }
 }

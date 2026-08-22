@@ -13,12 +13,15 @@ import dev.caracal.core.connections.RuntimeState
 import dev.caracal.core.connections.RuntimeStatus
 import dev.caracal.core.connections.Secret
 import dev.caracal.core.postgres.PostgresAdapter
-import dev.caracal.core.postgres.PostgresConnectionConfig
-import dev.caracal.core.postgres.PostgresSession
-import dev.caracal.core.redis.RedisSession
 import dev.caracal.core.result.DbError
 import dev.caracal.core.result.DbException
 import dev.caracal.core.result.asDbError
+import dev.caracal.engine.api.DatabaseEngine
+import dev.caracal.engine.api.DatabaseSession
+import dev.caracal.engine.api.SessionPolicy
+import dev.caracal.engine.postgres.PostgresEngine
+import dev.caracal.engine.postgres.PostgresEngineSession
+import dev.caracal.engine.redis.RedisEngine
 import java.security.MessageDigest
 import java.time.Instant
 import kotlin.time.Duration
@@ -29,18 +32,6 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
-
-/** The open client for one connection. The engine travels with it, so a
- *  PostgreSQL request can never reach a Redis client by mistake. */
-private sealed interface RuntimeClient : AutoCloseable {
-    class Postgres(val session: PostgresSession) : RuntimeClient {
-        override fun close() = session.close()
-    }
-
-    class Redis(val session: RedisSession) : RuntimeClient {
-        override fun close() = session.close()
-    }
-}
 
 /** Reported when a request needs a client that is not established. */
 class NotOpenException :
@@ -75,7 +66,7 @@ class ConnectionRegistry(
         var lastError: String? = null
         var openedAt: Instant? = null
         var fingerprint: String? = null
-        var client: RuntimeClient? = null
+        var client: DatabaseSession? = null
 
         fun state() = RuntimeState(status = status, lastError = lastError, openedAt = openedAt)
     }
@@ -106,15 +97,11 @@ class ConnectionRegistry(
             }
 
             val client = try {
-                when (config.engine) {
-                    Engine.POSTGRES -> RuntimeClient.Postgres(
-                        PostgresSession.open(
-                            config = PostgresConnectionConfig.of(config, password),
-                            statementTimeout = statementTimeout,
-                        ),
-                    )
-                    Engine.REDIS -> RuntimeClient.Redis(RedisSession.open(config, password))
-                }
+                engineFor(config.engine).connect(
+                    descriptor = config.toDescriptor(),
+                    secrets = config.secretBundle(password),
+                    policy = SessionPolicy(readOnly = config.readOnly, statementTimeout = statementTimeout),
+                )
             } catch (cancellation: CancellationException) {
                 stateLock.withLock { entry.reset(RuntimeStatus.CLOSED) }
                 throw cancellation
@@ -190,19 +177,31 @@ class ConnectionRegistry(
     suspend fun states(): Map<ConnectionId, RuntimeState> =
         stateLock.withLock { entries.mapValues { (_, entry) -> entry.state() } }
 
-    /** The open PostgreSQL session for a connection. M2 reads through this. */
-    suspend fun postgres(id: ConnectionId): PostgresSession =
-        when (val client = openClient(id)) {
-            is RuntimeClient.Postgres -> client.session
-            else -> throw WrongEngineException()
-        }
+    /**
+     * The open session for a connection, as the SPI sees it.
+     *
+     * The one accessor, and everything the UI reaches is a facet off it. There used
+     * to be two typed ones — `postgres(id)` and `redis(id)` — and their loss is the
+     * point of Phase 2: a caller that could ask for a `RedisSession` was a caller
+     * that had to know which engine it was talking to before it could ask anything.
+     */
+    suspend fun session(id: ConnectionId): DatabaseSession = openClient(id)
 
-    /** The open Redis session for a connection. M3 reads through this. */
-    suspend fun redis(id: ConnectionId): RedisSession =
-        when (val client = openClient(id)) {
-            is RuntimeClient.Redis -> client.session
-            else -> throw WrongEngineException()
-        }
+    /**
+     * The open PostgreSQL adapter, for the two calls no facet covers yet.
+     *
+     * `execute` and `exportCsv` still go through it, because [dev.caracal.engine.api.QueryFacet]
+     * streams outcomes and `:core` returns a whole `QueryResult` — reconciling those
+     * is a change to the result model, the error position mapping that rides on it,
+     * and every grid that reads one, which is not a change to make in the same phase
+     * as a module boundary. Phase 2 stops here on purpose and says so.
+     *
+     * It is not a hole in the boundary: `:core` may see engines, and this is `:core`.
+     * What must not compile against an engine is the UI, and the UI cannot reach
+     * this.
+     */
+    suspend fun postgresAdapter(id: ConnectionId): PostgresAdapter =
+        (openClient(id) as? PostgresEngineSession)?.adapter ?: throw WrongEngineException()
 
     /** Releases every client. Called when the vault locks and at shutdown. */
     suspend fun closeAll() {
@@ -210,7 +209,12 @@ class ConnectionRegistry(
         ids.forEach { close(it) }
     }
 
-    private suspend fun openClient(id: ConnectionId): RuntimeClient = stateLock.withLock {
+    private fun engineFor(engine: Engine): DatabaseEngine = when (engine) {
+        Engine.POSTGRES -> PostgresEngine
+        Engine.REDIS -> RedisEngine
+    }
+
+    private suspend fun openClient(id: ConnectionId): DatabaseSession = stateLock.withLock {
         val entry = entries[id] ?: throw NotOpenException()
         if (entry.status != RuntimeStatus.OPEN) throw NotOpenException()
         entry.client ?: throw NotOpenException()

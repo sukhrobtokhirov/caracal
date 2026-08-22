@@ -4,6 +4,11 @@ import dev.caracal.core.registry.ConnectionRegistry
 import dev.caracal.core.result.DbError
 import dev.caracal.core.result.DbException
 import dev.caracal.core.store.ConfigStore
+import dev.caracal.engine.api.CatalogFacet
+import dev.caracal.engine.api.KeyValueFacet
+import dev.caracal.engine.api.facet
+import dev.caracal.engine.postgres.PostgresEngine
+import dev.caracal.engine.redis.RedisEngine
 import dev.caracal.core.vault.KdfParams
 import dev.caracal.core.vault.Vault
 import java.nio.file.Path
@@ -12,6 +17,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.AfterAll
@@ -137,10 +143,17 @@ class ConnectionManagerIntegrationTest {
             session.service.open(pg.id)
             session.service.open(rd.id)
 
-            assertTrue(session.registry.postgres(pg.id).activeConnections >= 0)
-            assertEquals("PONG", session.registry.redis(rd.id).ping())
-            assertThrows<DbException> { runBlocking { session.registry.redis(pg.id) } }
-            assertThrows<DbException> { runBlocking { session.registry.postgres(rd.id) } }
+            // Each session answers for its own engine and provides its own facets,
+            // and asking one for the other's returns null rather than a surprise.
+            // That is the whole of the confusion this test is about, now that there
+            // is one accessor instead of two typed ones.
+            assertEquals(PostgresEngine.ID, session.registry.session(pg.id).engineId)
+            assertEquals(RedisEngine.ID, session.registry.session(rd.id).engineId)
+            assertNotNull(session.registry.session(pg.id).facet<CatalogFacet>())
+            assertNull(session.registry.session(pg.id).facet<KeyValueFacet>())
+            assertNotNull(session.registry.session(rd.id).facet<KeyValueFacet>())
+            assertNull(session.registry.session(rd.id).facet<CatalogFacet>())
+            assertThrows<DbException> { runBlocking { session.registry.postgresAdapter(rd.id) } }
         }
     }
 
@@ -299,7 +312,7 @@ class ConnectionManagerIntegrationTest {
             session.service.lock()
 
             assertEquals(RuntimeStatus.CLOSED, session.registry.state(view.id).status)
-            assertThrows<DbException> { runBlocking { session.registry.postgres(view.id) } }
+            assertThrows<DbException> { runBlocking { session.registry.session(view.id) } }
         }
     }
 

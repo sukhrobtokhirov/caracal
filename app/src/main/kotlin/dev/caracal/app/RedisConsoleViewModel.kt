@@ -6,8 +6,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.toMutableStateList
 import dev.caracal.core.connections.ConnectionId
 import dev.caracal.core.connections.ConnectionService
-import dev.caracal.core.redis.CommandClearance
-import dev.caracal.core.redis.CommandConfirmationRequired
+import dev.caracal.core.policy.CommandClearance
+import dev.caracal.core.policy.CommandConfirmationRequired
 import dev.caracal.engine.api.CommandConsent
 import dev.caracal.engine.api.CommandResult
 import dev.caracal.engine.api.CommandLine
@@ -226,7 +226,7 @@ class RedisConsoleViewModel(
         lateinit var mine: Job
         mine = scope.launch {
             try {
-                val result = service.redisCommand(id, command, consent)
+                val result = service.runCommand(id, command, consent)
                 record(ConsoleEntry(++sequence, result.command, result = result))
                 line = ""
                 parsed = ParsedLine.Empty

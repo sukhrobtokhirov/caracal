@@ -6,6 +6,7 @@ import dev.caracal.core.connections.Engine
 import dev.caracal.core.connections.Environment
 import dev.caracal.core.connections.TlsMode
 import dev.caracal.core.policy.Acknowledgement
+import dev.caracal.core.policy.CommandClearance
 import dev.caracal.core.result.DbError
 import dev.caracal.engine.api.CommandLine
 import dev.caracal.engine.api.RawCommand

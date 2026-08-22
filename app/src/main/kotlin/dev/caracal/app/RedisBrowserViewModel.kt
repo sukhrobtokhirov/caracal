@@ -323,7 +323,7 @@ class RedisBrowserViewModel(
             var page: ScanPage
             try {
                 while (true) {
-                    page = service.redisScan(
+                    page = service.scanKeys(
                         id = id,
                         cursor = from,
                         match = appliedPattern.takeIf { it.isNotBlank() },

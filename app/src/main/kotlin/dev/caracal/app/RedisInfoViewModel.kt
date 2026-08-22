@@ -82,7 +82,7 @@ class RedisInfoViewModel(
         state = InfoState.Loading
         job = scope.launch {
             state = try {
-                InfoState.Ready(service.redisInfo(id)).also { readAt = System.currentTimeMillis() }
+                InfoState.Ready(service.serverMetrics(id)).also { readAt = System.currentTimeMillis() }
             } catch (cancellation: CancellationException) {
                 throw cancellation
             } catch (problem: Throwable) {

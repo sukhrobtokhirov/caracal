@@ -1,9 +1,12 @@
 package dev.caracal.core.redis
 
 import dev.caracal.core.connections.Environment
+import dev.caracal.core.policy.CommandConfirmationRequired
 import dev.caracal.core.result.DbError
 import dev.caracal.core.result.DbException
+import dev.caracal.core.result.asDbError
 import dev.caracal.engine.api.CommandConsent
+import dev.caracal.engine.api.InvalidRequestException
 import dev.caracal.engine.api.CommandReply
 import dev.caracal.engine.api.Elision
 import dev.caracal.engine.api.KeyValueLimits
@@ -311,8 +314,12 @@ class RedisConsoleIntegrationTest {
     @Test
     fun `a command with nothing in it is refused before anything is sent`() = runBlocking {
         RedisFixture.session(db).use { session ->
-            val failure = assertThrows<DbException> { RawCommand.of(emptyList()) }
-            assertIs<DbError.InvalidRequest>(failure.error)
+            // Raised by the SPI, which cannot see DbError, and classified back by
+            // `:core` — so the assertion is on the classification rather than on the
+            // exception type. What must not change is that this is an invalid
+            // request and not a failed one: nothing was sent.
+            val failure = assertThrows<InvalidRequestException> { RawCommand.of(emptyList()) }
+            assertIs<DbError.InvalidRequest>(failure.asDbError())
             // And the session is untouched by it.
             assertEquals("PONG", session.adapter.execute(RawCommand.of("PING")).reply.text)
         }

@@ -1,9 +1,10 @@
 package dev.caracal.engine.redis
 
 import dev.caracal.core.policy.Acknowledgement
-import dev.caracal.core.redis.CommandConfirmationRequired
+import dev.caracal.core.policy.CommandConfirmationRequired
 import dev.caracal.engine.api.CommandLine
 import dev.caracal.core.redis.RedisFixture
+import dev.caracal.engine.api.CommandFacet
 import dev.caracal.engine.api.ConnectionDescriptor
 import dev.caracal.engine.api.ConnectionId
 import dev.caracal.engine.api.ConnectionTarget
@@ -13,6 +14,7 @@ import dev.caracal.engine.api.QueryFacet
 import dev.caracal.engine.api.SecretBundle
 import dev.caracal.engine.api.SessionPolicy
 import dev.caracal.engine.api.SessionState
+import dev.caracal.engine.api.requireFacet
 import dev.caracal.engine.api.facet
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -77,10 +79,10 @@ class RedisEngineIntegrationTest {
         // matters most — so the assertion goes through a session that was opened from
         // a descriptor rather than through the guard directly.
         connect(environment = Environment.PROD).use { session ->
-            val adapter = (session as RedisEngineSession).adapter
+            val console = session.requireFacet<CommandFacet>()
 
             val refusal = assertFailsWith<CommandConfirmationRequired> {
-                adapter.execute(CommandLine.command("FLUSHDB"))
+                console.execute(CommandLine.command("FLUSHDB"))
             }
 
             assertEquals(Acknowledgement.TYPED, refusal.clearance.acknowledgement)
@@ -90,10 +92,10 @@ class RedisEngineIntegrationTest {
     @Test
     fun `a development connection asks for a click instead of a phrase`() = runBlocking {
         connect(environment = Environment.DEV).use { session ->
-            val adapter = (session as RedisEngineSession).adapter
+            val console = session.requireFacet<CommandFacet>()
 
             val refusal = assertFailsWith<CommandConfirmationRequired> {
-                adapter.execute(CommandLine.command("FLUSHDB"))
+                console.execute(CommandLine.command("FLUSHDB"))
             }
 
             assertEquals(Acknowledgement.CLICK, refusal.clearance.acknowledgement)

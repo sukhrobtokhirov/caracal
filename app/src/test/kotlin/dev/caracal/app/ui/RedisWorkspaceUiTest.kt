@@ -150,6 +150,6 @@ class RedisWorkspaceUiTest {
 
             // A closed connection is not reopened to fill a panel: the user closed it.
             onNodeWithTag("redis-browser").assertDoesNotExist()
-            assert(service.calls.none { it.startsWith("redisScan") })
+            assert(service.calls.none { it.startsWith("scanKeys") })
         }
 }

@@ -50,6 +50,12 @@ class PostgresEngineSession internal constructor(
 
     override val state: StateFlow<SessionState> = mutableState.asStateFlow()
 
+    /**
+     * The PostgreSQL client itself, for the two `:core` calls no facet covers yet —
+     * `execute` and `exportCsv`. See `ConnectionRegistry.postgresAdapter`.
+     */
+    internal val adapter get() = session.adapter
+
     private val facets = listOf<Any>(
         PostgresQueryFacet(session.adapter),
         PostgresCatalogFacet(session.catalog),

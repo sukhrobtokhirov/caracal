@@ -123,12 +123,12 @@ class RedisInfoUiTest {
             val service = service(ServerInfo(version = "7.2.4"))
             dashboard(service)
 
-            assertEquals(1, service.calls.count { it == "redisInfo" })
+            assertEquals(1, service.calls.count { it == "serverMetrics" })
 
             onNodeWithTag("info-refresh").performClick()
             waitForIdle()
 
             // Twice, because it was asked twice. §3.8 has no polling in it.
-            assertEquals(2, service.calls.count { it == "redisInfo" })
+            assertEquals(2, service.calls.count { it == "serverMetrics" })
         }
 }
