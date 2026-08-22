@@ -12,14 +12,14 @@ import dev.caracal.core.connections.Environment
 import dev.caracal.core.connections.TlsMode
 import dev.caracal.core.history.ExecutionOutcome
 import dev.caracal.core.history.ExecutionRecord
-import dev.caracal.core.redis.KeyMetadata
-import dev.caracal.core.redis.KeyType
-import dev.caracal.core.redis.MemoryEstimate
-import dev.caracal.core.redis.RedisCursor
-import dev.caracal.core.redis.RedisKey
-import dev.caracal.core.redis.ScanPage
-import dev.caracal.core.redis.ScanStop
-import dev.caracal.core.redis.Ttl
+import dev.caracal.engine.api.KeyMetadata
+import dev.caracal.engine.api.KeyType
+import dev.caracal.engine.api.MemoryEstimate
+import dev.caracal.engine.api.ScanCursor
+import dev.caracal.engine.api.KeyRef
+import dev.caracal.engine.api.ScanPage
+import dev.caracal.engine.api.ScanStop
+import dev.caracal.engine.api.Ttl
 import dev.caracal.core.result.CellValue
 import dev.caracal.core.result.Column
 import dev.caracal.core.result.ColumnFormat
@@ -246,7 +246,7 @@ class ScaleTest {
 
     private fun keys(from: Int, count: Int) = (from until from + count).map { n ->
         KeyMetadata(
-            key = RedisKey("session:$n".toByteArray()),
+            key = KeyRef("session:$n".toByteArray()),
             type = KeyType.STRING,
             ttl = Ttl.Persistent,
             memory = MemoryEstimate.Bytes(64),
@@ -261,7 +261,7 @@ class ScaleTest {
         val service = FakeConnectionService(VaultState.UNLOCKED)
         repeat(pages) { page ->
             service.scanPages += ScanPage(
-                cursor = RedisCursor.of("${page + 1}"),
+                cursor = ScanCursor.of("${page + 1}"),
                 keys = keys(from = page * perPage, count = perPage),
                 iterations = 1,
                 stopped = ScanStop.PAGE_FULL,

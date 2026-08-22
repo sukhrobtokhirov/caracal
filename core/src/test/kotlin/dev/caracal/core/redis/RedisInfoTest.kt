@@ -1,5 +1,7 @@
 package dev.caracal.core.redis
 
+import dev.caracal.engine.api.DatabaseKeyspace
+import dev.caracal.engine.api.ServerInfo
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNull

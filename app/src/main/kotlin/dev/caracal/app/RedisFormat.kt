@@ -1,8 +1,8 @@
 package dev.caracal.app
 
-import dev.caracal.core.redis.MemoryEstimate
-import dev.caracal.core.redis.RedisText
-import dev.caracal.core.redis.Ttl
+import dev.caracal.engine.api.MemoryEstimate
+import dev.caracal.engine.api.TextValue
+import dev.caracal.engine.api.Ttl
 import kotlin.time.Duration
 
 /**
@@ -98,13 +98,13 @@ object RedisFormat {
      * Never a lossy decode: a value that is not text is hexadecimal, prefixed so it
      * cannot be mistaken for a name that happens to be digits.
      */
-    fun text(text: RedisText): String = when (text) {
-        is RedisText.Utf8 -> text.value
-        is RedisText.Binary -> "0x${text.hex}"
+    fun text(text: TextValue): String = when (text) {
+        is TextValue.Utf8 -> text.value
+        is TextValue.Binary -> "0x${text.hex}"
     }
 
     /** The one-line form: a single line of it, clipped, for a row that has one line. */
-    fun oneLine(text: RedisText, limit: Int = 120): String {
+    fun oneLine(text: TextValue, limit: Int = 120): String {
         val whole = text(text).replace(NEWLINES, "⏎")
         return if (whole.length <= limit) whole else whole.take(limit - 1) + "…"
     }

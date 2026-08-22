@@ -1,5 +1,6 @@
 package dev.caracal.core.result
 
+import dev.caracal.engine.api.InvalidRequestException
 import kotlin.time.Duration
 
 /**
@@ -231,5 +232,10 @@ open class DbException(val error: DbError, cause: Throwable? = null) : Exception
  * The classified error behind any failure. Adapters always throw [DbException], so
  * the fallback is for a caller that has caught something else entirely.
  */
-fun Throwable.asDbError(): DbError =
-    (this as? DbException)?.error ?: DbError.ConnectionFailed()
+fun Throwable.asDbError(): DbError = when (this) {
+    is DbException -> error
+    // Raised in `:engine-api`, where `DbError` is not visible. Same case, same
+    // sentence: the classification is unchanged by the throw site having moved.
+    is InvalidRequestException -> DbError.InvalidRequest(message)
+    else -> DbError.ConnectionFailed()
+}

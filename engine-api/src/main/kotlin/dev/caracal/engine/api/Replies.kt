@@ -1,6 +1,15 @@
-package dev.caracal.core.redis
+package dev.caracal.engine.api
 
 import kotlin.time.Duration
+
+/*
+ * A command reply and what it cost, moved here from `dev.caracal.core.redis`.
+ *
+ * `CommandFacet` returns these, and the console draws them, so they belong to
+ * neither. `RedisReply` became [CommandReply] on the way; the shapes are RESP's and
+ * are unchanged, including the [CommandReply.Elided] arm that is left where the
+ * budget stopped so a short list cannot be read as a complete one.
+ */
 
 /** Why part of a reply is not here. */
 enum class Elision(val message: String) {
@@ -21,7 +30,7 @@ enum class Elision(val message: String) {
  * becomes an object, and [Elided] is left where it was, so a reader can see that
  * something was there rather than reading a short list as a complete one.
  */
-sealed interface RedisReply {
+sealed interface CommandReply {
 
     /**
      * The text of this reply, when it has one.
@@ -40,9 +49,9 @@ sealed interface RedisReply {
         }
 
     /** RESP's null, in any of its spellings. */
-    data object Nil : RedisReply
+    data object Nil : CommandReply
 
-    data class Integer(val value: Long) : RedisReply
+    data class Integer(val value: Long) : CommandReply
 
     /**
      * A RESP3 double, kept as the server's own text.
@@ -51,9 +60,9 @@ sealed interface RedisReply {
      * its last digit, on a value someone is reading precisely because they want to
      * know what it is.
      */
-    data class Decimal(val value: String) : RedisReply
+    data class Decimal(val value: String) : CommandReply
 
-    data class Bool(val value: Boolean) : RedisReply
+    data class Bool(val value: Boolean) : CommandReply
 
     /**
      * A simple string — `+OK`, `+PONG`. Always short, always text.
@@ -65,10 +74,10 @@ sealed interface RedisReply {
      * `"OK"` for the other — so a caller that wants the text of a reply should ask
      * for the text rather than match on the case.
      */
-    data class Status(val value: String) : RedisReply
+    data class Status(val value: String) : CommandReply
 
     /** A bulk string, which may be binary and may be clipped. */
-    data class Bulk(val value: RedisText) : RedisReply
+    data class Bulk(val value: TextValue) : CommandReply
 
     /**
      * An error reply.
@@ -77,19 +86,19 @@ sealed interface RedisReply {
      * arrays with errors *inside* them, so an error is a thing a reply can contain
      * and not only a thing a reply can be.
      */
-    data class Failure(val message: String) : RedisReply
+    data class Failure(val message: String) : CommandReply
 
     /** An array, set, map, or push reply. [kind] is only a label for the viewer. */
     data class Items(
         val kind: Kind,
-        val items: List<RedisReply>,
+        val items: List<CommandReply>,
         val truncated: Boolean = false,
-    ) : RedisReply {
+    ) : CommandReply {
         enum class Kind { ARRAY, MAP, SET, PUSH }
     }
 
     /** What the limits stopped this build from keeping, left where it was. */
-    data class Elided(val reason: Elision) : RedisReply
+    data class Elided(val reason: Elision) : CommandReply
 }
 
 /**
@@ -102,7 +111,7 @@ sealed interface RedisReply {
  */
 data class CommandResult(
     val command: String,
-    val reply: RedisReply,
+    val reply: CommandReply,
     val duration: Duration,
     /** Whether any budget was reached anywhere in [reply]. */
     val truncated: Boolean,

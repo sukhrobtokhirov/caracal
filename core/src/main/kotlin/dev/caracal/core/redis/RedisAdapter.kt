@@ -3,10 +3,34 @@ package dev.caracal.core.redis
 import dev.caracal.core.connections.ConnectionConfig
 import dev.caracal.core.result.DbError
 import dev.caracal.core.result.DbException
+import dev.caracal.core.result.asDbError
 import dev.caracal.core.text.Redaction
+import dev.caracal.engine.api.CommandConsent
+import dev.caracal.engine.api.CommandReply
+import dev.caracal.engine.api.CommandResult
+import dev.caracal.engine.api.FieldEntry
+import dev.caracal.engine.api.IndexedElement
+import dev.caracal.engine.api.InvalidRequestException
+import dev.caracal.engine.api.KeyMetadata
+import dev.caracal.engine.api.KeyRef
+import dev.caracal.engine.api.KeyType
+import dev.caracal.engine.api.KeyValueLimits
+import dev.caracal.engine.api.MemoryEstimate
+import dev.caracal.engine.api.RawCommand
+import dev.caracal.engine.api.ScanCursor
+import dev.caracal.engine.api.ScanPage
+import dev.caracal.engine.api.ScanStop
+import dev.caracal.engine.api.ScoredMember
+import dev.caracal.engine.api.ServerInfo
+import dev.caracal.engine.api.StreamEntry
+import dev.caracal.engine.api.TextValue
+import dev.caracal.engine.api.TextValues
+import dev.caracal.engine.api.Ttl
+import dev.caracal.engine.api.ValuePage
+import dev.caracal.engine.api.ValueRequest
 import io.lettuce.core.RedisFuture
 import io.lettuce.core.ScanArgs
-import io.lettuce.core.ScanCursor
+import io.lettuce.core.ScanCursor as LettuceCursor
 import io.lettuce.core.api.StatefulRedisConnection
 import io.lettuce.core.codec.ByteArrayCodec
 import io.lettuce.core.protocol.CommandArgs
@@ -42,7 +66,7 @@ class CommandConfirmationRequired(val clearance: CommandClearance.Confirm) : DbE
  * The other half of that rule is that the *loop* is bounded too. Replacing `KEYS`
  * with `SCAN` only helps if the client stops scanning: a `SCAN` loop run to
  * completion over a keyspace nothing matches in is `KEYS` with extra round trips.
- * [RedisLimits] is where every one of those bounds lives.
+ * [KeyValueLimits] is where every one of those bounds lives.
  *
  * Unlike [dev.caracal.core.postgres.PostgresAdapter], this class *is* the read-only
  * boundary. PostgreSQL can be told to refuse writes itself; Redis cannot, short of
@@ -54,7 +78,7 @@ class RedisAdapter(
     private val connection: StatefulRedisConnection<ByteArray, ByteArray>,
     private val config: ConnectionConfig,
     private val redaction: Redaction = Redaction.NONE,
-    private val limits: RedisLimits = RedisLimits(),
+    private val limits: KeyValueLimits = KeyValueLimits(),
 ) {
     private val log = LoggerFactory.getLogger(RedisAdapter::class.java)
 
@@ -99,7 +123,7 @@ class RedisAdapter(
      * *page*, which is a different thing — [ScanPage.stopped] says which happened.
      */
     suspend fun scan(
-        cursor: RedisCursor = RedisCursor.START,
+        cursor: ScanCursor = ScanCursor.START,
         match: String? = null,
         type: KeyType? = null,
         count: Int? = null,
@@ -114,7 +138,7 @@ class RedisAdapter(
         // Insertion-ordered and content-keyed: Redis returns duplicates whenever the
         // hash table resizes mid-traversal, and a page that listed the same key twice
         // would look like a data problem rather than a documented property of SCAN.
-        val collected = LinkedHashSet<RedisKey>()
+        val collected = LinkedHashSet<KeyRef>()
         var current = cursor
         var iterations = 0
         val started = TimeSource.Monotonic.markNow()
@@ -137,10 +161,10 @@ class RedisAdapter(
                 break
             }
 
-            val batch = async.scan(ScanCursor.of(current.value), args).await()
+            val batch = async.scan(LettuceCursor.of(current.value), args).await()
             iterations++
-            batch.keys.forEach { collected += RedisKey(it, limits) }
-            current = RedisCursor.of(batch.cursor)
+            batch.keys.forEach { collected += KeyRef(it, limits) }
+            current = ScanCursor.of(batch.cursor)
             if (current.isComplete) {
                 stopped = ScanStop.COMPLETE
                 break
@@ -180,7 +204,7 @@ class RedisAdapter(
      * and so the value viewer can find out that its key has gone without the browser
      * having to notice first.
      */
-    suspend fun metadata(key: RedisKey): KeyMetadata = command { metadata(listOf(key)).single() }
+    suspend fun metadata(key: KeyRef): KeyMetadata = command { metadata(listOf(key)).single() }
 
     /**
      * §3.3: `TYPE`, `TTL`, and `MEMORY USAGE` for a page of keys, pipelined.
@@ -201,7 +225,7 @@ class RedisAdapter(
      * `MEMORY USAGE` refused by an ACL fails only its own future — so a restricted
      * user browses with a blank memory column instead of a broken page.
      */
-    private suspend fun metadata(keys: List<RedisKey>): List<KeyMetadata> {
+    private suspend fun metadata(keys: List<KeyRef>): List<KeyMetadata> {
         if (keys.isEmpty()) return emptyList()
         val perBatch = maxOf(1, limits.pipelineBatch / COMMANDS_PER_KEY)
         return keys.chunked(perBatch).flatMap { batch ->
@@ -257,7 +281,7 @@ class RedisAdapter(
         }
     }
 
-    private suspend fun currentType(key: RedisKey): KeyType? {
+    private suspend fun currentType(key: KeyRef): KeyType? {
         val name = async.type(key.bytes).await()?.trim()?.lowercase()
         return if (name == null || name == MISSING_TYPE) null else KeyType.of(name)
     }
@@ -268,9 +292,9 @@ class RedisAdapter(
      * `STRLEN` then `GETRANGE`, never `GET`: a `GET` on a 512 MB value transfers 512
      * MB whatever the client intends to display. The offsets are byte offsets because
      * that is what `GETRANGE` takes and because a Redis string has no characters to
-     * count — [RedisBytes] is what decides whether the window happens to be text.
+     * count — [TextValues] is what decides whether the window happens to be text.
      *
-     * [RedisLimits.stringMaxBytes] is the hard stop §3.6 asks for, and it is reported
+     * [KeyValueLimits.stringMaxBytes] is the hard stop §3.6 asks for, and it is reported
      * through [ValuePage.Text.cappedAt] rather than applied quietly. A value silently
      * cut at four megabytes looks exactly like a value that was four megabytes.
      */
@@ -286,7 +310,7 @@ class RedisAdapter(
         if (end <= offset) {
             return ValuePage.Text(
                 key = request.key,
-                content = RedisText.Utf8("", byteCount = length.toInt(), truncated = length > 0),
+                content = TextValue.Utf8("", byteCount = length.toInt(), truncated = length > 0),
                 offset = offset.toInt(),
                 nextOffset = null,
                 length = length.toInt(),
@@ -299,7 +323,7 @@ class RedisAdapter(
         val chunk = async.getrange(bytes, offset, end - 1).await() ?: ByteArray(0)
         return ValuePage.Text(
             key = request.key,
-            content = RedisBytes.window(chunk, total = length.toInt(), limit = chunk.size),
+            content = TextValues.window(chunk, total = length.toInt(), limit = chunk.size),
             offset = offset.toInt(),
             // An empty chunk would otherwise hand back the offset it was given: the
             // key deleted between the STRLEN and the GETRANGE leaves "Show more"
@@ -314,7 +338,7 @@ class RedisAdapter(
     private suspend fun readHash(request: ValueRequest): ValuePage.Fields {
         val page = async.hscan(
             request.key.bytes,
-            ScanCursor.of(request.cursor.value),
+            LettuceCursor.of(request.cursor.value),
             ScanArgs().limit(limits.entriesFor(request.limit).toLong()),
         ).await()
         val budget = ByteBudget(limits.responseBytes)
@@ -331,7 +355,7 @@ class RedisAdapter(
         return ValuePage.Fields(
             key = request.key,
             entries = entries,
-            cursor = RedisCursor.of(page.cursor),
+            cursor = ScanCursor.of(page.cursor),
             complete = page.isFinished,
             truncated = budget.exhausted || entries.size < page.map.size,
         )
@@ -340,7 +364,7 @@ class RedisAdapter(
     private suspend fun readSet(request: ValueRequest): ValuePage.Members {
         val page = async.sscan(
             request.key.bytes,
-            ScanCursor.of(request.cursor.value),
+            LettuceCursor.of(request.cursor.value),
             ScanArgs().limit(limits.entriesFor(request.limit).toLong()),
         ).await()
         val budget = ByteBudget(limits.responseBytes)
@@ -348,7 +372,7 @@ class RedisAdapter(
         return ValuePage.Members(
             key = request.key,
             members = members,
-            cursor = RedisCursor.of(page.cursor),
+            cursor = ScanCursor.of(page.cursor),
             complete = page.isFinished,
             truncated = budget.exhausted || members.size < page.values.size,
         )
@@ -436,7 +460,7 @@ class RedisAdapter(
             arguments = listOf(request.key.bytes) +
                 listOf(start, "+", "COUNT", size.toString()).map { it.toByteArray(Charsets.UTF_8) },
         )
-        val entries = (reply as? RedisReply.Items)?.items.orEmpty().mapNotNull { it.asStreamEntry() }
+        val entries = (reply as? CommandReply.Items)?.items.orEmpty().mapNotNull { it.asStreamEntry() }
         // A short page means the stream ended inside it — unless the reply budget cut
         // it short, which is a different thing entirely. Deciding on the count alone
         // read a budget-truncated page as the end of the stream: it reported
@@ -455,10 +479,10 @@ class RedisAdapter(
     }
 
     /** `[id, [field, value, ...]]`, which is `XRANGE`'s shape in both RESP versions. */
-    private fun RedisReply.asStreamEntry(): StreamEntry? {
-        val parts = (this as? RedisReply.Items)?.items ?: return null
+    private fun CommandReply.asStreamEntry(): StreamEntry? {
+        val parts = (this as? CommandReply.Items)?.items ?: return null
         val id = parts.getOrNull(0)?.asText()?.text ?: return null
-        val flat = (parts.getOrNull(1) as? RedisReply.Items)?.items.orEmpty()
+        val flat = (parts.getOrNull(1) as? CommandReply.Items)?.items.orEmpty()
         val fields = flat.chunked(2).mapNotNull { pair ->
             val field = pair.getOrNull(0)?.asText() ?: return@mapNotNull null
             FieldEntry(field = field, value = pair.getOrNull(1)?.asText() ?: EMPTY_TEXT)
@@ -466,16 +490,16 @@ class RedisAdapter(
         return StreamEntry(id = id, fields = fields)
     }
 
-    private fun RedisReply.asText(): RedisText? = when (this) {
-        is RedisReply.Bulk -> value
-        is RedisReply.Status -> RedisText.Utf8(value, value.toByteArray(Charsets.UTF_8).size)
-        is RedisReply.Integer -> RedisText.Utf8(value.toString(), value.toString().length)
+    private fun CommandReply.asText(): TextValue? = when (this) {
+        is CommandReply.Bulk -> value
+        is CommandReply.Status -> TextValue.Utf8(value, value.toByteArray(Charsets.UTF_8).size)
+        is CommandReply.Integer -> TextValue.Utf8(value.toString(), value.toString().length)
         else -> null
     }
 
-    private fun RedisReply.wasTruncated(): Boolean = when (this) {
-        is RedisReply.Elided -> true
-        is RedisReply.Items -> truncated || items.any { it.wasTruncated() }
+    private fun CommandReply.wasTruncated(): Boolean = when (this) {
+        is CommandReply.Elided -> true
+        is CommandReply.Items -> truncated || items.any { it.wasTruncated() }
         else -> false
     }
 
@@ -489,13 +513,13 @@ class RedisAdapter(
      * the question to ask; there is no way to opt out of asking, because the check is
      * here and not in the caller.
      *
-     * What is logged is the duration and [RedisCommand.label], and nothing else. §3.9
+     * What is logged is the duration and [RawCommand.label], and nothing else. §3.9
      * requires the arguments to stay out of the log at normal verbosity, and the
      * reason is one line long: `AUTH`, `CONFIG SET requirepass`, and `SET session:…`
      * are all commands whose arguments are the secret.
      */
     suspend fun execute(
-        command: RedisCommand,
+        command: RawCommand,
         consent: CommandConsent = CommandConsent.None,
     ): CommandResult {
         when (val clearance = RedisCommandGuard.clearanceFor(command, config)) {
@@ -525,14 +549,14 @@ class RedisAdapter(
     }
 
     /** Runs a command built here rather than typed, so no guard and no consent. */
-    private suspend fun dispatch(keyword: ProtocolKeyword, arguments: List<ByteArray>): RedisReply =
+    private suspend fun dispatch(keyword: ProtocolKeyword, arguments: List<ByteArray>): CommandReply =
         dispatch(keyword, arguments, RedisReplyOutput(ByteArrayCodec.INSTANCE, limits))
 
     private suspend fun dispatch(
         keyword: ProtocolKeyword,
         arguments: List<ByteArray>,
         output: RedisReplyOutput,
-    ): RedisReply {
+    ): CommandReply {
         val args = CommandArgs(ByteArrayCodec.INSTANCE)
         arguments.forEach { args.add(it) }
         return async.dispatch(keyword, output, args).await()
@@ -547,6 +571,13 @@ class RedisAdapter(
         throw cancellation
     } catch (failure: DbException) {
         throw failure
+    } catch (failure: InvalidRequestException) {
+        // A malformed request, raised by the SPI's own types before anything was
+        // sent — a cursor Redis did not issue, most often. Classified here rather
+        // than left to fall through, because the fall-through arm asks Lettuce what
+        // went wrong on the wire and nothing went to the wire at all: it would
+        // report a bad cursor as a broken connection and send the user to reconnect.
+        throw DbException(failure.asDbError(), failure)
     } catch (failure: Throwable) {
         throw DbException(RedisErrors.classify(failure, redaction), failure)
     }
@@ -581,8 +612,8 @@ class RedisAdapter(
 
         val isOpen: Boolean get() = !exhausted
 
-        fun take(bytes: ByteArray): RedisText {
-            val text = RedisBytes.of(bytes, limits.elementBytes)
+        fun take(bytes: ByteArray): TextValue {
+            val text = TextValues.of(bytes, limits.elementBytes)
             spent += minOf(bytes.size, limits.elementBytes)
             if (spent >= ceiling) exhausted = true
             return text
@@ -614,7 +645,7 @@ class RedisAdapter(
         /** What `TTL` answers for the same. */
         const val GONE_TTL = -2L
 
-        val EMPTY_TEXT = RedisText.Utf8("", byteCount = 0)
+        val EMPTY_TEXT = TextValue.Utf8("", byteCount = 0)
 
         /**
          * A score, spelled the way Redis spells it.
@@ -632,19 +663,4 @@ class RedisAdapter(
             else -> score.toString()
         }
     }
-}
-
-/** What the user has agreed to for one command. Never remembered past it. */
-sealed interface CommandConsent {
-    /** Nothing agreed to. A command needing agreement will ask. */
-    data object None : CommandConsent
-
-    /**
-     * Agreed, with [typed] carrying whatever the confirmation asked to be typed —
-     * empty when a click was enough.
-     *
-     * §3.10's single-use rule is enforced by this being an argument rather than a
-     * setting: there is nowhere to store it, so there is nothing to leave switched on.
-     */
-    data class Given(val typed: String = "") : CommandConsent
 }

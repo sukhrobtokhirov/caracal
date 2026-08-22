@@ -1,7 +1,19 @@
-package dev.caracal.core.redis
+package dev.caracal.engine.api
 
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
+
+/*
+ * What a key-value request is allowed to cost, moved here from
+ * `dev.caracal.core.redis` as `KeyValueLimits`.
+ *
+ * Both ends need it and for different halves. The engine reads the traversal and
+ * page bounds, because it is the one issuing the commands; the workspace reads
+ * [KeyValueLimits.elementBytes] and [KeyValueLimits.jsonBytes], because previewing a
+ * typed command line and deciding whether a value is small enough to parse as JSON
+ * are things it does without asking a server. A budget only one of them could see
+ * would be two budgets within a release.
+ */
 
 /**
  * What a Redis request is allowed to cost.
@@ -20,7 +32,7 @@ import kotlin.time.Duration.Companion.seconds
  * done the work for a batch it returned, so none of this is a claim about what
  * crossed the network — it is what stops the loop from going round again.
  */
-data class RedisLimits(
+data class KeyValueLimits(
     /**
      * Keys collected before a page is handed back.
      *

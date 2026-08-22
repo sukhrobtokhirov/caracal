@@ -1,7 +1,5 @@
-package dev.caracal.core.redis
+package dev.caracal.engine.api
 
-import dev.caracal.core.result.DbError
-import dev.caracal.core.result.DbException
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
@@ -72,7 +70,7 @@ class CommandLineTest {
 
         assertContentEquals(byteArrayOf(0xFF.toByte(), 0x00, 0x41), value)
         // And that byte survives classification as binary rather than being replaced.
-        assertIs<RedisText.Binary>(RedisBytes.of(value, limit = 16))
+        assertIs<TextValue.Binary>(TextValues.of(value, limit = 16))
     }
 
     @Test
@@ -102,23 +100,23 @@ class CommandLineTest {
 
     @Test
     fun `an unclosed quote is refused rather than guessed at`() {
-        val failure = assertThrows<DbException> { CommandLine.split("""SET k "unterminated""") }
+        val failure = assertThrows<InvalidRequestException> { CommandLine.split("""SET k "unterminated""") }
 
-        assertIs<DbError.InvalidRequest>(failure.error)
+        assertTrue(failure.message.isNotBlank())
     }
 
     @Test
     fun `text butted against a closing quote is refused`() {
         // `"a"b` could be one argument or two. A console that picks one runs a command
         // the user did not write, roughly half the time.
-        assertThrows<DbException> { CommandLine.split("""SET k "a"b""") }
+        assertThrows<InvalidRequestException> { CommandLine.split("""SET k "a"b""") }
     }
 
     @Test
     fun `an empty line has no command in it`() {
         assertTrue(CommandLine.split("   ").isEmpty())
-        val failure = assertThrows<DbException> { CommandLine.command("   ") }
-        assertIs<DbError.InvalidRequest>(failure.error)
+        val failure = assertThrows<InvalidRequestException> { CommandLine.command("   ") }
+        assertTrue(failure.message.isNotBlank())
     }
 
     @Test
@@ -158,11 +156,11 @@ class CommandLineTest {
         // arguments, joining them into one, padding them, and changing their case all
         // have to reach the guard as the same thing.
         val spellings = listOf(
-            RedisCommand.of("CONFIG", "SET", "appendonly", "no"),
-            RedisCommand.of("config", "set", "appendonly", "no"),
-            RedisCommand.of("CONFIG SET", "appendonly", "no"),
-            RedisCommand.of("  config  ", "  set  ", "appendonly", "no"),
-            RedisCommand.of("\tCONFIG\t", "\nset\n", "appendonly", "no"),
+            RawCommand.of("CONFIG", "SET", "appendonly", "no"),
+            RawCommand.of("config", "set", "appendonly", "no"),
+            RawCommand.of("CONFIG SET", "appendonly", "no"),
+            RawCommand.of("  config  ", "  set  ", "appendonly", "no"),
+            RawCommand.of("\tCONFIG\t", "\nset\n", "appendonly", "no"),
         )
 
         for (command in spellings) {
@@ -175,7 +173,7 @@ class CommandLineTest {
         // The normalization is aggressive on purpose, and would be a bug if it reached
         // the wire: retokenizing `CONFIG SET` into two arguments and sending that would
         // turn a command Redis rejects into one it accepts.
-        val command = RedisCommand.of("CONFIG SET", "appendonly", "no")
+        val command = RawCommand.of("CONFIG SET", "appendonly", "no")
 
         assertEquals("CONFIG SET", command.label)
         assertEquals(3, command.size)
@@ -185,7 +183,7 @@ class CommandLineTest {
     @Test
     fun `arguments are copied, so nothing can be edited after the guard has read it`() {
         val original = "value".toByteArray()
-        val command = RedisCommand.of(listOf("SET".toByteArray(), "k".toByteArray(), original))
+        val command = RawCommand.of(listOf("SET".toByteArray(), "k".toByteArray(), original))
         original[0] = 'X'.code.toByte()
 
         assertEquals("value", String(command.arguments[2]))
@@ -200,7 +198,7 @@ class CommandLineTest {
     fun `a command never puts its arguments in its own description`() {
         // This type reaches loggers. `AUTH` and `SET session:x <token>` are the reason
         // it must not carry what it was given.
-        val rendered = RedisCommand.of("AUTH", "admin", "hunter2").toString()
+        val rendered = RawCommand.of("AUTH", "admin", "hunter2").toString()
 
         assertTrue(rendered.contains("AUTH"))
         assertTrue(!rendered.contains("hunter2") && !rendered.contains("admin"), rendered)

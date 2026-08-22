@@ -5,18 +5,18 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import dev.caracal.core.connections.ConnectionId
 import dev.caracal.core.connections.ConnectionService
-import dev.caracal.core.redis.FieldEntry
-import dev.caracal.core.redis.IndexedElement
-import dev.caracal.core.redis.KeyMetadata
-import dev.caracal.core.redis.KeyType
-import dev.caracal.core.redis.RedisCursor
-import dev.caracal.core.redis.RedisKey
-import dev.caracal.core.redis.RedisLimits
-import dev.caracal.core.redis.RedisText
-import dev.caracal.core.redis.ScoredMember
-import dev.caracal.core.redis.StreamEntry
-import dev.caracal.core.redis.ValuePage
-import dev.caracal.core.redis.ValueRequest
+import dev.caracal.engine.api.FieldEntry
+import dev.caracal.engine.api.IndexedElement
+import dev.caracal.engine.api.KeyMetadata
+import dev.caracal.engine.api.KeyType
+import dev.caracal.engine.api.ScanCursor
+import dev.caracal.engine.api.KeyRef
+import dev.caracal.engine.api.KeyValueLimits
+import dev.caracal.engine.api.TextValue
+import dev.caracal.engine.api.ScoredMember
+import dev.caracal.engine.api.StreamEntry
+import dev.caracal.engine.api.ValuePage
+import dev.caracal.engine.api.ValueRequest
 import dev.caracal.core.result.DbError
 import dev.caracal.core.result.Failure
 import dev.caracal.core.result.asDbError
@@ -58,18 +58,18 @@ sealed interface LoadedValue {
      *
      * The windows are kept separately rather than concatenated as they arrive because
      * a window that lands mid-character does not decode, and `:core` reports that
-     * honestly by handing back [RedisText.Binary] for that page alone. Joining the
+     * honestly by handing back [TextValue.Binary] for that page alone. Joining the
      * text of a run of windows is therefore only valid when every one of them decoded,
      * and [text] is the single place that check is made.
      */
     data class Text(
-        val windows: List<RedisText>,
+        val windows: List<TextValue>,
         /** The value's size on the server, whether or not all of it is here. */
         val length: Int,
         /** How much of it has been read. */
         val loadedBytes: Int,
         val nextOffset: Int?,
-        /** Set when [RedisLimits.stringMaxBytes] is what ends the read, not the value. */
+        /** Set when [KeyValueLimits.stringMaxBytes] is what ends the read, not the value. */
         val cappedAt: Int?,
         override val complete: Boolean,
         override val truncated: Boolean,
@@ -79,7 +79,7 @@ sealed interface LoadedValue {
         override val loaded: Int get() = loadedBytes
 
         /** Whether any window failed to decode, which makes the whole value binary here. */
-        val binary: Boolean by lazy { windows.any { it !is RedisText.Utf8 } }
+        val binary: Boolean by lazy { windows.any { it !is TextValue.Utf8 } }
 
         /**
          * The text read so far, or `null` when some of it is not text.
@@ -93,15 +93,15 @@ sealed interface LoadedValue {
          * The same reasoning already applies to `json` a few lines down.
          */
         val text: String? by lazy {
-            if (binary) null else windows.joinToString("") { (it as RedisText.Utf8).value }
+            if (binary) null else windows.joinToString("") { (it as TextValue.Utf8).value }
         }
 
         /** The bytes read so far, as hexadecimal, for a value that is not text. */
         val hex: String by lazy {
             windows.joinToString("") {
                 when (it) {
-                    is RedisText.Binary -> it.hex
-                    is RedisText.Utf8 -> it.value.toByteArray(Charsets.UTF_8)
+                    is TextValue.Binary -> it.hex
+                    is TextValue.Utf8 -> it.value.toByteArray(Charsets.UTF_8)
                         .joinToString("") { byte -> "%02x".format(byte) }
                 }
             }
@@ -111,7 +111,7 @@ sealed interface LoadedValue {
     /** A hash, continued by [cursor]. */
     data class Fields(
         val entries: List<FieldEntry>,
-        val cursor: RedisCursor,
+        val cursor: ScanCursor,
         override val complete: Boolean,
         override val truncated: Boolean,
     ) : LoadedValue {
@@ -122,8 +122,8 @@ sealed interface LoadedValue {
 
     /** A set, continued by [cursor]. The order is Redis's and means nothing. */
     data class Members(
-        val members: List<RedisText>,
-        val cursor: RedisCursor,
+        val members: List<TextValue>,
+        val cursor: ScanCursor,
         override val complete: Boolean,
         override val truncated: Boolean,
     ) : LoadedValue {
@@ -199,13 +199,13 @@ sealed interface ValueState {
      * expires while it is open is Redis working correctly, and turning the workspace
      * red for it would be this application misreporting a cache doing its job.
      */
-    data class Missing(val key: RedisKey) : ValueState
+    data class Missing(val key: KeyRef) : ValueState
 
     /** The key exists and holds a type this build has no viewer for. */
-    data class Unsupported(val key: RedisKey, val reported: String) : ValueState
+    data class Unsupported(val key: KeyRef, val reported: String) : ValueState
 
     /** Something else went wrong, and it belongs to this pane rather than the window. */
-    data class Failed(val key: RedisKey, val failure: Failure) : ValueState
+    data class Failed(val key: KeyRef, val failure: Failure) : ValueState
 }
 
 /** Which rendering of a string is showing. */
@@ -224,7 +224,7 @@ enum class TextView { RAW, JSON }
  *
  * JSON is detected rather than assumed, and only where it can be done honestly: on a
  * string that has been read all the way to its end, whose every window decoded as
- * UTF-8, and which is smaller than [RedisLimits.jsonBytes]. The parse is
+ * UTF-8, and which is smaller than [KeyValueLimits.jsonBytes]. The parse is
  * [JsonFormat]'s, which reformats without reinterpreting a single value — so the
  * pretty view is the same document with different whitespace, and the raw view is
  * always one click away and is what a copy takes.
@@ -232,7 +232,7 @@ enum class TextView { RAW, JSON }
 class RedisValueViewModel(
     private val service: ConnectionService,
     private val scope: CoroutineScope,
-    private val limits: RedisLimits = RedisLimits(),
+    private val limits: KeyValueLimits = KeyValueLimits(),
 ) {
     var connectionId: ConnectionId? by mutableStateOf(null)
         private set
@@ -266,7 +266,7 @@ class RedisValueViewModel(
     private var job: Job? = null
 
     /** The key whose value is open, whatever state it is in. */
-    val key: RedisKey?
+    val key: KeyRef?
         get() = when (val state = state) {
             is ValueState.Ready -> state.metadata.key
             is ValueState.Missing -> state.key
@@ -276,7 +276,7 @@ class RedisValueViewModel(
         }
 
     /** The key a load is in flight for, so [key] can name it while it loads. */
-    private var pending: RedisKey? by mutableStateOf(null)
+    private var pending: KeyRef? by mutableStateOf(null)
 
     /** Points the pane at a connection. A different one closes whatever was open. */
     fun show(id: ConnectionId?) {
@@ -293,7 +293,7 @@ class RedisValueViewModel(
      * true when the page was collected — which for a key with a five-second TTL is the
      * difference between a countdown and a fiction.
      */
-    fun open(key: RedisKey) {
+    fun open(key: KeyRef) {
         val id = connectionId ?: return
         job?.cancel()
         pending = key
@@ -355,7 +355,7 @@ class RedisValueViewModel(
      * is already showing — and §3.5 gives the user a refresh for when they want it
      * asked again.
      */
-    private suspend fun load(id: ConnectionId, key: RedisKey, from: LoadedValue?) {
+    private suspend fun load(id: ConnectionId, key: KeyRef, from: LoadedValue?) {
         try {
             val metadata = if (from == null) {
                 service.redisKey(id, key).also { if (!it.settled()) return }
@@ -399,7 +399,7 @@ class RedisValueViewModel(
         else -> true
     }
 
-    private fun retype(key: RedisKey, error: DbError.KeyTypeChanged) {
+    private fun retype(key: KeyRef, error: DbError.KeyTypeChanged) {
         if (error.actual == null) {
             notice = "That key expired or was deleted while it was open."
             state = ValueState.Missing(key)
@@ -410,7 +410,7 @@ class RedisValueViewModel(
         notice = "That key is a ${error.actual} now, not a ${error.expected}. Reloaded it as one."
     }
 
-    private fun request(key: RedisKey, type: KeyType, from: LoadedValue?) = when (from) {
+    private fun request(key: KeyRef, type: KeyType, from: LoadedValue?) = when (from) {
         null -> ValueRequest(key = key, type = type)
         is LoadedValue.Text -> ValueRequest(key, type, offset = (from.nextOffset ?: 0).toLong())
         is LoadedValue.Fields -> ValueRequest(key, type, cursor = from.cursor)

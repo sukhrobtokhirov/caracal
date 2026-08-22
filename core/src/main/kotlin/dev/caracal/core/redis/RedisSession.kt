@@ -14,6 +14,8 @@ import dev.caracal.core.connections.TlsMode
 import dev.caracal.core.result.DbError
 import dev.caracal.core.result.DbException
 import dev.caracal.core.text.Redaction
+import dev.caracal.engine.api.KeyValueLimits
+import dev.caracal.engine.api.TextValues
 import io.lettuce.core.ClientOptions
 import io.lettuce.core.RedisClient
 import io.lettuce.core.RedisURI
@@ -39,14 +41,14 @@ import org.slf4j.LoggerFactory
  * substitutes a replacement character for whatever did not fit, which produces a key
  * name that cannot be sent back to fetch the value it names — the failure would look
  * like the key vanishing, on exactly the keys where it is hardest to guess why.
- * Deciding what is text is [RedisBytes]'s job, and it happens once, at the edge.
+ * Deciding what is text is [TextValues]'s job, and it happens once, at the edge.
  */
 class RedisSession private constructor(
     private val client: RedisClient,
     private val connection: StatefulRedisConnection<ByteArray, ByteArray>,
     config: ConnectionConfig,
     password: Secret,
-    limits: RedisLimits,
+    limits: KeyValueLimits,
 ) : AutoCloseable {
 
     /** Everything M3 does with this server. */
@@ -99,7 +101,7 @@ class RedisSession private constructor(
         suspend fun open(
             config: ConnectionConfig,
             password: Secret,
-            limits: RedisLimits = RedisLimits(),
+            limits: KeyValueLimits = KeyValueLimits(),
         ): RedisSession = withContext(Dispatchers.IO) {
             val client = RedisClient.create(uri(config, password)).apply {
                 options = ClientOptions.builder()

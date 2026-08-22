@@ -1,10 +1,10 @@
 package dev.caracal.app
 
-import dev.caracal.core.redis.KeyMetadata
-import dev.caracal.core.redis.KeyType
-import dev.caracal.core.redis.MemoryEstimate
-import dev.caracal.core.redis.RedisKey
-import dev.caracal.core.redis.Ttl
+import dev.caracal.engine.api.KeyMetadata
+import dev.caracal.engine.api.KeyType
+import dev.caracal.engine.api.MemoryEstimate
+import dev.caracal.engine.api.KeyRef
+import dev.caracal.engine.api.Ttl
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -114,7 +114,7 @@ class RedisKeyTreeTest {
         // Splitting bytes on a delimiter and reassembling them is exactly the operation
         // that produces a label naming no key at all.
         val binary = KeyMetadata(
-            key = RedisKey(byteArrayOf(0xFF.toByte(), 0x3A, 0xFE.toByte())),
+            key = KeyRef(byteArrayOf(0xFF.toByte(), 0x3A, 0xFE.toByte())),
             type = KeyType.STRING,
             ttl = Ttl.Persistent,
             memory = MemoryEstimate.Bytes(48),
@@ -178,7 +178,7 @@ class RedisKeyTreeTest {
 
     @Test
     fun `two keys sharing a clipped path still get different list identities`() {
-        // `path` is built from RedisKey.display, which is clipped at elementBytes, so
+        // `path` is built from KeyRef.display, which is clipped at elementBytes, so
         // two keys agreeing on their first four kilobytes produce the same path. The
         // browser deduplicates by the key's real bytes, so both rows reach the list —
         // and a LazyColumn handed the same key twice throws instead of drawing them.
@@ -201,7 +201,7 @@ class RedisKeyTreeTest {
 
     private fun keys(vararg names: String) = names.map { name ->
         KeyMetadata(
-            key = RedisKey(name.toByteArray()),
+            key = KeyRef(name.toByteArray()),
             type = KeyType.STRING,
             ttl = Ttl.Persistent,
             memory = MemoryEstimate.Bytes(64),

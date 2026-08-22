@@ -13,14 +13,14 @@ import androidx.compose.ui.test.v2.runDesktopComposeUiTest
 import dev.caracal.app.FakeConnectionService
 import dev.caracal.app.RedisBrowserViewModel
 import dev.caracal.core.connections.ConnectionId
-import dev.caracal.core.redis.KeyMetadata
-import dev.caracal.core.redis.KeyType
-import dev.caracal.core.redis.MemoryEstimate
-import dev.caracal.core.redis.RedisCursor
-import dev.caracal.core.redis.RedisKey
-import dev.caracal.core.redis.ScanPage
-import dev.caracal.core.redis.ScanStop
-import dev.caracal.core.redis.Ttl
+import dev.caracal.engine.api.KeyMetadata
+import dev.caracal.engine.api.KeyType
+import dev.caracal.engine.api.MemoryEstimate
+import dev.caracal.engine.api.ScanCursor
+import dev.caracal.engine.api.KeyRef
+import dev.caracal.engine.api.ScanPage
+import dev.caracal.engine.api.ScanStop
+import dev.caracal.engine.api.Ttl
 import dev.caracal.core.vault.VaultState
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -40,7 +40,7 @@ class RedisBrowserUiTest {
     private val id = ConnectionId("id-1")
 
     private fun key(name: String, type: KeyType = KeyType.STRING) = KeyMetadata(
-        key = RedisKey(name.toByteArray()),
+        key = KeyRef(name.toByteArray()),
         type = type,
         ttl = Ttl.ExpiresIn(90),
         memory = MemoryEstimate.Bytes(912),
@@ -50,11 +50,11 @@ class RedisBrowserUiTest {
         vararg keys: KeyMetadata,
         cursor: String = "0",
         stopped: ScanStop = ScanStop.COMPLETE,
-    ) = ScanPage(RedisCursor.of(cursor), keys.toList(), iterations = 1, stopped = stopped)
+    ) = ScanPage(ScanCursor.of(cursor), keys.toList(), iterations = 1, stopped = stopped)
 
     private fun ComposeUiTest.browser(
         service: FakeConnectionService,
-        opened: MutableList<RedisKey> = mutableListOf(),
+        opened: MutableList<KeyRef> = mutableListOf(),
     ): RedisBrowserViewModel {
         lateinit var model: RedisBrowserViewModel
         setContent {
@@ -96,7 +96,7 @@ class RedisBrowserUiTest {
             val service = FakeConnectionService(VaultState.UNLOCKED).apply {
                 scanPage = page(key("user:42:profile"))
             }
-            val opened = mutableListOf<RedisKey>()
+            val opened = mutableListOf<KeyRef>()
             browser(service, opened)
 
             onNodeWithTag("redis-group-user").performClick()

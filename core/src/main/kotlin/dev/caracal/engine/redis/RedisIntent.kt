@@ -1,6 +1,6 @@
 package dev.caracal.engine.redis
 
-import dev.caracal.core.redis.CommandLine
+import dev.caracal.engine.api.CommandLine
 import dev.caracal.core.redis.RedisCommandGuard
 import dev.caracal.engine.api.IntentClassifier
 import dev.caracal.engine.api.WriteIntent

@@ -1,4 +1,4 @@
-package dev.caracal.core.redis
+package dev.caracal.engine.api
 
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -16,13 +16,13 @@ import org.junit.jupiter.api.Test
  * sending the decoded form back fetches nothing, and the key appears to have
  * vanished.
  */
-class RedisBytesTest {
+class TextValuesTest {
 
     @Test
     fun `text is text`() {
-        val text = RedisBytes.of("user:42:profile".toByteArray(), limit = 1024)
+        val text = TextValues.of("user:42:profile".toByteArray(), limit = 1024)
 
-        assertIs<RedisText.Utf8>(text)
+        assertIs<TextValue.Utf8>(text)
         assertEquals("user:42:profile", text.value)
         assertEquals(15, text.byteCount)
         assertFalse(text.truncated)
@@ -32,7 +32,7 @@ class RedisBytesTest {
     @Test
     fun `text outside the basic plane survives`() {
         val value = "café ☕ 🧊"
-        val text = RedisBytes.of(value.toByteArray(), limit = 1024)
+        val text = TextValues.of(value.toByteArray(), limit = 1024)
 
         assertEquals(value, text.text)
         assertEquals(value.toByteArray().size, text.byteCount)
@@ -41,9 +41,9 @@ class RedisBytesTest {
     @Test
     fun `bytes that are not text arrive as hexadecimal, not as replacement characters`() {
         val bytes = byteArrayOf(0x89.toByte(), 0x50, 0x4E, 0x47, 0xFF.toByte(), 0xFE.toByte())
-        val text = RedisBytes.of(bytes, limit = 1024)
+        val text = TextValues.of(bytes, limit = 1024)
 
-        assertIs<RedisText.Binary>(text)
+        assertIs<TextValue.Binary>(text)
         assertEquals("89504e47fffe", text.hex)
         assertEquals(6, text.byteCount)
         // The whole point: there is no lossy string form to accidentally use.
@@ -52,7 +52,7 @@ class RedisBytesTest {
 
     @Test
     fun `an empty value is empty text rather than binary`() {
-        val text = RedisBytes.of(ByteArray(0), limit = 1024)
+        val text = TextValues.of(ByteArray(0), limit = 1024)
 
         assertEquals("", text.text)
         assertEquals(0, text.byteCount)
@@ -61,7 +61,7 @@ class RedisBytesTest {
 
     @Test
     fun `a clipped value reports its true size and says it was clipped`() {
-        val text = RedisBytes.of("abcdefghij".toByteArray(), limit = 4)
+        val text = TextValues.of("abcdefghij".toByteArray(), limit = 4)
 
         assertEquals("abcd", text.text)
         assertEquals(10, text.byteCount)
@@ -78,8 +78,8 @@ class RedisBytesTest {
         // limit happened to land.
         val value = "aaa🧊bbb"
         for (limit in 1..value.toByteArray().size) {
-            val text = RedisBytes.of(value.toByteArray(), limit)
-            assertIs<RedisText.Utf8>(text, "limit $limit produced binary for ordinary text")
+            val text = TextValues.of(value.toByteArray(), limit)
+            assertIs<TextValue.Utf8>(text, "limit $limit produced binary for ordinary text")
             assertTrue(value.startsWith(text.value), "limit $limit produced ${text.value}")
         }
     }
@@ -90,14 +90,14 @@ class RedisBytesTest {
         // character, and must not quietly recover an actually-invalid value.
         val bytes = byteArrayOf(0xFF.toByte(), 0xFF.toByte(), 0xFF.toByte(), 0xFF.toByte(), 0xFF.toByte())
 
-        assertIs<RedisText.Binary>(RedisBytes.of(bytes, limit = 5))
-        assertIs<RedisText.Binary>(RedisBytes.of(bytes, limit = 2))
+        assertIs<TextValue.Binary>(TextValues.of(bytes, limit = 5))
+        assertIs<TextValue.Binary>(TextValues.of(bytes, limit = 2))
     }
 
     @Test
     fun `a window reports the value's whole size, not the window's`() {
         val chunk = "hello".toByteArray()
-        val text = RedisBytes.window(chunk, total = 4096, limit = chunk.size)
+        val text = TextValues.window(chunk, total = 4096, limit = chunk.size)
 
         assertEquals("hello", text.text)
         assertEquals(4096, text.byteCount)
@@ -107,7 +107,7 @@ class RedisBytesTest {
     @Test
     fun `a window covering the whole value is not truncated`() {
         val chunk = "hello".toByteArray()
-        val text = RedisBytes.window(chunk, total = chunk.size, limit = chunk.size)
+        val text = TextValues.window(chunk, total = chunk.size, limit = chunk.size)
 
         assertFalse(text.truncated)
         assertTrue(text.isWholeText)
@@ -116,9 +116,9 @@ class RedisBytesTest {
     @Test
     fun `a binary window keeps its binary label and the value's true size`() {
         val chunk = byteArrayOf(0x00, 0xFF.toByte())
-        val text = RedisBytes.window(chunk, total = 900, limit = chunk.size)
+        val text = TextValues.window(chunk, total = 900, limit = chunk.size)
 
-        assertIs<RedisText.Binary>(text)
+        assertIs<TextValue.Binary>(text)
         assertEquals("00ff", text.hex)
         assertEquals(900, text.byteCount)
         assertTrue(text.truncated)
@@ -128,7 +128,7 @@ class RedisBytesTest {
     fun `a NUL byte is text, because Redis strings may contain one`() {
         // `SET k "a\x00b"` is legal and the value is not binary in any useful sense.
         // Treating NUL as a terminator or as evidence of binary would truncate it.
-        val text = RedisBytes.of(byteArrayOf('a'.code.toByte(), 0, 'b'.code.toByte()), limit = 1024)
+        val text = TextValues.of(byteArrayOf('a'.code.toByte(), 0, 'b'.code.toByte()), limit = 1024)
 
         // Spelled with an explicit code point: a literal NUL in a source file is
         // invisible in every editor and diff that would need to show it.
@@ -145,9 +145,9 @@ class RedisBytesTest {
         // One byte short of the euro sign's three.
         val cut = whole.copyOfRange(0, whole.size - 1)
 
-        val text = RedisBytes.window(cut, total = whole.size, limit = cut.size)
+        val text = TextValues.window(cut, total = whole.size, limit = cut.size)
 
-        assertIs<RedisText.Utf8>(text)
+        assertIs<TextValue.Utf8>(text)
         assertEquals("price: 12", text.value)
         assertTrue(text.truncated)
     }
@@ -157,9 +157,9 @@ class RedisBytesTest {
         // The trap in the obvious implementation: retrying successively shorter
         // windows finds that some prefix of binary decodes and calls the value text.
         // 0xFF cannot begin a UTF-8 character, so nothing here is unfinished.
-        val text = RedisBytes.window(byteArrayOf(0x41, 0xFF.toByte()), total = 900, limit = 2)
+        val text = TextValues.window(byteArrayOf(0x41, 0xFF.toByte()), total = 900, limit = 2)
 
-        assertIs<RedisText.Binary>(text)
+        assertIs<TextValue.Binary>(text)
         assertEquals("41ff", text.hex)
     }
 
@@ -167,8 +167,8 @@ class RedisBytesTest {
     fun `a window that is nothing but a dangling sequence stays binary`() {
         // Trimming to nothing would decode as empty text and report a value that has
         // bytes in it as empty.
-        val text = RedisBytes.window(byteArrayOf(0xE2.toByte(), 0x82.toByte()), total = 900, limit = 2)
+        val text = TextValues.window(byteArrayOf(0xE2.toByte(), 0x82.toByte()), total = 900, limit = 2)
 
-        assertIs<RedisText.Binary>(text)
+        assertIs<TextValue.Binary>(text)
     }
 }

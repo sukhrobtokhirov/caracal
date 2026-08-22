@@ -34,3 +34,17 @@ data class EngineError(
 
 /** A span in the editor buffer. [offset] is 0-based and counts UTF-16 units. */
 data class SourcePosition(val offset: Int, val length: Int = 1)
+
+/**
+ * The request was malformed before any server was asked.
+ *
+ * A scan cursor that is not a cursor, a command line with an unclosed quote, a
+ * command with no command in it. It is here rather than in `:core` because the types
+ * that raise it are here: [ScanCursor.of] and [CommandLine] are read by the engine
+ * that sends the bytes *and* by the console that previews them, and neither end may
+ * see `:core`'s error hierarchy.
+ *
+ * `:core` classifies it back into `DbError.InvalidRequest`, with the same code and
+ * the same sentence, so nothing downstream can tell that the throw site moved.
+ */
+class InvalidRequestException(override val message: String) : Exception(message)

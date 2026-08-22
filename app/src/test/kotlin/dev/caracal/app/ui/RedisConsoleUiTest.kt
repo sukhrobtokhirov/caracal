@@ -19,10 +19,10 @@ import dev.caracal.core.connections.ConnectionId
 import dev.caracal.core.connections.Environment
 import dev.caracal.core.policy.Acknowledgement
 import dev.caracal.core.redis.CommandClearance
-import dev.caracal.core.redis.CommandConsent
-import dev.caracal.core.redis.CommandResult
-import dev.caracal.core.redis.RedisBytes
-import dev.caracal.core.redis.RedisReply
+import dev.caracal.engine.api.CommandConsent
+import dev.caracal.engine.api.CommandResult
+import dev.caracal.engine.api.TextValues
+import dev.caracal.engine.api.CommandReply
 import dev.caracal.core.result.DbError
 import dev.caracal.core.result.DbException
 import dev.caracal.core.vault.VaultState
@@ -46,7 +46,7 @@ class RedisConsoleUiTest {
     private fun service() = FakeConnectionService(VaultState.UNLOCKED).apply {
         commandResult = CommandResult(
             command = "PING",
-            reply = RedisReply.Status("PONG"),
+            reply = CommandReply.Status("PONG"),
             duration = 1.milliseconds,
             truncated = false,
         )
@@ -226,12 +226,12 @@ class RedisConsoleUiTest {
             val service = service()
             service.commandResult = CommandResult(
                 command = "EXEC",
-                reply = RedisReply.Items(
-                    kind = RedisReply.Items.Kind.ARRAY,
+                reply = CommandReply.Items(
+                    kind = CommandReply.Items.Kind.ARRAY,
                     items = listOf(
-                        RedisReply.Status("OK"),
-                        RedisReply.Failure("WRONGTYPE Operation against a key"),
-                        RedisReply.Bulk(RedisBytes.of("payload".toByteArray(), 4096)),
+                        CommandReply.Status("OK"),
+                        CommandReply.Failure("WRONGTYPE Operation against a key"),
+                        CommandReply.Bulk(TextValues.of("payload".toByteArray(), 4096)),
                     ),
                     truncated = false,
                 ),

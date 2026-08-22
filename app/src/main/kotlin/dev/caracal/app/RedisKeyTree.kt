@@ -1,8 +1,8 @@
 package dev.caracal.app
 
-import dev.caracal.core.redis.KeyMetadata
-import dev.caracal.core.redis.RedisKey
-import dev.caracal.core.redis.RedisText
+import dev.caracal.engine.api.KeyMetadata
+import dev.caracal.engine.api.KeyRef
+import dev.caracal.engine.api.TextValue
 
 /**
  * One line of the key browser: either a key, or a group several keys share a prefix
@@ -18,7 +18,7 @@ data class KeyRow(
     val label: String,
     val depth: Int,
     /** The key this row is, or `null` when the row is a grouping. */
-    val key: RedisKey? = null,
+    val key: KeyRef? = null,
     val metadata: KeyMetadata? = null,
     val expandable: Boolean = false,
     val expanded: Boolean = false,
@@ -29,7 +29,7 @@ data class KeyRow(
      * An identity no two rows on screen can share, for a list that needs one.
      *
      * [path] is not that identity, and a list key has to be. It is built from
-     * [RedisKey.display], which is clipped at `elementBytes`, so two keys agreeing on
+     * [KeyRef.display], which is clipped at `elementBytes`, so two keys agreeing on
      * their first four kilobytes — or two binary keys agreeing on a hex prefix —
      * produce the same path. Both rows survive into the list, because the browser
      * deduplicates by the key's real bytes, and a LazyColumn handed the same key
@@ -172,7 +172,7 @@ object RedisKeyTree {
      * rows are open, [KeyRow.key] is what any command is built from, and the worst a
      * collision can do is expand the wrong row.
      */
-    private fun RedisKey.pathKey(): String = display.shown()
+    private fun KeyRef.pathKey(): String = display.shown()
 
     private fun KeyMetadata.leafRow(depth: Int, path: String, delimiter: String = "") = KeyRow(
         path = path,
@@ -191,9 +191,9 @@ object RedisKeyTree {
     )
 
     /** How a value shows itself in a list: its text, or its bytes said to be bytes. */
-    private fun RedisText.shown(): String = when (this) {
-        is RedisText.Utf8 -> value
-        is RedisText.Binary -> "0x$hex"
+    private fun TextValue.shown(): String = when (this) {
+        is TextValue.Utf8 -> value
+        is TextValue.Binary -> "0x$hex"
     }
 
     /**

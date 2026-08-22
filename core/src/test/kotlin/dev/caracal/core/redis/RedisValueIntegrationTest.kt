@@ -2,6 +2,13 @@ package dev.caracal.core.redis
 
 import dev.caracal.core.result.DbError
 import dev.caracal.core.result.DbException
+import dev.caracal.engine.api.KeyRef
+import dev.caracal.engine.api.KeyType
+import dev.caracal.engine.api.KeyValueLimits
+import dev.caracal.engine.api.ScanCursor
+import dev.caracal.engine.api.TextValue
+import dev.caracal.engine.api.ValuePage
+import dev.caracal.engine.api.ValueRequest
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
@@ -56,7 +63,7 @@ class RedisValueIntegrationTest {
         val value = "x".repeat(50_000)
         RedisFixture.admin(db) { it.set("big", value) }
 
-        RedisFixture.session(db, limits = RedisLimits(stringPageBytes = 1_000)).use { session ->
+        RedisFixture.session(db, limits = KeyValueLimits(stringPageBytes = 1_000)).use { session ->
             val first = assertIs<ValuePage.Text>(session.adapter.value(request("big", KeyType.STRING)))
 
             assertEquals(1_000, first.content.text?.length)
@@ -76,7 +83,7 @@ class RedisValueIntegrationTest {
     fun `reading a string to its end reports completion and offers nowhere to continue`() = runBlocking {
         RedisFixture.admin(db) { it.set("medium", "y".repeat(1_500)) }
 
-        RedisFixture.session(db, limits = RedisLimits(stringPageBytes = 1_000)).use { session ->
+        RedisFixture.session(db, limits = KeyValueLimits(stringPageBytes = 1_000)).use { session ->
             val last = assertIs<ValuePage.Text>(
                 session.adapter.value(request("medium", KeyType.STRING).copy(offset = 1_000)),
             )
@@ -93,7 +100,7 @@ class RedisValueIntegrationTest {
         // silently cut at the ceiling looks exactly like a value that was that size.
         RedisFixture.admin(db) { it.set("huge", "z".repeat(20_000)) }
 
-        RedisFixture.session(db, limits = RedisLimits(stringPageBytes = 100_000, stringMaxBytes = 5_000)).use { session ->
+        RedisFixture.session(db, limits = KeyValueLimits(stringPageBytes = 100_000, stringMaxBytes = 5_000)).use { session ->
             val page = assertIs<ValuePage.Text>(session.adapter.value(request("huge", KeyType.STRING)))
 
             assertEquals(5_000, page.content.text?.length)
@@ -127,7 +134,7 @@ class RedisValueIntegrationTest {
         RedisFixture.session(db).use { session ->
             val page = assertIs<ValuePage.Text>(session.adapter.value(request("png", KeyType.STRING)))
 
-            val binary = assertIs<RedisText.Binary>(page.content)
+            val binary = assertIs<TextValue.Binary>(page.content)
             assertEquals("89504e470d0a1a0aff", binary.hex)
             assertEquals(9, binary.byteCount)
         }
@@ -162,8 +169,8 @@ class RedisValueIntegrationTest {
             (1..300).forEach { commands.hset("profile", "field:$it", "value:$it") }
         }
 
-        RedisFixture.session(db, limits = RedisLimits(entriesPerPage = 50)).use { session ->
-            var cursor = RedisCursor.START
+        RedisFixture.session(db, limits = KeyValueLimits(entriesPerPage = 50)).use { session ->
+            var cursor = ScanCursor.START
             val seen = mutableMapOf<String, String>()
             var pages = 0
             while (pages < 100) {
@@ -192,7 +199,7 @@ class RedisValueIntegrationTest {
             val page = assertIs<ValuePage.Fields>(session.adapter.value(request("blobs", KeyType.HASH)))
 
             assertEquals("thumb", page.entries.single().field.text)
-            assertEquals("ff00", assertIs<RedisText.Binary>(page.entries.single().value).hex)
+            assertEquals("ff00", assertIs<TextValue.Binary>(page.entries.single().value).hex)
         }
     }
 
@@ -204,8 +211,8 @@ class RedisValueIntegrationTest {
             (1..250).forEach { commands.sadd("members", "member:$it") }
         }
 
-        RedisFixture.session(db, limits = RedisLimits(entriesPerPage = 40)).use { session ->
-            var cursor = RedisCursor.START
+        RedisFixture.session(db, limits = KeyValueLimits(entriesPerPage = 40)).use { session ->
+            var cursor = ScanCursor.START
             val seen = mutableSetOf<String>()
             var pages = 0
             while (pages < 100) {
@@ -232,7 +239,7 @@ class RedisValueIntegrationTest {
             commands.zadd("leaderboard", 2.5, "player:half")
         }
 
-        RedisFixture.session(db, limits = RedisLimits(entriesPerPage = 25)).use { session ->
+        RedisFixture.session(db, limits = KeyValueLimits(entriesPerPage = 25)).use { session ->
             val first = assertIs<ValuePage.Scored>(session.adapter.value(request("leaderboard", KeyType.ZSET)))
 
             assertEquals(121, first.total)
@@ -254,7 +261,7 @@ class RedisValueIntegrationTest {
     fun `the last page of a sorted set completes and offers nowhere to continue`() = runBlocking {
         RedisFixture.admin(db) { commands -> (1..30).forEach { commands.zadd("small", it.toDouble(), "m$it") } }
 
-        RedisFixture.session(db, limits = RedisLimits(entriesPerPage = 25)).use { session ->
+        RedisFixture.session(db, limits = KeyValueLimits(entriesPerPage = 25)).use { session ->
             val last = assertIs<ValuePage.Scored>(
                 session.adapter.value(request("small", KeyType.ZSET).copy(offset = 25)),
             )
@@ -271,7 +278,7 @@ class RedisValueIntegrationTest {
     fun `a list pages by index, and each element carries the index it has`() = runBlocking {
         RedisFixture.admin(db) { commands -> (1..200).forEach { commands.rpush("queue", "job:$it") } }
 
-        RedisFixture.session(db, limits = RedisLimits(entriesPerPage = 30)).use { session ->
+        RedisFixture.session(db, limits = KeyValueLimits(entriesPerPage = 30)).use { session ->
             val second = assertIs<ValuePage.Elements>(
                 session.adapter.value(request("queue", KeyType.LIST).copy(offset = 30)),
             )
@@ -295,7 +302,7 @@ class RedisValueIntegrationTest {
             (1..60).forEach { commands.xadd("events", mapOf("n" to "$it")) }
         }
 
-        RedisFixture.session(db, limits = RedisLimits(entriesPerPage = 20)).use { session ->
+        RedisFixture.session(db, limits = KeyValueLimits(entriesPerPage = 20)).use { session ->
             val first = assertIs<ValuePage.Entries>(session.adapter.value(request("events", KeyType.STREAM)))
 
             assertEquals(20, first.entries.size)
@@ -337,7 +344,7 @@ class RedisValueIntegrationTest {
     fun `a stream that ends inside a page is complete`() = runBlocking {
         RedisFixture.admin(db) { commands -> (1..5).forEach { commands.xadd("short", mapOf("n" to "$it")) } }
 
-        RedisFixture.session(db, limits = RedisLimits(entriesPerPage = 20)).use { session ->
+        RedisFixture.session(db, limits = KeyValueLimits(entriesPerPage = 20)).use { session ->
             val page = assertIs<ValuePage.Entries>(session.adapter.value(request("short", KeyType.STREAM)))
 
             assertEquals(5, page.entries.size)
@@ -398,12 +405,12 @@ class RedisValueIntegrationTest {
             assertEquals(1, page.total)
             assertTrue(page.complete)
 
-            assertFalse(session.adapter.metadata(RedisKey("gone".toByteArray())).exists)
+            assertFalse(session.adapter.metadata(KeyRef("gone".toByteArray())).exists)
         }
     }
 
     private fun request(name: String, type: KeyType) =
-        ValueRequest(key = RedisKey(name.toByteArray()), type = type)
+        ValueRequest(key = KeyRef(name.toByteArray()), type = type)
 
     /** `XADD` with repeated field names, which no typed Lettuce overload will send. */
     private fun io.lettuce.core.api.sync.RedisCommands<ByteArray, ByteArray>.dispatchRaw(vararg parts: String) {

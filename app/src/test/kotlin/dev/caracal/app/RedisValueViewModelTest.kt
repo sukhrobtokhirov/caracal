@@ -1,18 +1,18 @@
 package dev.caracal.app
 
 import dev.caracal.core.connections.ConnectionId
-import dev.caracal.core.redis.FieldEntry
-import dev.caracal.core.redis.IndexedElement
-import dev.caracal.core.redis.KeyMetadata
-import dev.caracal.core.redis.KeyType
-import dev.caracal.core.redis.MemoryEstimate
-import dev.caracal.core.redis.RedisCursor
-import dev.caracal.core.redis.RedisKey
-import dev.caracal.core.redis.RedisText
-import dev.caracal.core.redis.ScoredMember
-import dev.caracal.core.redis.StreamEntry
-import dev.caracal.core.redis.Ttl
-import dev.caracal.core.redis.ValuePage
+import dev.caracal.engine.api.FieldEntry
+import dev.caracal.engine.api.IndexedElement
+import dev.caracal.engine.api.KeyMetadata
+import dev.caracal.engine.api.KeyType
+import dev.caracal.engine.api.MemoryEstimate
+import dev.caracal.engine.api.ScanCursor
+import dev.caracal.engine.api.KeyRef
+import dev.caracal.engine.api.TextValue
+import dev.caracal.engine.api.ScoredMember
+import dev.caracal.engine.api.StreamEntry
+import dev.caracal.engine.api.Ttl
+import dev.caracal.engine.api.ValuePage
 import dev.caracal.core.result.DbError
 import dev.caracal.core.result.DbException
 import dev.caracal.core.vault.VaultState
@@ -40,7 +40,7 @@ import org.junit.jupiter.api.Test
 class RedisValueViewModelTest {
 
     private val id = ConnectionId("id-1")
-    private val key = RedisKey("k".toByteArray())
+    private val key = KeyRef("k".toByteArray())
 
     private fun service() = FakeConnectionService(VaultState.UNLOCKED)
 
@@ -53,7 +53,7 @@ class RedisValueViewModelTest {
         memory = MemoryEstimate.Bytes(128),
     )
 
-    private fun text(value: String) = RedisText.Utf8(value, byteCount = value.length)
+    private fun text(value: String) = TextValue.Utf8(value, byteCount = value.length)
 
     /** Opens [key] against a service already primed with its metadata and first page. */
     private fun TestScope.opened(
@@ -71,7 +71,7 @@ class RedisValueViewModelTest {
     @Test
     fun `opening a key reads its metadata before its value`() = runTest {
         val service = service()
-        service.valuePage = ValuePage.Fields(key, emptyList(), RedisCursor.START, complete = true)
+        service.valuePage = ValuePage.Fields(key, emptyList(), ScanCursor.START, complete = true)
         opened(service, KeyType.HASH)
 
         // §3.5: the metadata is read fresh rather than taken from the scan page, so a
@@ -85,13 +85,13 @@ class RedisValueViewModelTest {
         service.valuePages += ValuePage.Fields(
             key = key,
             entries = listOf(FieldEntry(text("a"), text("1"))),
-            cursor = RedisCursor.of("17"),
+            cursor = ScanCursor.of("17"),
             complete = false,
         )
         service.valuePages += ValuePage.Fields(
             key = key,
             entries = listOf(FieldEntry(text("b"), text("2"))),
-            cursor = RedisCursor.START,
+            cursor = ScanCursor.START,
             complete = true,
         )
         val model = opened(service, KeyType.HASH)
@@ -112,10 +112,10 @@ class RedisValueViewModelTest {
         service.valuePages += ValuePage.Members(
             key = key,
             members = listOf(text("one")),
-            cursor = RedisCursor.of("64"),
+            cursor = ScanCursor.of("64"),
             complete = false,
         )
-        service.valuePages += ValuePage.Members(key, listOf(text("two")), RedisCursor.START, true)
+        service.valuePages += ValuePage.Members(key, listOf(text("two")), ScanCursor.START, true)
         val model = opened(service, KeyType.SET)
 
         model.more()
@@ -207,7 +207,7 @@ class RedisValueViewModelTest {
         val service = service()
         service.valuePages += ValuePage.Text(
             key = key,
-            content = RedisText.Utf8("hello ", byteCount = 11, truncated = true),
+            content = TextValue.Utf8("hello ", byteCount = 11, truncated = true),
             offset = 0,
             nextOffset = 6,
             length = 11,
@@ -215,7 +215,7 @@ class RedisValueViewModelTest {
         )
         service.valuePages += ValuePage.Text(
             key = key,
-            content = RedisText.Utf8("world", byteCount = 11, truncated = true),
+            content = TextValue.Utf8("world", byteCount = 11, truncated = true),
             offset = 6,
             nextOffset = null,
             length = 11,
@@ -237,7 +237,7 @@ class RedisValueViewModelTest {
         val service = service()
         service.valuePage = ValuePage.Text(
             key = key,
-            content = RedisText.Binary("ff00", byteCount = 2),
+            content = TextValue.Binary("ff00", byteCount = 2),
             offset = 0,
             nextOffset = null,
             length = 2,
@@ -258,7 +258,7 @@ class RedisValueViewModelTest {
         val service = service()
         service.valuePages += ValuePage.Text(
             key = key,
-            content = RedisText.Utf8("""{"a":1}""", byteCount = 14, truncated = true),
+            content = TextValue.Utf8("""{"a":1}""", byteCount = 14, truncated = true),
             offset = 0,
             nextOffset = 7,
             length = 14,
@@ -266,7 +266,7 @@ class RedisValueViewModelTest {
         )
         service.valuePages += ValuePage.Text(
             key = key,
-            content = RedisText.Utf8(""",{"b":2}""", byteCount = 14, truncated = false),
+            content = TextValue.Utf8(""",{"b":2}""", byteCount = 14, truncated = false),
             offset = 7,
             nextOffset = null,
             length = 14,
@@ -292,7 +292,7 @@ class RedisValueViewModelTest {
         val document = """{"id":42,"tags":["a","b"]}"""
         service.valuePage = ValuePage.Text(
             key = key,
-            content = RedisText.Utf8(document, byteCount = document.length),
+            content = TextValue.Utf8(document, byteCount = document.length),
             offset = 0,
             nextOffset = null,
             length = document.length,
@@ -390,7 +390,7 @@ class RedisValueViewModelTest {
     @Test
     fun `Show more does nothing once the value is complete`() = runTest {
         val service = service()
-        service.valuePage = ValuePage.Members(key, listOf(text("only")), RedisCursor.START, complete = true)
+        service.valuePage = ValuePage.Members(key, listOf(text("only")), ScanCursor.START, complete = true)
         val model = opened(service, KeyType.SET)
         val reads = service.calls.size
 

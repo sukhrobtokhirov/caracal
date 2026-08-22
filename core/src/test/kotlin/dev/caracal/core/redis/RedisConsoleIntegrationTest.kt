@@ -3,6 +3,12 @@ package dev.caracal.core.redis
 import dev.caracal.core.connections.Environment
 import dev.caracal.core.result.DbError
 import dev.caracal.core.result.DbException
+import dev.caracal.engine.api.CommandConsent
+import dev.caracal.engine.api.CommandReply
+import dev.caracal.engine.api.Elision
+import dev.caracal.engine.api.KeyValueLimits
+import dev.caracal.engine.api.RawCommand
+import dev.caracal.engine.api.TextValue
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
@@ -43,12 +49,12 @@ class RedisConsoleIntegrationTest {
 
     @Test
     fun `a status reply arrives with its text`() = runBlocking {
-        // Asserted through `text` rather than by matching `RedisReply.Status`, because
+        // Asserted through `text` rather than by matching `CommandReply.Status`, because
         // whether a simple string is distinguishable from a bulk string is a property
         // of the negotiated protocol version and not of this code. Over RESP2 they
         // arrive through the same door.
         RedisFixture.session(db).use { session ->
-            val result = session.adapter.execute(RedisCommand.of("PING"))
+            val result = session.adapter.execute(RawCommand.of("PING"))
 
             assertEquals("PONG", result.reply.text)
             assertEquals("PING", result.command)
@@ -61,20 +67,20 @@ class RedisConsoleIntegrationTest {
         RedisFixture.admin(db) { it.rpush("queue", "a", "b", "c") }
 
         RedisFixture.session(db).use { session ->
-            val result = session.adapter.execute(RedisCommand.of("LLEN", "queue"))
+            val result = session.adapter.execute(RawCommand.of("LLEN", "queue"))
 
-            assertEquals(3, assertIs<RedisReply.Integer>(result.reply).value)
+            assertEquals(3, assertIs<CommandReply.Integer>(result.reply).value)
         }
     }
 
     @Test
     fun `a missing key is null and not an empty string`() = runBlocking {
         RedisFixture.session(db).use { session ->
-            assertEquals(RedisReply.Nil, session.adapter.execute(RedisCommand.of("GET", "absent")).reply)
+            assertEquals(CommandReply.Nil, session.adapter.execute(RawCommand.of("GET", "absent")).reply)
 
             RedisFixture.admin(db) { it.set("blank", "") }
-            val empty = session.adapter.execute(RedisCommand.of("GET", "blank")).reply
-            assertEquals("", assertIs<RedisReply.Bulk>(empty).value.text)
+            val empty = session.adapter.execute(RawCommand.of("GET", "blank")).reply
+            assertEquals("", assertIs<CommandReply.Bulk>(empty).value.text)
         }
     }
 
@@ -83,12 +89,12 @@ class RedisConsoleIntegrationTest {
         RedisFixture.admin(db) { it.rpush("queue", "first", "second", "third") }
 
         RedisFixture.session(db).use { session ->
-            val reply = session.adapter.execute(RedisCommand.of("LRANGE", "queue", "0", "-1")).reply
+            val reply = session.adapter.execute(RawCommand.of("LRANGE", "queue", "0", "-1")).reply
 
-            val items = assertIs<RedisReply.Items>(reply).items
+            val items = assertIs<CommandReply.Items>(reply).items
             assertEquals(
                 listOf("first", "second", "third"),
-                items.map { assertIs<RedisReply.Bulk>(it).value.text },
+                items.map { assertIs<CommandReply.Bulk>(it).value.text },
             )
         }
     }
@@ -100,12 +106,12 @@ class RedisConsoleIntegrationTest {
         }
 
         RedisFixture.session(db).use { session ->
-            val reply = session.adapter.execute(RedisCommand.of("XRANGE", "events", "-", "+")).reply
+            val reply = session.adapter.execute(RawCommand.of("XRANGE", "events", "-", "+")).reply
 
-            val entry = assertIs<RedisReply.Items>(assertIs<RedisReply.Items>(reply).items.single())
+            val entry = assertIs<CommandReply.Items>(assertIs<CommandReply.Items>(reply).items.single())
             // `[id, [field, value]]`.
-            assertNotNull(assertIs<RedisReply.Bulk>(entry.items[0]).value.text)
-            assertEquals(2, assertIs<RedisReply.Items>(entry.items[1]).items.size)
+            assertNotNull(assertIs<CommandReply.Bulk>(entry.items[0]).value.text)
+            assertEquals(2, assertIs<CommandReply.Items>(entry.items[1]).items.size)
         }
     }
 
@@ -119,7 +125,7 @@ class RedisConsoleIntegrationTest {
 
         RedisFixture.session(db).use { session ->
             val failure = assertThrows<DbException> {
-                runBlocking { session.adapter.execute(RedisCommand.of("GET", "a-list")) }
+                runBlocking { session.adapter.execute(RawCommand.of("GET", "a-list")) }
             }
 
             val queryFailed = assertIs<DbError.QueryFailed>(failure.error)
@@ -135,9 +141,9 @@ class RedisConsoleIntegrationTest {
         RedisFixture.adminBytes(db) { it.set("blob".toByteArray(), byteArrayOf(0x00, 0xFF.toByte(), 0x41)) }
 
         RedisFixture.session(db).use { session ->
-            val reply = session.adapter.execute(RedisCommand.of("GET", "blob")).reply
+            val reply = session.adapter.execute(RawCommand.of("GET", "blob")).reply
 
-            assertEquals("00ff41", assertIs<RedisText.Binary>(assertIs<RedisReply.Bulk>(reply).value).hex)
+            assertEquals("00ff41", assertIs<TextValue.Binary>(assertIs<CommandReply.Bulk>(reply).value).hex)
         }
     }
 
@@ -149,7 +155,7 @@ class RedisConsoleIntegrationTest {
 
         RedisFixture.session(db).use { session ->
             session.adapter.execute(
-                RedisCommand.of(listOf("SET".toByteArray(), key, "value with spaces".toByteArray())),
+                RawCommand.of(listOf("SET".toByteArray(), key, "value with spaces".toByteArray())),
             )
 
             val stored = RedisFixture.adminBytes(db) { it.get(key) }
@@ -163,15 +169,15 @@ class RedisConsoleIntegrationTest {
     fun `a reply with more elements than the budget is cut and says so`() = runBlocking {
         RedisFixture.admin(db) { commands -> (1..500).forEach { commands.rpush("long", "item:$it") } }
 
-        RedisFixture.session(db, limits = RedisLimits(replyElements = 50)).use { session ->
-            val result = session.adapter.execute(RedisCommand.of("LRANGE", "long", "0", "-1"))
+        RedisFixture.session(db, limits = KeyValueLimits(replyElements = 50)).use { session ->
+            val result = session.adapter.execute(RawCommand.of("LRANGE", "long", "0", "-1"))
 
             assertTrue(result.truncated)
-            val items = assertIs<RedisReply.Items>(result.reply).items
+            val items = assertIs<CommandReply.Items>(result.reply).items
             // Fifty kept, and one marker saying the rest were not — so a short list can
             // never be misread as a complete one.
             assertEquals(51, items.size)
-            assertEquals(RedisReply.Elided(Elision.ELEMENTS), items.last())
+            assertEquals(CommandReply.Elided(Elision.ELEMENTS), items.last())
         }
     }
 
@@ -179,12 +185,12 @@ class RedisConsoleIntegrationTest {
     fun `a reply nested deeper than the budget is elided where it was`() = runBlocking {
         RedisFixture.admin(db) { it.xadd("events", mapOf("kind" to "click")) }
 
-        RedisFixture.session(db, limits = RedisLimits(replyDepth = 1)).use { session ->
-            val result = session.adapter.execute(RedisCommand.of("XRANGE", "events", "-", "+"))
+        RedisFixture.session(db, limits = KeyValueLimits(replyDepth = 1)).use { session ->
+            val result = session.adapter.execute(RawCommand.of("XRANGE", "events", "-", "+"))
 
             assertTrue(result.truncated)
-            val outer = assertIs<RedisReply.Items>(result.reply)
-            assertEquals(RedisReply.Elided(Elision.DEPTH), outer.items.single())
+            val outer = assertIs<CommandReply.Items>(result.reply)
+            assertEquals(CommandReply.Elided(Elision.DEPTH), outer.items.single())
         }
     }
 
@@ -192,11 +198,11 @@ class RedisConsoleIntegrationTest {
     fun `an element larger than the budget is clipped and reports its true size`() = runBlocking {
         RedisFixture.admin(db) { it.set("big", "x".repeat(10_000)) }
 
-        RedisFixture.session(db, limits = RedisLimits(elementBytes = 100)).use { session ->
-            val result = session.adapter.execute(RedisCommand.of("GET", "big"))
+        RedisFixture.session(db, limits = KeyValueLimits(elementBytes = 100)).use { session ->
+            val result = session.adapter.execute(RawCommand.of("GET", "big"))
 
             assertTrue(result.truncated)
-            val value = assertIs<RedisReply.Bulk>(result.reply).value
+            val value = assertIs<CommandReply.Bulk>(result.reply).value
             assertEquals(100, value.text?.length)
             assertEquals(10_000, value.byteCount)
             assertTrue(value.truncated)
@@ -211,7 +217,7 @@ class RedisConsoleIntegrationTest {
 
         RedisFixture.session(db).use { session ->
             val failure = assertThrows<CommandConfirmationRequired> {
-                runBlocking { session.adapter.execute(RedisCommand.of("FLUSHDB")) }
+                runBlocking { session.adapter.execute(RawCommand.of("FLUSHDB")) }
             }
 
             assertEquals("FLUSHDB", failure.clearance.command)
@@ -226,7 +232,7 @@ class RedisConsoleIntegrationTest {
         RedisFixture.admin(db) { it.set("doomed", "value") }
 
         RedisFixture.session(db).use { session ->
-            session.adapter.execute(RedisCommand.of("FLUSHDB"), CommandConsent.Given())
+            session.adapter.execute(RawCommand.of("FLUSHDB"), CommandConsent.Given())
 
             assertEquals(null, RedisFixture.admin(db) { it.get("doomed") })
         }
@@ -240,19 +246,19 @@ class RedisConsoleIntegrationTest {
             // An empty acknowledgement is what a click sends. On production it is not
             // enough, and the failure carries the phrase that would be.
             val failure = assertThrows<CommandConfirmationRequired> {
-                runBlocking { session.adapter.execute(RedisCommand.of("FLUSHDB"), CommandConsent.Given()) }
+                runBlocking { session.adapter.execute(RawCommand.of("FLUSHDB"), CommandConsent.Given()) }
             }
             assertEquals("orders-cache FLUSHDB", failure.clearance.phrase)
 
             // The wrong phrase is no better.
             assertThrows<CommandConfirmationRequired> {
                 runBlocking {
-                    session.adapter.execute(RedisCommand.of("FLUSHDB"), CommandConsent.Given("orders-cache"))
+                    session.adapter.execute(RawCommand.of("FLUSHDB"), CommandConsent.Given("orders-cache"))
                 }
             }
             assertEquals("value", RedisFixture.admin(db) { it.get("survivor") })
 
-            session.adapter.execute(RedisCommand.of("FLUSHDB"), CommandConsent.Given("orders-cache FLUSHDB"))
+            session.adapter.execute(RawCommand.of("FLUSHDB"), CommandConsent.Given("orders-cache FLUSHDB"))
             assertEquals(null, RedisFixture.admin(db) { it.get("survivor") })
         }
     }
@@ -263,7 +269,7 @@ class RedisConsoleIntegrationTest {
         RedisFixture.session(db, readOnly = true).use { session ->
             val failure = assertThrows<DbException> {
                 runBlocking {
-                    session.adapter.execute(RedisCommand.of("SET", "k", "v"), CommandConsent.Given("anything"))
+                    session.adapter.execute(RawCommand.of("SET", "k", "v"), CommandConsent.Given("anything"))
                 }
             }
 
@@ -277,7 +283,7 @@ class RedisConsoleIntegrationTest {
         RedisFixture.session(db, readOnly = true).use { session ->
             val failure = assertThrows<DbException> {
                 runBlocking {
-                    session.adapter.execute(RedisCommand.of("KEYS", "*"), CommandConsent.Given("yes really"))
+                    session.adapter.execute(RawCommand.of("KEYS", "*"), CommandConsent.Given("yes really"))
                 }
             }
 
@@ -293,11 +299,11 @@ class RedisConsoleIntegrationTest {
         // so a UI that never offers the toggle can never issue it by accident.
         RedisFixture.session(db).use { session ->
             assertThrows<CommandConfirmationRequired> {
-                runBlocking { session.adapter.execute(RedisCommand.of("KEYS", "*")) }
+                runBlocking { session.adapter.execute(RawCommand.of("KEYS", "*")) }
             }
 
-            val acknowledged = session.adapter.execute(RedisCommand.of("KEYS", "*"), CommandConsent.Given())
-            assertIs<RedisReply.Items>(acknowledged.reply)
+            val acknowledged = session.adapter.execute(RawCommand.of("KEYS", "*"), CommandConsent.Given())
+            assertIs<CommandReply.Items>(acknowledged.reply)
             assertEquals("KEYS", acknowledged.command)
         }
     }
@@ -305,10 +311,10 @@ class RedisConsoleIntegrationTest {
     @Test
     fun `a command with nothing in it is refused before anything is sent`() = runBlocking {
         RedisFixture.session(db).use { session ->
-            val failure = assertThrows<DbException> { RedisCommand.of(emptyList()) }
+            val failure = assertThrows<DbException> { RawCommand.of(emptyList()) }
             assertIs<DbError.InvalidRequest>(failure.error)
             // And the session is untouched by it.
-            assertEquals("PONG", session.adapter.execute(RedisCommand.of("PING")).reply.text)
+            assertEquals("PONG", session.adapter.execute(RawCommand.of("PING")).reply.text)
         }
     }
 }

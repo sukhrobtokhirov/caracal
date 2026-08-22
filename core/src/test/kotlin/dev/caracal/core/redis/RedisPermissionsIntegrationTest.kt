@@ -2,6 +2,8 @@ package dev.caracal.core.redis
 
 import dev.caracal.core.connections.Secret
 import dev.caracal.core.result.DbException
+import dev.caracal.engine.api.MemoryEstimate
+import dev.caracal.engine.api.RawCommand
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
@@ -99,7 +101,7 @@ class RedisPermissionsIntegrationTest {
 
         session.use {
             val failure = assertThrows<DbException> {
-                runBlocking { session.adapter.execute(RedisCommand.of("SET", "user:1", "changed")) }
+                runBlocking { session.adapter.execute(RawCommand.of("SET", "user:1", "changed")) }
             }
 
             assertEquals("query_failed", failure.error.code)
@@ -119,7 +121,7 @@ class RedisPermissionsIntegrationTest {
 
         session.use {
             val failure = assertThrows<DbException> {
-                runBlocking { session.adapter.execute(RedisCommand.of("SET", "user:1", "changed")) }
+                runBlocking { session.adapter.execute(RawCommand.of("SET", "user:1", "changed")) }
             }
 
             val message = failure.error.message

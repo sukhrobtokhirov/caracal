@@ -4,8 +4,8 @@ import dev.caracal.core.connections.ConnectionId
 import dev.caracal.core.connections.Environment
 import dev.caracal.core.policy.Acknowledgement
 import dev.caracal.core.redis.CommandClearance
-import dev.caracal.core.redis.CommandConsent
-import dev.caracal.core.redis.RedisText
+import dev.caracal.engine.api.CommandConsent
+import dev.caracal.engine.api.TextValue
 import dev.caracal.core.result.DbError
 import dev.caracal.core.result.DbException
 import dev.caracal.core.vault.VaultState
@@ -72,7 +72,7 @@ class RedisConsoleViewModelTest {
         assertTrue(parsed.ambiguous)
         assertEquals(
             listOf("SET", "greeting", "hello world"),
-            parsed.arguments.map { (it as RedisText.Utf8).value },
+            parsed.arguments.map { (it as TextValue.Utf8).value },
         )
     }
 

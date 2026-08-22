@@ -1,14 +1,14 @@
 package dev.caracal.app
 
 import dev.caracal.core.connections.ConnectionId
-import dev.caracal.core.redis.KeyMetadata
-import dev.caracal.core.redis.KeyType
-import dev.caracal.core.redis.MemoryEstimate
-import dev.caracal.core.redis.RedisCursor
-import dev.caracal.core.redis.RedisKey
-import dev.caracal.core.redis.ScanPage
-import dev.caracal.core.redis.ScanStop
-import dev.caracal.core.redis.Ttl
+import dev.caracal.engine.api.KeyMetadata
+import dev.caracal.engine.api.KeyType
+import dev.caracal.engine.api.MemoryEstimate
+import dev.caracal.engine.api.ScanCursor
+import dev.caracal.engine.api.KeyRef
+import dev.caracal.engine.api.ScanPage
+import dev.caracal.engine.api.ScanStop
+import dev.caracal.engine.api.Ttl
 import dev.caracal.core.vault.VaultState
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -41,7 +41,7 @@ class RedisBrowserViewModelTest {
     private fun TestScope.model(service: FakeConnectionService) = RedisBrowserViewModel(service, this)
 
     private fun key(name: String, type: KeyType = KeyType.STRING) = KeyMetadata(
-        key = RedisKey(name.toByteArray()),
+        key = KeyRef(name.toByteArray()),
         type = type,
         ttl = Ttl.Persistent,
         memory = MemoryEstimate.Bytes(64),
@@ -52,7 +52,7 @@ class RedisBrowserViewModelTest {
         cursor: String = "0",
         stopped: ScanStop = ScanStop.COMPLETE,
     ) = ScanPage(
-        cursor = RedisCursor.of(cursor),
+        cursor = ScanCursor.of(cursor),
         keys = keys.toList(),
         iterations = 1,
         stopped = stopped,
@@ -267,7 +267,7 @@ class RedisBrowserViewModelTest {
         val model = model(service)
         model.show(id)
         advanceUntilIdle()
-        model.select(RedisKey("a".toByteArray()))
+        model.select(KeyRef("a".toByteArray()))
 
         model.clear()
 

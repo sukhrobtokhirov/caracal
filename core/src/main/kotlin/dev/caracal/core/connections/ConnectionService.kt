@@ -15,18 +15,18 @@ import dev.caracal.core.history.HistoryPage
 import dev.caracal.core.history.HistoryQuery
 import dev.caracal.core.history.HistoryScope
 import dev.caracal.core.postgres.PostgresCatalog
-import dev.caracal.core.redis.CommandConsent
-import dev.caracal.core.redis.CommandResult
-import dev.caracal.core.redis.KeyMetadata
-import dev.caracal.core.redis.KeyType
+import dev.caracal.engine.api.CommandConsent
+import dev.caracal.engine.api.CommandResult
+import dev.caracal.engine.api.KeyMetadata
+import dev.caracal.engine.api.KeyType
 import dev.caracal.core.redis.RedisAdapter
-import dev.caracal.core.redis.RedisCommand
-import dev.caracal.core.redis.RedisCursor
-import dev.caracal.core.redis.RedisKey
-import dev.caracal.core.redis.ScanPage
-import dev.caracal.core.redis.ServerInfo
-import dev.caracal.core.redis.ValuePage
-import dev.caracal.core.redis.ValueRequest
+import dev.caracal.engine.api.RawCommand
+import dev.caracal.engine.api.ScanCursor
+import dev.caracal.engine.api.KeyRef
+import dev.caracal.engine.api.ScanPage
+import dev.caracal.engine.api.ServerInfo
+import dev.caracal.engine.api.ValuePage
+import dev.caracal.engine.api.ValueRequest
 import dev.caracal.core.postgres.PostgresConnectionConfig
 import dev.caracal.core.postgres.PostgresProbe
 import dev.caracal.core.redis.RedisSession
@@ -187,21 +187,21 @@ interface ConnectionService {
     /**
      * One page of an open Redis connection's keyspace, with each key's metadata.
      *
-     * Bounded on every axis by [dev.caracal.core.redis.RedisLimits], and never `KEYS`.
+     * Bounded on every axis by [dev.caracal.core.redis.KeyValueLimits], and never `KEYS`.
      * An empty page is a successful result: `MATCH` filters on the server, so a
      * selective pattern produces empty batches while the cursor advances, and only
      * [ScanPage.complete] means the traversal is over.
      */
     suspend fun redisScan(
         id: ConnectionId,
-        cursor: RedisCursor = RedisCursor.START,
+        cursor: ScanCursor = ScanCursor.START,
         match: String? = null,
         type: KeyType? = null,
         pageSize: Int? = null,
     ): ScanPage
 
     /** One key's type, TTL, and size estimate, read fresh. */
-    suspend fun redisKey(id: ConnectionId, key: RedisKey): KeyMetadata
+    suspend fun redisKey(id: ConnectionId, key: KeyRef): KeyMetadata
 
     /**
      * One page of one Redis value, in the shape its type has.
@@ -225,7 +225,7 @@ interface ConnectionService {
      */
     suspend fun redisCommand(
         id: ConnectionId,
-        command: RedisCommand,
+        command: RawCommand,
         consent: CommandConsent = CommandConsent.None,
     ): CommandResult
 
@@ -533,13 +533,13 @@ class DefaultConnectionService(
 
     override suspend fun redisScan(
         id: ConnectionId,
-        cursor: RedisCursor,
+        cursor: ScanCursor,
         match: String?,
         type: KeyType?,
         pageSize: Int?,
     ): ScanPage = redis(id).scan(cursor = cursor, match = match, type = type, pageSize = pageSize)
 
-    override suspend fun redisKey(id: ConnectionId, key: RedisKey): KeyMetadata = redis(id).metadata(key)
+    override suspend fun redisKey(id: ConnectionId, key: KeyRef): KeyMetadata = redis(id).metadata(key)
 
     override suspend fun redisValue(id: ConnectionId, request: ValueRequest): ValuePage =
         redis(id).value(request)
@@ -554,7 +554,7 @@ class DefaultConnectionService(
      */
     override suspend fun redisCommand(
         id: ConnectionId,
-        command: RedisCommand,
+        command: RawCommand,
         consent: CommandConsent,
     ): CommandResult = redis(id).execute(command, consent)
 

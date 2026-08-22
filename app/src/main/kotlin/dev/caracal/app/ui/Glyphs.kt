@@ -10,7 +10,7 @@ import dev.caracal.core.catalog.ObjectKind
 import dev.caracal.core.connections.Engine
 import dev.caracal.core.connections.Environment
 import dev.caracal.app.RowKind
-import dev.caracal.core.redis.KeyType
+import dev.caracal.engine.api.KeyType
 
 /**
  * The application's glyph vocabulary.

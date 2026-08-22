@@ -1,8 +1,21 @@
-package dev.caracal.core.redis
+package dev.caracal.engine.api
 
-import dev.caracal.core.result.DbError
-import dev.caracal.core.result.DbException
 import java.io.ByteArrayOutputStream
+
+/*
+ * A command on its way to a server, moved here from `dev.caracal.core.redis` as
+ * [RawCommand], with the tokenizer that builds one.
+ *
+ * The tokenizer is here rather than in the engine because the console previews the
+ * parse before it runs the command, and a preview produced by a second parser is a
+ * preview that can disagree with what is sent. One tokenizer, visible to both ends,
+ * is the only arrangement in which §3.9's promise — what you see is what goes on the
+ * wire — is structural rather than a matter of keeping two files in step.
+ *
+ * What did *not* come with it is the command guard. §12 of the spec is explicit that
+ * it must not become a generic dangerous-statement classifier, and it stays in the
+ * engine, consulted on the way to the server, where a caller cannot decline to ask.
+ */
 
 /**
  * A command as it will be sent: an argument array, and the normalized name the
@@ -21,7 +34,7 @@ import java.io.ByteArrayOutputStream
  * text because a *command name* genuinely is ASCII, and they exist only for the
  * policy check.
  */
-class RedisCommand private constructor(
+class RawCommand private constructor(
     private val raw: List<ByteArray>,
     val name: String,
     val subcommand: String?,
@@ -42,7 +55,7 @@ class RedisCommand private constructor(
     val label: String = if (subcommand != null && name in CONTAINERS) "$name $subcommand" else name
 
     /** Never the arguments. This type reaches loggers, and this is what they get. */
-    override fun toString(): String = "RedisCommand($label, ${raw.size - 1} arguments)"
+    override fun toString(): String = "RawCommand($label, ${raw.size - 1} arguments)"
 
     companion object {
         /**
@@ -72,7 +85,7 @@ class RedisCommand private constructor(
          * produces *more* policy tokens from the same bytes. What is sent is [raw],
          * untouched.
          */
-        fun of(arguments: List<ByteArray>): RedisCommand {
+        fun of(arguments: List<ByteArray>): RawCommand {
             val policyTokens = arguments.take(2).flatMap { argument ->
                 // Not decoded strictly: a command name that is not ASCII is not a
                 // command, and a lenient decode here only ever yields a token that
@@ -82,9 +95,9 @@ class RedisCommand private constructor(
 
             val name = policyTokens.firstOrNull()
             if (arguments.isEmpty() || name.isNullOrEmpty()) {
-                throw DbException(DbError.InvalidRequest("Type a command to run."))
+                throw InvalidRequestException("Type a command to run.")
             }
-            return RedisCommand(
+            return RawCommand(
                 raw = arguments.map { it.copyOf() },
                 name = name,
                 subcommand = policyTokens.getOrNull(1),
@@ -92,7 +105,7 @@ class RedisCommand private constructor(
         }
 
         /** As [of], for a command whose arguments are all text. */
-        fun of(vararg arguments: String): RedisCommand =
+        fun of(vararg arguments: String): RawCommand =
             of(arguments.map { it.toByteArray(Charsets.UTF_8) })
 
         private val WHITESPACE = Regex("\\s+")
@@ -155,9 +168,7 @@ object CommandLine {
                         // runs something other than what was typed.
                         val next = line.getOrNull(position + 1)
                         if (next != null && !next.isWhitespace()) {
-                            throw DbException(
-                                DbError.InvalidRequest("Put a space after a closing quote."),
-                            )
+                            throw InvalidRequestException("Put a space after a closing quote.")
                         }
                         position++
                         quote = NONE
@@ -176,7 +187,7 @@ object CommandLine {
             }
 
             if (quote != NONE) {
-                throw DbException(DbError.InvalidRequest("There is an unclosed quote in that command."))
+                throw InvalidRequestException("There is an unclosed quote in that command.")
             }
             arguments += argument.toByteArray()
         }
@@ -184,7 +195,7 @@ object CommandLine {
     }
 
     /** [line] parsed and normalized into a command ready for the guard. */
-    fun command(line: String): RedisCommand = RedisCommand.of(split(line))
+    fun command(line: String): RawCommand = RawCommand.of(split(line))
 
     /**
      * Consumes the escape at [start] and returns the position after it.
@@ -253,4 +264,19 @@ object CommandLine {
     private const val NONE = ' '
     private const val SINGLE = '\''
     private const val DOUBLE = '"'
+}
+
+/** What the user has agreed to for one command. Never remembered past it. */
+sealed interface CommandConsent {
+    /** Nothing agreed to. A command needing agreement will ask. */
+    data object None : CommandConsent
+
+    /**
+     * Agreed, with [typed] carrying whatever the confirmation asked to be typed —
+     * empty when a click was enough.
+     *
+     * §3.10's single-use rule is enforced by this being an argument rather than a
+     * setting: there is nowhere to store it, so there is nothing to leave switched on.
+     */
+    data class Given(val typed: String = "") : CommandConsent
 }

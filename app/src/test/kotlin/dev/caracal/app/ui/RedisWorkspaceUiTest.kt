@@ -17,16 +17,16 @@ import dev.caracal.app.SchemaTreeViewModel
 import dev.caracal.app.ThemeViewModel
 import dev.caracal.core.connections.Engine
 import dev.caracal.core.connections.RuntimeStatus
-import dev.caracal.core.redis.KeyMetadata
-import dev.caracal.core.redis.KeyType
-import dev.caracal.core.redis.MemoryEstimate
-import dev.caracal.core.redis.RedisCursor
-import dev.caracal.core.redis.RedisKey
-import dev.caracal.core.redis.RedisText
-import dev.caracal.core.redis.ScanPage
-import dev.caracal.core.redis.ScanStop
-import dev.caracal.core.redis.Ttl
-import dev.caracal.core.redis.ValuePage
+import dev.caracal.engine.api.KeyMetadata
+import dev.caracal.engine.api.KeyType
+import dev.caracal.engine.api.MemoryEstimate
+import dev.caracal.engine.api.ScanCursor
+import dev.caracal.engine.api.KeyRef
+import dev.caracal.engine.api.TextValue
+import dev.caracal.engine.api.ScanPage
+import dev.caracal.engine.api.ScanStop
+import dev.caracal.engine.api.Ttl
+import dev.caracal.engine.api.ValuePage
 import dev.caracal.core.vault.VaultState
 import org.junit.jupiter.api.Test
 
@@ -41,11 +41,11 @@ import org.junit.jupiter.api.Test
 @OptIn(ExperimentalTestApi::class)
 class RedisWorkspaceUiTest {
 
-    private val key = RedisKey("user:42".toByteArray())
+    private val key = KeyRef("user:42".toByteArray())
 
     private fun service() = FakeConnectionService(VaultState.UNLOCKED).apply {
         scanPage = ScanPage(
-            cursor = RedisCursor.START,
+            cursor = ScanCursor.START,
             keys = listOf(
                 KeyMetadata(
                     key = key,
@@ -60,7 +60,7 @@ class RedisWorkspaceUiTest {
         keyMetadata[key] = scanPage.keys.first()
         valuePage = ValuePage.Text(
             key = key,
-            content = RedisText.Utf8("alice", byteCount = 5),
+            content = TextValue.Utf8("alice", byteCount = 5),
             offset = 0,
             nextOffset = null,
             length = 5,

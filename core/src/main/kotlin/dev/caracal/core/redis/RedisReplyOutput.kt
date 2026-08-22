@@ -1,11 +1,15 @@
 package dev.caracal.core.redis
 
+import dev.caracal.engine.api.CommandReply
+import dev.caracal.engine.api.Elision
+import dev.caracal.engine.api.KeyValueLimits
+import dev.caracal.engine.api.TextValues
 import io.lettuce.core.codec.RedisCodec
 import io.lettuce.core.output.CommandOutput
 import java.nio.ByteBuffer
 
 /**
- * Decodes any RESP reply into a [RedisReply], applying [RedisLimits] as it goes.
+ * Decodes any RESP reply into a [CommandReply], applying [KeyValueLimits] as it goes.
  *
  * Lettuce ships outputs for every command it knows; this is for the console, which
  * sends commands nobody has typed yet. It follows the same protocol contract
@@ -17,15 +21,15 @@ import java.nio.ByteBuffer
  * object graph. Netty has already received the bytes either way, so this is not about
  * the wire; it is about not turning a 200 MB `CLIENT LIST` into 200 MB of Strings and
  * a paused JVM on the way to discarding most of it. What is refused is refused before
- * it is allocated, and leaves a [RedisReply.Elided] behind so the reader can tell.
+ * it is allocated, and leaves a [CommandReply.Elided] behind so the reader can tell.
  */
 internal class RedisReplyOutput(
     codec: RedisCodec<ByteArray, ByteArray>,
-    private val limits: RedisLimits,
-) : CommandOutput<ByteArray, ByteArray, RedisReply>(codec, RedisReply.Nil) {
+    private val limits: KeyValueLimits,
+) : CommandOutput<ByteArray, ByteArray, CommandReply>(codec, CommandReply.Nil) {
 
-    private class Frame(val kind: RedisReply.Items.Kind, val dropping: Boolean, val tooDeep: Boolean) {
-        val items = mutableListOf<RedisReply>()
+    private class Frame(val kind: CommandReply.Items.Kind, val dropping: Boolean, val tooDeep: Boolean) {
+        val items = mutableListOf<CommandReply>()
         var truncated = false
     }
 
@@ -33,7 +37,7 @@ internal class RedisReplyOutput(
     private var current: Frame? = null
 
     /** The whole reply, when it was a bare scalar with no array around it. */
-    private var scalar: RedisReply? = null
+    private var scalar: CommandReply? = null
 
     /** Mirrors the driver's own nesting counter, which is what [complete] is told about. */
     private var depth = 0
@@ -45,26 +49,26 @@ internal class RedisReplyOutput(
     var truncated: Boolean = false
         private set
 
-    override fun get(): RedisReply = current?.toReply() ?: scalar ?: RedisReply.Nil
+    override fun get(): CommandReply = current?.toReply() ?: scalar ?: CommandReply.Nil
 
     // --- Scalars --------------------------------------------------------------
 
     override fun set(bytes: ByteBuffer?) = add(bytes.toBulk())
 
-    override fun set(integer: Long) = add(RedisReply.Integer(integer))
+    override fun set(integer: Long) = add(CommandReply.Integer(integer))
 
-    override fun set(value: Double) = add(RedisReply.Decimal(value.toString()))
+    override fun set(value: Double) = add(CommandReply.Decimal(value.toString()))
 
-    override fun set(value: Boolean) = add(RedisReply.Bool(value))
+    override fun set(value: Boolean) = add(CommandReply.Bool(value))
 
     override fun setSingle(bytes: ByteBuffer?) {
         // A simple string is protocol-level text — `+OK`, `+PONG`, a status line — and
         // is never binary, so it is the one case that decodes without asking.
-        add(bytes?.let { RedisReply.Status(decodeString(it)) } ?: RedisReply.Nil)
+        add(bytes?.let { CommandReply.Status(decodeString(it)) } ?: CommandReply.Nil)
     }
 
     override fun setBigNumber(bytes: ByteBuffer?) {
-        add(bytes?.let { RedisReply.Decimal(decodeString(it)) } ?: RedisReply.Nil)
+        add(bytes?.let { CommandReply.Decimal(decodeString(it)) } ?: CommandReply.Nil)
     }
 
     /**
@@ -82,7 +86,7 @@ internal class RedisReplyOutput(
     override fun setError(bytes: ByteBuffer) = setError(decodeString(bytes))
 
     override fun setError(error: String) {
-        if (current == null) super.setError(error) else add(RedisReply.Failure(error))
+        if (current == null) super.setError(error) else add(CommandReply.Failure(error))
     }
 
     // --- Structure ------------------------------------------------------------
@@ -96,15 +100,15 @@ internal class RedisReplyOutput(
      * Lettuce calls `multiArray` for it regardless and then ends the state, so the
      * frame would never be closed by anything either.
      */
-    override fun multi(count: Int) = openOrNil(count, RedisReply.Items.Kind.ARRAY)
+    override fun multi(count: Int) = openOrNil(count, CommandReply.Items.Kind.ARRAY)
 
-    override fun multiArray(count: Int) = openOrNil(count, RedisReply.Items.Kind.ARRAY)
+    override fun multiArray(count: Int) = openOrNil(count, CommandReply.Items.Kind.ARRAY)
 
-    override fun multiPush(count: Int) = open(RedisReply.Items.Kind.PUSH)
+    override fun multiPush(count: Int) = open(CommandReply.Items.Kind.PUSH)
 
-    override fun multiSet(count: Int) = open(RedisReply.Items.Kind.SET)
+    override fun multiSet(count: Int) = open(CommandReply.Items.Kind.SET)
 
-    override fun multiMap(count: Int) = open(RedisReply.Items.Kind.MAP)
+    override fun multiMap(count: Int) = open(CommandReply.Items.Kind.MAP)
 
     /**
      * Closes a level once the driver has unwound past it.
@@ -117,12 +121,12 @@ internal class RedisReplyOutput(
         if (depth > 0 && depth < this.depth) close()
     }
 
-    private fun openOrNil(count: Int, kind: RedisReply.Items.Kind) {
-        if (count < 0) add(RedisReply.Nil) else open(kind)
+    private fun openOrNil(count: Int, kind: CommandReply.Items.Kind) {
+        if (count < 0) add(CommandReply.Nil) else open(kind)
     }
 
-    private fun open(kind: RedisReply.Items.Kind) {
-        val parent = current ?: Frame(RedisReply.Items.Kind.ARRAY, dropping = false, tooDeep = false)
+    private fun open(kind: CommandReply.Items.Kind) {
+        val parent = current ?: Frame(CommandReply.Items.Kind.ARRAY, dropping = false, tooDeep = false)
         current = parent
         stack.addFirst(parent)
         // The outermost real level is depth 1, so a limit of one keeps a flat array and
@@ -143,7 +147,7 @@ internal class RedisReplyOutput(
 
     // --- Budgets --------------------------------------------------------------
 
-    private fun add(reply: RedisReply) {
+    private fun add(reply: CommandReply) {
         val frame = current
         if (frame == null) {
             scalar = reply
@@ -152,7 +156,7 @@ internal class RedisReplyOutput(
         frame.accept(reply)
     }
 
-    private fun Frame.accept(reply: RedisReply) {
+    private fun Frame.accept(reply: CommandReply) {
         if (dropping) return
         if (elementsKept >= limits.replyElements) {
             // Qualified, and it has to be. Inside an extension on Frame, a bare
@@ -162,7 +166,7 @@ internal class RedisReplyOutput(
             this@RedisReplyOutput.truncated = true
             if (!truncated) {
                 truncated = true
-                items += RedisReply.Elided(Elision.ELEMENTS)
+                items += CommandReply.Elided(Elision.ELEMENTS)
             }
             return
         }
@@ -170,9 +174,9 @@ internal class RedisReplyOutput(
         items += reply
     }
 
-    private fun Frame.toReply(): RedisReply = when {
-        tooDeep -> RedisReply.Elided(Elision.DEPTH)
-        else -> RedisReply.Items(kind = kind, items = items.toList(), truncated = truncated)
+    private fun Frame.toReply(): CommandReply = when {
+        tooDeep -> CommandReply.Elided(Elision.DEPTH)
+        else -> CommandReply.Items(kind = kind, items = items.toList(), truncated = truncated)
     }
 
     /**
@@ -181,13 +185,13 @@ internal class RedisReplyOutput(
      * The buffer belongs to Netty and is reused the moment this returns, so what is
      * kept is copied out; nothing here retains a view of it.
      */
-    private fun ByteBuffer?.toBulk(): RedisReply {
-        if (this == null) return RedisReply.Nil
+    private fun ByteBuffer?.toBulk(): CommandReply {
+        if (this == null) return CommandReply.Nil
         val length = remaining()
         val budget = limits.responseBytes - bytesKept
         if (budget <= 0) {
             truncated = true
-            return RedisReply.Elided(Elision.BYTES)
+            return CommandReply.Elided(Elision.BYTES)
         }
         val keep = minOf(length.toLong(), limits.elementBytes.toLong(), budget).toInt()
         val bytes = ByteArray(keep)
@@ -196,6 +200,6 @@ internal class RedisReplyOutput(
         for (index in 0 until keep) bytes[index] = get(start + index)
         bytesKept += keep
         if (keep < length) truncated = true
-        return RedisReply.Bulk(RedisBytes.window(bytes, total = length, limit = keep))
+        return CommandReply.Bulk(TextValues.window(bytes, total = length, limit = keep))
     }
 }

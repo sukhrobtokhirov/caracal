@@ -1,5 +1,14 @@
 package dev.caracal.core.redis
 
+import dev.caracal.engine.api.KeyMetadata
+import dev.caracal.engine.api.KeyRef
+import dev.caracal.engine.api.KeyType
+import dev.caracal.engine.api.KeyValueLimits
+import dev.caracal.engine.api.MemoryEstimate
+import dev.caracal.engine.api.ScanCursor
+import dev.caracal.engine.api.ScanStop
+import dev.caracal.engine.api.TextValue
+import dev.caracal.engine.api.Ttl
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -60,8 +69,8 @@ class RedisBrowseIntegrationTest {
         seed(2_000) { "filler:$it" }
         RedisFixture.admin(db) { it.set("needle:1", "v") }
 
-        RedisFixture.session(db, limits = RedisLimits(scanCount = 20, scanIterations = 5)).use { session ->
-            var cursor = RedisCursor.START
+        RedisFixture.session(db, limits = KeyValueLimits(scanCount = 20, scanIterations = 5)).use { session ->
+            var cursor = ScanCursor.START
             var found = 0
             var pages = 0
             var complete = false
@@ -83,7 +92,7 @@ class RedisBrowseIntegrationTest {
     fun `a page stops on its budget without ending the traversal`() = runBlocking {
         seed(500) { "user:$it" }
 
-        RedisFixture.session(db, limits = RedisLimits(keysPerPage = 20, scanCount = 10)).use { session ->
+        RedisFixture.session(db, limits = KeyValueLimits(keysPerPage = 20, scanCount = 10)).use { session ->
             val page = session.adapter.scan()
 
             assertEquals(ScanStop.PAGE_FULL, page.stopped)
@@ -99,7 +108,7 @@ class RedisBrowseIntegrationTest {
         // completion over a keyspace nothing matches in is KEYS with more round trips.
         seed(5_000) { "filler:$it" }
 
-        RedisFixture.session(db, limits = RedisLimits(scanIterations = 3, scanCount = 10)).use { session ->
+        RedisFixture.session(db, limits = KeyValueLimits(scanIterations = 3, scanCount = 10)).use { session ->
             val page = session.adapter.scan(match = "nothing-matches-this:*")
 
             assertEquals(ScanStop.ITERATION_BUDGET, page.stopped)
@@ -115,9 +124,9 @@ class RedisBrowseIntegrationTest {
         val names = (1..300).map { "user:$it" }
         seed(names)
 
-        RedisFixture.session(db, limits = RedisLimits(keysPerPage = 40, scanCount = 25)).use { session ->
+        RedisFixture.session(db, limits = KeyValueLimits(keysPerPage = 40, scanCount = 25)).use { session ->
             val seen = mutableSetOf<String>()
-            var cursor = RedisCursor.START
+            var cursor = ScanCursor.START
             var pages = 0
             while (pages < 100) {
                 val page = session.adapter.scan(cursor = cursor)
@@ -138,7 +147,7 @@ class RedisBrowseIntegrationTest {
         // like it had a data problem.
         seed(400) { "user:$it" }
 
-        RedisFixture.session(db, limits = RedisLimits(keysPerPage = 400, scanCount = 5)).use { session ->
+        RedisFixture.session(db, limits = KeyValueLimits(keysPerPage = 400, scanCount = 5)).use { session ->
             val page = session.adapter.scan()
             val names = page.keys.map { it.key }
 
@@ -232,7 +241,7 @@ class RedisBrowseIntegrationTest {
     @Test
     fun `a key that is not there reads as absent rather than as a failure`() = runBlocking {
         RedisFixture.session(db).use { session ->
-            val metadata = session.adapter.metadata(RedisKey("never-existed".toByteArray()))
+            val metadata = session.adapter.metadata(KeyRef("never-existed".toByteArray()))
 
             assertFalse(metadata.exists)
             assertNull(metadata.type)
@@ -246,7 +255,7 @@ class RedisBrowseIntegrationTest {
         // module type: a key whose type is not one of the six is still a key, and
         // dropping it from the browser would hide data that is there.
         val metadata = KeyMetadata(
-            key = RedisKey("doc".toByteArray()),
+            key = KeyRef("doc".toByteArray()),
             type = null,
             ttl = Ttl.Persistent,
             memory = MemoryEstimate.Bytes(64),
@@ -286,7 +295,7 @@ class RedisBrowseIntegrationTest {
             val listed = session.adapter.scan().keys.single()
 
             assertContentEquals(name, listed.key.bytes)
-            assertIs<RedisText.Binary>(listed.key.display)
+            assertIs<TextValue.Binary>(listed.key.display)
             assertNull(listed.key.text)
             // And the listed key is usable: reading it back by the bytes that were
             // listed finds the value rather than nothing.
@@ -314,7 +323,7 @@ class RedisBrowseIntegrationTest {
         }
 
         RedisFixture.session(db).use { session ->
-            var cursor = RedisCursor.START
+            var cursor = ScanCursor.START
             repeat(5) {
                 val page = session.adapter.scan(cursor = cursor, match = "user:*")
                 cursor = page.cursor

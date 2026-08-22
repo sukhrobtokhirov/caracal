@@ -13,16 +13,16 @@ import androidx.compose.ui.test.v2.runDesktopComposeUiTest
 import dev.caracal.app.FakeConnectionService
 import dev.caracal.app.RedisValueViewModel
 import dev.caracal.core.connections.ConnectionId
-import dev.caracal.core.redis.FieldEntry
-import dev.caracal.core.redis.KeyMetadata
-import dev.caracal.core.redis.KeyType
-import dev.caracal.core.redis.MemoryEstimate
-import dev.caracal.core.redis.RedisCursor
-import dev.caracal.core.redis.RedisKey
-import dev.caracal.core.redis.RedisText
-import dev.caracal.core.redis.ScoredMember
-import dev.caracal.core.redis.Ttl
-import dev.caracal.core.redis.ValuePage
+import dev.caracal.engine.api.FieldEntry
+import dev.caracal.engine.api.KeyMetadata
+import dev.caracal.engine.api.KeyType
+import dev.caracal.engine.api.MemoryEstimate
+import dev.caracal.engine.api.ScanCursor
+import dev.caracal.engine.api.KeyRef
+import dev.caracal.engine.api.TextValue
+import dev.caracal.engine.api.ScoredMember
+import dev.caracal.engine.api.Ttl
+import dev.caracal.engine.api.ValuePage
 import dev.caracal.core.vault.VaultState
 import kotlin.test.assertEquals
 import org.junit.jupiter.api.Test
@@ -38,9 +38,9 @@ import org.junit.jupiter.api.Test
 class RedisValueUiTest {
 
     private val id = ConnectionId("id-1")
-    private val key = RedisKey("user:42".toByteArray())
+    private val key = KeyRef("user:42".toByteArray())
 
-    private fun text(value: String) = RedisText.Utf8(value, byteCount = value.length)
+    private fun text(value: String) = TextValue.Utf8(value, byteCount = value.length)
 
     private fun metadata(type: KeyType?, unsupported: String? = null) = KeyMetadata(
         key = key,
@@ -82,7 +82,7 @@ class RedisValueUiTest {
             val service = service(
                 ValuePage.Text(
                     key = key,
-                    content = RedisText.Utf8(document, byteCount = document.length),
+                    content = TextValue.Utf8(document, byteCount = document.length),
                     offset = 0,
                     nextOffset = null,
                     length = document.length,
@@ -112,7 +112,7 @@ class RedisValueUiTest {
             val service = service(
                 ValuePage.Text(
                     key = key,
-                    content = RedisText.Binary("ff00ab", byteCount = 3),
+                    content = TextValue.Binary("ff00ab", byteCount = 3),
                     offset = 0,
                     nextOffset = null,
                     length = 3,
@@ -134,7 +134,7 @@ class RedisValueUiTest {
                 ValuePage.Fields(
                     key = key,
                     entries = listOf(FieldEntry(text("email"), text("a@example.com"))),
-                    cursor = RedisCursor.of("17"),
+                    cursor = ScanCursor.of("17"),
                     complete = false,
                 ),
                 KeyType.HASH,
@@ -154,7 +154,7 @@ class RedisValueUiTest {
     fun `an empty collection is not a missing key`() =
         runDesktopComposeUiTest(width = 700, height = 700) {
             val service = service(
-                ValuePage.Members(key, emptyList(), RedisCursor.START, complete = true),
+                ValuePage.Members(key, emptyList(), ScanCursor.START, complete = true),
                 KeyType.SET,
             )
             pane(service)

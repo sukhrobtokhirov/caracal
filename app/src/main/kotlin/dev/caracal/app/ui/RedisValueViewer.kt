@@ -37,8 +37,8 @@ import dev.caracal.app.RedisFormat
 import dev.caracal.app.RedisValueViewModel
 import dev.caracal.app.TextView
 import dev.caracal.app.ValueState
-import dev.caracal.core.redis.FieldEntry
-import dev.caracal.core.redis.KeyMetadata
+import dev.caracal.engine.api.FieldEntry
+import dev.caracal.engine.api.KeyMetadata
 
 /**
  * The value pane: one key, in a viewer suited to what it holds.

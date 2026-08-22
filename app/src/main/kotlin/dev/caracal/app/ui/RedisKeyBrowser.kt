@@ -40,9 +40,9 @@ import dev.caracal.app.KeyRow
 import dev.caracal.app.RedisBrowserViewModel
 import dev.caracal.app.RedisFormat
 import dev.caracal.app.ScanProgress
-import dev.caracal.core.redis.KeyType
-import dev.caracal.core.redis.RedisKey
-import dev.caracal.core.redis.ScanStop
+import dev.caracal.engine.api.KeyType
+import dev.caracal.engine.api.KeyRef
+import dev.caracal.engine.api.ScanStop
 
 /**
  * The Redis key browser.
@@ -61,7 +61,7 @@ import dev.caracal.core.redis.ScanStop
 @Composable
 fun RedisKeyBrowser(
     model: RedisBrowserViewModel,
-    onOpenKey: (RedisKey) -> Unit,
+    onOpenKey: (KeyRef) -> Unit,
     modifier: Modifier = Modifier,
     focus: FocusRequest = remember { FocusRequest() },
 ) {

@@ -4,6 +4,7 @@ import dev.caracal.core.connections.ConnectionConfig
 import dev.caracal.core.connections.Environment
 import dev.caracal.core.policy.Acknowledgement
 import dev.caracal.core.result.DbError
+import dev.caracal.engine.api.RawCommand
 
 /** What has to happen before a console command is sent. */
 sealed interface CommandClearance {
@@ -79,7 +80,7 @@ sealed interface CommandClearance {
  */
 object RedisCommandGuard {
 
-    fun clearanceFor(command: RedisCommand, connection: ConnectionConfig): CommandClearance {
+    fun clearanceFor(command: RawCommand, connection: ConnectionConfig): CommandClearance {
         val dangerous = dangerReason(command)
 
         if (connection.readOnly) {
@@ -128,7 +129,7 @@ object RedisCommandGuard {
         }
     }
 
-    private fun refuse(command: RedisCommand, message: String) = CommandClearance.Refused(
+    private fun refuse(command: RawCommand, message: String) = CommandClearance.Refused(
         DbError.CommandNotAllowed(
             message = message,
             command = command.label,
@@ -137,7 +138,7 @@ object RedisCommandGuard {
     )
 
     private fun confirm(
-        command: RedisCommand,
+        command: RawCommand,
         connection: ConnectionConfig,
         acknowledgement: Acknowledgement,
         warning: String,
@@ -150,7 +151,7 @@ object RedisCommandGuard {
     )
 
     /** Why this command is dangerous, or `null` when it is not one of them. */
-    fun dangerReason(command: RedisCommand): String? =
+    fun dangerReason(command: RawCommand): String? =
         DANGEROUS[command.label] ?: DANGEROUS[command.name]
 
     /**
@@ -162,7 +163,7 @@ object RedisCommandGuard {
      * the first time somebody installs RedisJSON, and wrong in the direction that
      * lets a write through.
      */
-    fun isKnownRead(command: RedisCommand): Boolean = when {
+    fun isKnownRead(command: RawCommand): Boolean = when {
         dangerReason(command) != null -> false
         command.name in READ_CONTAINERS -> true
         command.label in READ_SUBCOMMANDS -> true

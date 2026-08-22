@@ -30,21 +30,21 @@ import dev.caracal.core.export.CsvOptions
 import dev.caracal.core.export.ExportLimits
 import dev.caracal.core.redis.CommandClearance
 import dev.caracal.core.redis.CommandConfirmationRequired
-import dev.caracal.core.redis.CommandConsent
-import dev.caracal.core.redis.CommandResult
-import dev.caracal.core.redis.KeyMetadata
-import dev.caracal.core.redis.KeyType
-import dev.caracal.core.redis.MemoryEstimate
-import dev.caracal.core.redis.RedisCommand
-import dev.caracal.core.redis.RedisCursor
-import dev.caracal.core.redis.RedisKey
-import dev.caracal.core.redis.RedisReply
-import dev.caracal.core.redis.ScanPage
-import dev.caracal.core.redis.ScanStop
-import dev.caracal.core.redis.ServerInfo
-import dev.caracal.core.redis.Ttl
-import dev.caracal.core.redis.ValuePage
-import dev.caracal.core.redis.ValueRequest
+import dev.caracal.engine.api.CommandConsent
+import dev.caracal.engine.api.CommandResult
+import dev.caracal.engine.api.KeyMetadata
+import dev.caracal.engine.api.KeyType
+import dev.caracal.engine.api.MemoryEstimate
+import dev.caracal.engine.api.RawCommand
+import dev.caracal.engine.api.ScanCursor
+import dev.caracal.engine.api.KeyRef
+import dev.caracal.engine.api.CommandReply
+import dev.caracal.engine.api.ScanPage
+import dev.caracal.engine.api.ScanStop
+import dev.caracal.engine.api.ServerInfo
+import dev.caracal.engine.api.Ttl
+import dev.caracal.engine.api.ValuePage
+import dev.caracal.engine.api.ValueRequest
 import dev.caracal.core.result.CellValue
 import dev.caracal.core.result.Column
 import dev.caracal.core.result.ColumnFormat
@@ -350,7 +350,7 @@ open class FakeConnectionService(
 
     /** What [redisScan] hands back. A test that cares sets it; most do not. */
     var scanPage: ScanPage = ScanPage(
-        cursor = RedisCursor.START,
+        cursor = ScanCursor.START,
         keys = emptyList(),
         iterations = 1,
         stopped = ScanStop.COMPLETE,
@@ -367,7 +367,7 @@ open class FakeConnectionService(
     val scanPages = mutableListOf<ScanPage>()
 
     /** The metadata [redisKey] answers with, for keys not on the current scan page. */
-    val keyMetadata = mutableMapOf<RedisKey, KeyMetadata>()
+    val keyMetadata = mutableMapOf<KeyRef, KeyMetadata>()
 
     /**
      * Metadata [redisKey] answers with in order, one per call, before [keyMetadata].
@@ -395,7 +395,7 @@ open class FakeConnectionService(
     /** What [redisCommand] hands back when the guard is satisfied. */
     var commandResult: CommandResult = CommandResult(
         command = "PING",
-        reply = RedisReply.Status("PONG"),
+        reply = CommandReply.Status("PONG"),
         duration = 1.milliseconds,
         truncated = false,
     )
@@ -418,7 +418,7 @@ open class FakeConnectionService(
 
     override suspend fun redisScan(
         id: ConnectionId,
-        cursor: RedisCursor,
+        cursor: ScanCursor,
         match: String?,
         type: KeyType?,
         pageSize: Int?,
@@ -429,7 +429,7 @@ open class FakeConnectionService(
         return if (scanPages.isEmpty()) scanPage else scanPages.removeAt(0)
     }
 
-    override suspend fun redisKey(id: ConnectionId, key: RedisKey): KeyMetadata {
+    override suspend fun redisKey(id: ConnectionId, key: KeyRef): KeyMetadata {
         calls += "redisKey"
         await()
         requireUnlocked()
@@ -455,7 +455,7 @@ open class FakeConnectionService(
 
     override suspend fun redisCommand(
         id: ConnectionId,
-        command: RedisCommand,
+        command: RawCommand,
         consent: CommandConsent,
     ): CommandResult {
         calls += "redisCommand(${command.label})"

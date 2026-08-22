@@ -2,7 +2,7 @@ package dev.caracal.engine.redis
 
 import dev.caracal.core.policy.Acknowledgement
 import dev.caracal.core.redis.CommandConfirmationRequired
-import dev.caracal.core.redis.CommandLine
+import dev.caracal.engine.api.CommandLine
 import dev.caracal.core.redis.RedisFixture
 import dev.caracal.engine.api.ConnectionDescriptor
 import dev.caracal.engine.api.ConnectionId

@@ -26,7 +26,7 @@ import dev.caracal.core.connections.Environment
 import dev.caracal.core.connections.RuntimeState
 import dev.caracal.core.connections.RuntimeStatus
 import dev.caracal.core.history.ExecutionOutcome
-import dev.caracal.core.redis.KeyType
+import dev.caracal.engine.api.KeyType
 
 /**
  * The safety signals.

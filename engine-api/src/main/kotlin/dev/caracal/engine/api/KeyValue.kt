@@ -1,7 +1,15 @@
-package dev.caracal.core.redis
+package dev.caracal.engine.api
 
-import dev.caracal.core.result.DbError
-import dev.caracal.core.result.DbException
+/*
+ * The key browser's vocabulary, moved here from `dev.caracal.core.redis`.
+ *
+ * `KeyValueFacet` is declared in terms of these, and the facet exists so that the
+ * engine filling a page in and the workspace drawing it never meet. `RedisKey`
+ * became [KeyRef] and `RedisCursor` became [ScanCursor] on the way, for the reason
+ * `Text.kt` gives: the shared module is the wrong place for a type named after one
+ * engine. Nothing else about them changed — a scan is still a bounded traversal
+ * that promises exactly what Redis promises, and the prose says so.
+ */
 
 /** The value types this build can browse. Anything else is a key it will not open. */
 enum class KeyType(val wire: String) {
@@ -35,7 +43,7 @@ enum class KeyType(val wire: String) {
  * "compare it to zero", both of which text does perfectly well.
  */
 @JvmInline
-value class RedisCursor private constructor(val value: String) {
+value class ScanCursor private constructor(val value: String) {
 
     /** Redis returns `0` when a traversal has come all the way round. */
     val isComplete: Boolean get() = value == START_VALUE
@@ -46,7 +54,7 @@ value class RedisCursor private constructor(val value: String) {
         private const val START_VALUE = "0"
 
         /** Where every traversal begins. */
-        val START = RedisCursor(START_VALUE)
+        val START = ScanCursor(START_VALUE)
 
         /**
          * Validates a cursor that came from outside.
@@ -57,18 +65,18 @@ value class RedisCursor private constructor(val value: String) {
          * an arbitrary caller-supplied string into a command argument is how a
          * validation gap becomes a protocol-level surprise.
          */
-        fun of(text: String): RedisCursor {
+        fun of(text: String): ScanCursor {
             val trimmed = text.trim()
             val valid = trimmed.isNotEmpty() &&
                 trimmed.length <= 20 &&
                 trimmed.all { it in '0'..'9' } &&
                 trimmed.toULongOrNull() != null
             if (!valid) {
-                throw DbException(DbError.InvalidRequest("That is not a scan cursor this server issued."))
+                throw InvalidRequestException("That is not a scan cursor this server issued.")
             }
             // Normalized, so "007" and "7" are one cursor rather than two that would
             // defeat a caller comparing them.
-            return RedisCursor(trimmed.toULong().toString())
+            return ScanCursor(trimmed.toULong().toString())
         }
     }
 }
@@ -85,7 +93,7 @@ value class RedisCursor private constructor(val value: String) {
  * during a resizing traversal as a matter of course, and identity comparison on
  * arrays would silently never match.
  */
-class RedisKey(bytes: ByteArray, limits: RedisLimits = RedisLimits()) {
+class KeyRef(bytes: ByteArray, limits: KeyValueLimits = KeyValueLimits()) {
 
     /** A private copy: an array handed in or out could be mutated behind this. */
     private val content: ByteArray = bytes.copyOf()
@@ -94,7 +102,7 @@ class RedisKey(bytes: ByteArray, limits: RedisLimits = RedisLimits()) {
     val bytes: ByteArray get() = content.copyOf()
 
     /** How the name is shown. Clipped, and hexadecimal when the name is not text. */
-    val display: RedisText = RedisBytes.of(content, limits.elementBytes)
+    val display: TextValue = TextValues.of(content, limits.elementBytes)
 
     /** The name as text when it is text, for a caller building a prefix tree. */
     val text: String? get() = display.text
@@ -102,12 +110,12 @@ class RedisKey(bytes: ByteArray, limits: RedisLimits = RedisLimits()) {
     private val hash: Int = content.contentHashCode()
 
     override fun equals(other: Any?): Boolean =
-        this === other || (other is RedisKey && content.contentEquals(other.content))
+        this === other || (other is KeyRef && content.contentEquals(other.content))
 
     override fun hashCode(): Int = hash
 
     /** Never the raw bytes. A key name reaches a log only through this. */
-    override fun toString(): String = "RedisKey(${content.size} bytes)"
+    override fun toString(): String = "KeyRef(${content.size} bytes)"
 }
 
 /** How long a key has left. Redis answers `TTL` with two sentinels and a count. */
@@ -165,7 +173,7 @@ sealed interface MemoryEstimate {
  * thing needs saying about them.
  */
 data class KeyMetadata(
-    val key: RedisKey,
+    val key: KeyRef,
     val type: KeyType?,
     val ttl: Ttl,
     val memory: MemoryEstimate,
@@ -183,10 +191,10 @@ enum class ScanStop {
     /** The page filled. There is more, and the cursor says where. */
     PAGE_FULL,
 
-    /** [RedisLimits.scanIterations] ran out before either of the above. */
+    /** [KeyValueLimits.scanIterations] ran out before either of the above. */
     ITERATION_BUDGET,
 
-    /** [RedisLimits.scanDuration] ran out before either of the above. */
+    /** [KeyValueLimits.scanDuration] ran out before either of the above. */
     TIME_BUDGET,
 }
 
@@ -203,7 +211,7 @@ enum class ScanStop {
  * carries no stronger one.
  */
 data class ScanPage(
-    val cursor: RedisCursor,
+    val cursor: ScanCursor,
     val keys: List<KeyMetadata>,
     val iterations: Int,
     val stopped: ScanStop,
@@ -212,7 +220,7 @@ data class ScanPage(
 }
 
 /** A hash field and its value. */
-data class FieldEntry(val field: RedisText, val value: RedisText)
+data class FieldEntry(val field: TextValue, val value: TextValue)
 
 /**
  * A sorted-set member and its score, as Redis's own text.
@@ -222,10 +230,10 @@ data class FieldEntry(val field: RedisText, val value: RedisText)
  * re-formatting it for display is two conversions that can each move the last digit
  * — on a value the user is inspecting *because* they care about its exact ordering.
  */
-data class ScoredMember(val member: RedisText, val score: String)
+data class ScoredMember(val member: TextValue, val score: String)
 
 /** A list element, carrying the index it actually has. */
-data class IndexedElement(val index: Long, val value: RedisText)
+data class IndexedElement(val index: Long, val value: TextValue)
 
 /**
  * One stream entry: its ID, and its fields in the order they were written.
@@ -239,11 +247,11 @@ data class StreamEntry(val id: String, val fields: List<FieldEntry>)
  * One page of a value, in whichever shape the key's type has.
  *
  * [complete] means the whole value has now been seen. [truncated] means this page
- * kept less than it read, because [RedisLimits.responseBytes] ran out — a separate
+ * kept less than it read, because [KeyValueLimits.responseBytes] ran out — a separate
  * question, and one that can be true of a page that is also the last one.
  */
 sealed interface ValuePage {
-    val key: RedisKey
+    val key: KeyRef
     val type: KeyType
     val complete: Boolean
     val truncated: Boolean
@@ -255,14 +263,14 @@ sealed interface ValuePage {
      * a Redis string is bytes. [nextOffset] is where a **Show more** continues, and
      * `null` when there is nowhere to continue to.
      *
-     * [cappedAt] is set when [RedisLimits.stringMaxBytes] is what ended the read
+     * [cappedAt] is set when [KeyValueLimits.stringMaxBytes] is what ended the read
      * rather than the end of the value — §3.6's hard maximum, which must be *said*
      * rather than silently applied, or the user reads a prefix believing it is a
      * whole value.
      */
     data class Text(
-        override val key: RedisKey,
-        val content: RedisText,
+        override val key: KeyRef,
+        val content: TextValue,
         val offset: Int,
         val nextOffset: Int?,
         val length: Int,
@@ -275,9 +283,9 @@ sealed interface ValuePage {
 
     /** A page of a hash, continued by [cursor]. */
     data class Fields(
-        override val key: RedisKey,
+        override val key: KeyRef,
         val entries: List<FieldEntry>,
-        val cursor: RedisCursor,
+        val cursor: ScanCursor,
         override val complete: Boolean,
         override val truncated: Boolean = false,
     ) : ValuePage {
@@ -291,9 +299,9 @@ sealed interface ValuePage {
      * arrive in bucket order, which changes when the set is resized.
      */
     data class Members(
-        override val key: RedisKey,
-        val members: List<RedisText>,
-        val cursor: RedisCursor,
+        override val key: KeyRef,
+        val members: List<TextValue>,
+        val cursor: ScanCursor,
         override val complete: Boolean,
         override val truncated: Boolean = false,
     ) : ValuePage {
@@ -309,7 +317,7 @@ sealed interface ValuePage {
      * papered over.
      */
     data class Scored(
-        override val key: RedisKey,
+        override val key: KeyRef,
         val members: List<ScoredMember>,
         val offset: Long,
         val nextOffset: Long?,
@@ -322,7 +330,7 @@ sealed interface ValuePage {
 
     /** A page of a list, by index. Later pages shift when the list is pushed or popped. */
     data class Elements(
-        override val key: RedisKey,
+        override val key: KeyRef,
         val elements: List<IndexedElement>,
         val offset: Long,
         val nextOffset: Long?,
@@ -341,7 +349,7 @@ sealed interface ValuePage {
      * next one.
      */
     data class Entries(
-        override val key: RedisKey,
+        override val key: KeyRef,
         val entries: List<StreamEntry>,
         val nextId: String?,
         override val complete: Boolean,
@@ -363,14 +371,15 @@ sealed interface ValuePage {
  *
  * [type] is what the caller *believes* the key is, from the last metadata read. It is
  * re-checked against the server before anything is read, and a mismatch is
- * [dev.caracal.core.result.DbError.KeyTypeChanged] rather than a wrong-shaped page.
+ * a key-type-changed failure naming the type it is now, rather than a wrong-shaped
+ * page.
  */
 data class ValueRequest(
-    val key: RedisKey,
+    val key: KeyRef,
     val type: KeyType,
 
     /** Hash and set: where `HSCAN`/`SSCAN` continue from. */
-    val cursor: RedisCursor = RedisCursor.START,
+    val cursor: ScanCursor = ScanCursor.START,
 
     /** String, list, and sorted set: the byte offset or the rank to start at. */
     val offset: Long = 0,
@@ -378,6 +387,6 @@ data class ValueRequest(
     /** Stream: the ID of the last entry seen, continued past exclusively. */
     val fromId: String? = null,
 
-    /** A hint. [RedisLimits] decides what it actually is. */
+    /** A hint. [KeyValueLimits] decides what it actually is. */
     val limit: Int? = null,
 )

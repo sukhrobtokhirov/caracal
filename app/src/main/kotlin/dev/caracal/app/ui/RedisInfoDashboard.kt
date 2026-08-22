@@ -26,7 +26,7 @@ import androidx.compose.ui.unit.dp
 import dev.caracal.app.InfoState
 import dev.caracal.app.RedisFormat
 import dev.caracal.app.RedisInfoViewModel
-import dev.caracal.core.redis.ServerInfo
+import dev.caracal.engine.api.ServerInfo
 
 /**
  * The `INFO` dashboard.

@@ -32,8 +32,8 @@ import dev.caracal.app.ConsoleEntry
 import dev.caracal.app.ParsedLine
 import dev.caracal.app.RedisConsoleViewModel
 import dev.caracal.app.RedisFormat
-import dev.caracal.core.redis.Elision
-import dev.caracal.core.redis.RedisReply
+import dev.caracal.engine.api.Elision
+import dev.caracal.engine.api.CommandReply
 
 /**
  * The raw command console.
@@ -314,31 +314,31 @@ private enum class LineKind { VALUE, ERROR, ELIDED }
  * A reply, flattened into lines the way `redis-cli` prints one.
  *
  * The depth is already bounded by `:core` — a reply deeper than
- * [dev.caracal.core.redis.RedisLimits.replyDepth] arrives with an [RedisReply.Elided]
+ * [dev.caracal.core.redis.KeyValueLimits.replyDepth] arrives with an [CommandReply.Elided]
  * where the rest of it was — so this walk cannot run away. [MAX_LINES] is the second
  * bound, on what one entry may occupy in a transcript that keeps two hundred of them.
  */
-private fun RedisReply.lines(): List<Line> = buildList {
-    fun walk(reply: RedisReply, depth: Int, label: String?) {
+private fun CommandReply.lines(): List<Line> = buildList {
+    fun walk(reply: CommandReply, depth: Int, label: String?) {
         if (size >= MAX_LINES) return
         val prefix = label?.let { "$it " }.orEmpty()
         when (reply) {
-            RedisReply.Nil -> add(Line(depth, "$prefix(nil)", LineKind.VALUE))
-            is RedisReply.Integer -> add(Line(depth, "$prefix(integer) ${reply.value}", LineKind.VALUE))
-            is RedisReply.Decimal -> add(Line(depth, "$prefix(double) ${reply.value}", LineKind.VALUE))
-            is RedisReply.Bool -> add(Line(depth, "$prefix(${reply.value})", LineKind.VALUE))
-            is RedisReply.Status -> add(Line(depth, "$prefix${reply.value}", LineKind.VALUE))
-            is RedisReply.Bulk -> add(
+            CommandReply.Nil -> add(Line(depth, "$prefix(nil)", LineKind.VALUE))
+            is CommandReply.Integer -> add(Line(depth, "$prefix(integer) ${reply.value}", LineKind.VALUE))
+            is CommandReply.Decimal -> add(Line(depth, "$prefix(double) ${reply.value}", LineKind.VALUE))
+            is CommandReply.Bool -> add(Line(depth, "$prefix(${reply.value})", LineKind.VALUE))
+            is CommandReply.Status -> add(Line(depth, "$prefix${reply.value}", LineKind.VALUE))
+            is CommandReply.Bulk -> add(
                 Line(depth, prefix + RedisFormat.oneLine(reply.value, 200), LineKind.VALUE),
             )
 
             // A nested error is a value, not the command's failure: `EXEC` returns an
             // array with one inside when one queued command failed and the rest did not.
-            is RedisReply.Failure -> add(Line(depth, "$prefix(error) ${reply.message}", LineKind.ERROR))
+            is CommandReply.Failure -> add(Line(depth, "$prefix(error) ${reply.message}", LineKind.ERROR))
 
-            is RedisReply.Elided -> add(Line(depth, "$prefix… ${reply.reason.said()}", LineKind.ELIDED))
+            is CommandReply.Elided -> add(Line(depth, "$prefix… ${reply.reason.said()}", LineKind.ELIDED))
 
-            is RedisReply.Items -> {
+            is CommandReply.Items -> {
                 if (reply.items.isEmpty()) {
                     add(Line(depth, "$prefix(empty ${reply.kind.name.lowercase()})", LineKind.VALUE))
                     return

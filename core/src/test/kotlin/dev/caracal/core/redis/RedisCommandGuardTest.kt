@@ -7,6 +7,8 @@ import dev.caracal.core.connections.Environment
 import dev.caracal.core.connections.TlsMode
 import dev.caracal.core.policy.Acknowledgement
 import dev.caracal.core.result.DbError
+import dev.caracal.engine.api.CommandLine
+import dev.caracal.engine.api.RawCommand
 import java.time.Instant
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -96,9 +98,9 @@ class RedisCommandGuardTest {
         // §3.10 names this one specifically, and it has to hold in both directions:
         // as two arguments, and rejoined into one.
         val spellings = listOf(
-            RedisCommand.of("CONFIG", "SET", "appendonly", "no"),
-            RedisCommand.of("CONFIG SET", "appendonly", "no"),
-            RedisCommand.of(" config ", " set ", "appendonly", "no"),
+            RawCommand.of("CONFIG", "SET", "appendonly", "no"),
+            RawCommand.of("CONFIG SET", "appendonly", "no"),
+            RawCommand.of(" config ", " set ", "appendonly", "no"),
         )
 
         for (command in spellings) {

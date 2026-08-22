@@ -1,8 +1,22 @@
-package dev.caracal.core.redis
+package dev.caracal.engine.api
 
 import java.nio.ByteBuffer
 import java.nio.charset.CharacterCodingException
 import java.nio.charset.CodingErrorAction
+
+/*
+ * A byte string and what can honestly be shown of it, moved here from
+ * `dev.caracal.core.redis` unchanged but for its name.
+ *
+ * It came into the SPI because both ends of `KeyValueFacet` and `CommandFacet` are
+ * declared in terms of it and neither may see the other: the engine that decides
+ * whether a value is text is `:engine-redis`, the viewer that draws it is `:ui`.
+ * `RedisText` became [TextValue] and `RedisBytes` became [TextValues] on the way,
+ * because a type in the one module every other module depends on should not be
+ * named after one of them. Redis still supplies the examples in the prose below —
+ * it is the engine they were written against, and a concrete example beats a
+ * general one.
+ */
 
 /**
  * A Redis byte string, and what can honestly be shown of it.
@@ -18,7 +32,7 @@ import java.nio.charset.CodingErrorAction
  * instead of a string full of replacement characters that would silently differ from
  * what Redis holds.
  */
-sealed interface RedisText {
+sealed interface TextValue {
     /** The true size in bytes, whether or not all of it is here. */
     val byteCount: Int
 
@@ -30,7 +44,7 @@ sealed interface RedisText {
         val value: String,
         override val byteCount: Int,
         override val truncated: Boolean = false,
-    ) : RedisText
+    ) : TextValue
 
     /**
      * Bytes that did not decode. [hex] is lowercase and unprefixed, so it can be
@@ -40,7 +54,7 @@ sealed interface RedisText {
         val hex: String,
         override val byteCount: Int,
         override val truncated: Boolean = false,
-    ) : RedisText
+    ) : TextValue
 
     /** The text, when there is text. Never a lossy rendering of binary. */
     val text: String? get() = (this as? Utf8)?.value
@@ -56,19 +70,19 @@ sealed interface RedisText {
  * read, not the whole value.** A 40 MB value whose first kilobyte is a UTF-8 header
  * and whose remainder is compressed data is reported as truncated text, because
  * finding out otherwise means reading 40 MB to answer a question about a preview.
- * [RedisText.truncated] is the caller's signal that the classification is about a
+ * [TextValue.truncated] is the caller's signal that the classification is about a
  * prefix; a complete value's classification is about all of it.
  */
-object RedisBytes {
+object TextValues {
 
     /** Decodes at most [limit] bytes of [bytes], deciding text or binary from those. */
-    fun of(bytes: ByteArray, limit: Int): RedisText = of(bytes, 0, bytes.size, limit)
+    fun of(bytes: ByteArray, limit: Int): TextValue = of(bytes, 0, bytes.size, limit)
 
     /**
      * As [of], over a window of [bytes]. [length] is what is present; [total] is how
      * large the value is on the server, which for a ranged read is larger.
      */
-    fun window(bytes: ByteArray, total: Int, limit: Int): RedisText {
+    fun window(bytes: ByteArray, total: Int, limit: Int): TextValue {
         // Being a window is itself a reason to allow a dangling character. Deciding it
         // from `shown < length` alone got this backwards on the only paths that
         // produce windows: both callers pass a limit equal to the window's own size,
@@ -80,8 +94,8 @@ object RedisBytes {
         // either makes this a prefix.
         val partial = kept.truncated || bytes.size < total
         return when (kept) {
-            is RedisText.Utf8 -> kept.copy(byteCount = total, truncated = partial)
-            is RedisText.Binary -> kept.copy(byteCount = total, truncated = partial)
+            is TextValue.Utf8 -> kept.copy(byteCount = total, truncated = partial)
+            is TextValue.Binary -> kept.copy(byteCount = total, truncated = partial)
         }
     }
 
@@ -91,14 +105,14 @@ object RedisBytes {
         length: Int,
         limit: Int,
         allowDangling: Boolean = false,
-    ): RedisText {
+    ): TextValue {
         val shown = minOf(length, limit.coerceAtLeast(0))
         val truncated = shown < length
         val text = decode(bytes, offset, shown, allowDanglingCharacter = truncated || allowDangling)
         return if (text != null) {
-            RedisText.Utf8(value = text, byteCount = length, truncated = truncated)
+            TextValue.Utf8(value = text, byteCount = length, truncated = truncated)
         } else {
-            RedisText.Binary(hex = hex(bytes, offset, shown), byteCount = length, truncated = truncated)
+            TextValue.Binary(hex = hex(bytes, offset, shown), byteCount = length, truncated = truncated)
         }
     }
 

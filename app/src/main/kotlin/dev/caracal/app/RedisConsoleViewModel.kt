@@ -8,13 +8,13 @@ import dev.caracal.core.connections.ConnectionId
 import dev.caracal.core.connections.ConnectionService
 import dev.caracal.core.redis.CommandClearance
 import dev.caracal.core.redis.CommandConfirmationRequired
-import dev.caracal.core.redis.CommandConsent
-import dev.caracal.core.redis.CommandResult
-import dev.caracal.core.redis.CommandLine
-import dev.caracal.core.redis.RedisBytes
-import dev.caracal.core.redis.RedisCommand
-import dev.caracal.core.redis.RedisLimits
-import dev.caracal.core.redis.RedisText
+import dev.caracal.engine.api.CommandConsent
+import dev.caracal.engine.api.CommandResult
+import dev.caracal.engine.api.CommandLine
+import dev.caracal.engine.api.TextValues
+import dev.caracal.engine.api.RawCommand
+import dev.caracal.engine.api.KeyValueLimits
+import dev.caracal.engine.api.TextValue
 import dev.caracal.core.result.Failure
 import dev.caracal.core.result.toFailure
 import kotlinx.coroutines.CancellationException
@@ -35,7 +35,7 @@ sealed interface ParsedLine {
      * line whose author and whose parser might disagree, and the parse is put on
      * screen before the command runs rather than after it has done something.
      */
-    data class Ready(val arguments: List<RedisText>, val ambiguous: Boolean) : ParsedLine
+    data class Ready(val arguments: List<TextValue>, val ambiguous: Boolean) : ParsedLine
 
     /** The line cannot be split: an unclosed quote, or a quote butted against text. */
     data class Invalid(val message: String) : ParsedLine
@@ -51,7 +51,7 @@ data class ConsoleEntry(
 )
 
 /** A command the guard will not send until the user agrees to it, in these terms. */
-data class PendingCommand(val command: RedisCommand, val clearance: CommandClearance.Confirm)
+data class PendingCommand(val command: RawCommand, val clearance: CommandClearance.Confirm)
 
 /**
  * The raw command console.
@@ -80,7 +80,7 @@ data class PendingCommand(val command: RedisCommand, val clearance: CommandClear
 class RedisConsoleViewModel(
     private val service: ConnectionService,
     private val scope: CoroutineScope,
-    private val limits: RedisLimits = RedisLimits(),
+    private val limits: KeyValueLimits = KeyValueLimits(),
 ) {
     var connectionId: ConnectionId? by mutableStateOf(null)
         private set
@@ -221,7 +221,7 @@ class RedisConsoleViewModel(
         clearHistory()
     }
 
-    private fun send(id: ConnectionId, command: RedisCommand, consent: CommandConsent) {
+    private fun send(id: ConnectionId, command: RawCommand, consent: CommandConsent) {
         running = true
         lateinit var mine: Job
         mine = scope.launch {
@@ -268,7 +268,7 @@ class RedisConsoleViewModel(
      *
      * The same [CommandLine] the command is built from, so the preview on screen and
      * the arguments on the wire cannot drift apart. The arguments are rendered through
-     * [RedisBytes] because a `\xff` escape produces a byte that is not text, and a
+     * [TextValues] because a `\xff` escape produces a byte that is not text, and a
      * preview that showed it as a replacement character would be showing something
      * other than what is about to be sent.
      */
@@ -287,7 +287,7 @@ class RedisConsoleViewModel(
         val plain = arguments.size == words.size &&
             arguments.zip(words).all { (argument, word) -> String(argument, Charsets.UTF_8) == word }
         return ParsedLine.Ready(
-            arguments = arguments.map { RedisBytes.of(it, limits.elementBytes) },
+            arguments = arguments.map { TextValues.of(it, limits.elementBytes) },
             ambiguous = !plain,
         )
     }

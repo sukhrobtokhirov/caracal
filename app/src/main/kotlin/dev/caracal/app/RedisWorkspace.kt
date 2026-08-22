@@ -2,7 +2,7 @@ package dev.caracal.app
 
 import dev.caracal.core.connections.ConnectionId
 import dev.caracal.core.connections.ConnectionService
-import dev.caracal.core.redis.RedisKey
+import dev.caracal.engine.api.KeyRef
 import kotlinx.coroutines.CoroutineScope
 
 /**
@@ -34,7 +34,7 @@ class RedisWorkspace(service: ConnectionService, scope: CoroutineScope) {
     }
 
     /** Opens a key in the value pane and marks it as the browser's selection. */
-    fun open(key: RedisKey) {
+    fun open(key: KeyRef) {
         browser.select(key)
         value.open(key)
     }

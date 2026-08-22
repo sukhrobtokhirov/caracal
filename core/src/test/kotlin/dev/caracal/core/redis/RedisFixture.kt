@@ -6,6 +6,7 @@ import dev.caracal.core.connections.Engine
 import dev.caracal.core.connections.Environment
 import dev.caracal.core.connections.Secret
 import dev.caracal.core.connections.TlsMode
+import dev.caracal.engine.api.KeyValueLimits
 import io.lettuce.core.AclCategory
 import io.lettuce.core.AclSetuserArgs
 import io.lettuce.core.RedisClient
@@ -128,7 +129,7 @@ object RedisFixture {
         name: String = "fixture",
         username: String = "",
         password: Secret = Secret.EMPTY,
-        limits: RedisLimits = RedisLimits(),
+        limits: KeyValueLimits = KeyValueLimits(),
     ): RedisSession = RedisSession.open(
         config = config(database, name = name, readOnly = readOnly, environment = environment, username = username),
         password = password,

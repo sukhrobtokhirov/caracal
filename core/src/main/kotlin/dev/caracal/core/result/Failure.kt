@@ -4,6 +4,7 @@ import dev.caracal.core.connections.ValidationError
 import dev.caracal.core.connections.ValidationException
 import dev.caracal.core.store.StoreException
 import dev.caracal.core.vault.VaultException
+import dev.caracal.engine.api.InvalidRequestException
 import kotlinx.coroutines.CancellationException
 
 /**
@@ -36,10 +37,18 @@ data class Failure(
  * all already carry a stable code and a safe message, so this is a join rather
  * than a translation. Anything else is deliberately given a generic message:
  * an unexpected exception's text has not been through redaction.
+ *
+ * [InvalidRequestException] is the fifth and it is a join too. The SPI raises it for
+ * a request that was malformed before any server was asked — a scan cursor that is
+ * not a cursor, a command line with an unclosed quote — because the types that raise
+ * it live in `:engine-api` and cannot see `DbError`. It lands on the same code and
+ * the same sentence `DbError.InvalidRequest` always produced, so nothing downstream
+ * can tell that the throw site moved out of `:core`.
  */
 fun Throwable.toFailure(): Failure = when (this) {
     is CancellationException -> Failure("cancelled", "The operation was cancelled.")
     is DbException -> Failure(error.code, error.message, query = error as? DbError.QueryFailed)
+    is InvalidRequestException -> Failure(DbError.InvalidRequest(message).code, message)
     is VaultException -> Failure(code, safeMessage)
     is StoreException -> Failure(code, safeMessage)
     is ValidationException -> Failure(

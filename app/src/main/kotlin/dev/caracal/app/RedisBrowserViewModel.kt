@@ -8,12 +8,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshots.SnapshotStateSet
 import dev.caracal.core.connections.ConnectionId
 import dev.caracal.core.connections.ConnectionService
-import dev.caracal.core.redis.KeyMetadata
-import dev.caracal.core.redis.KeyType
-import dev.caracal.core.redis.RedisCursor
-import dev.caracal.core.redis.RedisKey
-import dev.caracal.core.redis.ScanPage
-import dev.caracal.core.redis.ScanStop
+import dev.caracal.engine.api.KeyMetadata
+import dev.caracal.engine.api.KeyType
+import dev.caracal.engine.api.ScanCursor
+import dev.caracal.engine.api.KeyRef
+import dev.caracal.engine.api.ScanPage
+import dev.caracal.engine.api.ScanStop
 import dev.caracal.core.result.Failure
 import dev.caracal.core.result.toFailure
 import kotlinx.coroutines.CancellationException
@@ -131,7 +131,7 @@ class RedisBrowserViewModel(
         private set
 
     /** The key whose value is open, or `null`. */
-    var selected: RedisKey? by mutableStateOf(null)
+    var selected: KeyRef? by mutableStateOf(null)
         private set
 
     /** `SCAN` calls Redis has been asked for since the last refresh. */
@@ -141,11 +141,11 @@ class RedisBrowserViewModel(
     /**
      * The keys seen this session, in the order Redis returned them.
      *
-     * A map keyed on [RedisKey] — which compares by content — is what deduplicates
+     * A map keyed on [KeyRef] — which compares by content — is what deduplicates
      * across pages. A repeated key keeps its original position and takes the newer
      * metadata, because the second sighting is the more recent answer about its TTL.
      */
-    private val collected = linkedMapOf<RedisKey, KeyMetadata>()
+    private val collected = linkedMapOf<KeyRef, KeyMetadata>()
 
     /** The keys collected so far. */
     var keys: List<KeyMetadata> by mutableStateOf(emptyList())
@@ -153,7 +153,7 @@ class RedisBrowserViewModel(
 
     private val expanded: SnapshotStateSet<String> = mutableStateSetOf()
 
-    private var cursor: RedisCursor = RedisCursor.START
+    private var cursor: ScanCursor = ScanCursor.START
 
     private var job: Job? = null
 
@@ -278,7 +278,7 @@ class RedisBrowserViewModel(
      */
     fun refresh() = start()
 
-    fun select(key: RedisKey?) {
+    fun select(key: KeyRef?) {
         selected = key
     }
 
@@ -296,7 +296,7 @@ class RedisBrowserViewModel(
         collected.clear()
         keys = emptyList()
         expanded.clear()
-        cursor = RedisCursor.START
+        cursor = ScanCursor.START
         iterations = 0
         scan(continuing = false)
     }
@@ -316,7 +316,7 @@ class RedisBrowserViewModel(
         var pages = 0
         progress = ScanProgress.Scanning(pages)
 
-        val started = if (continuing) cursor else RedisCursor.START
+        val started = if (continuing) cursor else ScanCursor.START
         job = scope.launch {
             var from = started
             // Assigned before the loop can break, so there is always a page to report.
@@ -378,7 +378,7 @@ class RedisBrowserViewModel(
         collected.clear()
         keys = emptyList()
         expanded.clear()
-        cursor = RedisCursor.START
+        cursor = ScanCursor.START
         iterations = 0
         pattern = ""
         appliedPattern = ""
