@@ -55,7 +55,7 @@ class ConnectionServiceTest {
     private suspend fun session(): Session {
         val store = ConfigStore.open(directory.resolve("caracal.db"))
         // Argon2id at production cost would make this suite take minutes.
-        val vault = Vault(store, params = KdfParams.TESTING)
+        val vault = Vault(store, store, params = KdfParams.TESTING)
         val registry = ConnectionRegistry()
         var counter = 0
         return Session(

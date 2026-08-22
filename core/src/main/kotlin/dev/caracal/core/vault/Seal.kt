@@ -49,12 +49,26 @@ object Seal {
     fun seal(key: ByteArray, identity: SecretIdentity, secret: SecretBundle): ByteArray {
         val plaintext = encodeRecord(secret)
         try {
-            val nonce = Kdf.randomBytes(NONCE_LENGTH)
-            val sealed = gcm(Cipher.ENCRYPT_MODE, key, nonce, identity).doFinal(plaintext)
-            return byteArrayOf(ENVELOPE_VERSION) + nonce + sealed
+            return sealRaw(key, identity, plaintext)
         } finally {
             plaintext.wipe()
         }
+    }
+
+    /**
+     * Encrypts an already-encoded record.
+     *
+     * Split out from [seal] for one caller: a test that has to produce an envelope in
+     * a record format this build no longer writes. Encoding is what changed between
+     * versions and the encryption around it did not, so a test that hand-builds the
+     * plaintext and comes through here is exercising the same crypto a released build
+     * did — where one that hand-rolled AES-GCM as well would be proving that the test
+     * agrees with itself. [plaintext] stays the caller's to wipe.
+     */
+    internal fun sealRaw(key: ByteArray, identity: SecretIdentity, plaintext: ByteArray): ByteArray {
+        val nonce = Kdf.randomBytes(NONCE_LENGTH)
+        val sealed = gcm(Cipher.ENCRYPT_MODE, key, nonce, identity).doFinal(plaintext)
+        return byteArrayOf(ENVELOPE_VERSION) + nonce + sealed
     }
 
     /**

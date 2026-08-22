@@ -6,11 +6,13 @@ import java.time.Instant
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import org.slf4j.LoggerFactory
 
 /** Where the vault is in its lifecycle. */
 enum class VaultState {
@@ -31,6 +33,30 @@ interface MetadataStore {
     suspend fun putMetadata(key: String, value: ByteArray)
 }
 
+/** One stored credential, as bytes, with the identity it was sealed under. */
+class SealedSecret(val identity: SecretIdentity, val envelope: ByteArray)
+
+/**
+ * The sealed credentials the vault keeps readable.
+ *
+ * Separate from [MetadataStore] because they are separate powers: a vault handed
+ * only the first can derive keys and verify passwords but cannot touch a single
+ * saved credential, which is what the unlock path needs and nothing else does.
+ */
+interface SealedSecretStore {
+    /** Every stored credential. Connections with none are not in the list. */
+    suspend fun sealedSecrets(): List<SealedSecret>
+
+    /**
+     * Replaces one credential's bytes, as one write.
+     *
+     * Per record rather than in a batch, deliberately: it is what makes an
+     * interrupted migration leave a file where every record is readable by some
+     * version rather than one where a rewrite landed halfway through a row.
+     */
+    suspend fun replaceSealedSecret(identity: SecretIdentity, envelope: ByteArray)
+}
+
 /**
  * Owns the master key for the process lifetime.
  *
@@ -39,6 +65,7 @@ interface MetadataStore {
  */
 class Vault(
     private val store: MetadataStore,
+    private val secrets: SealedSecretStore,
     private val params: KdfParams = KdfParams.DEFAULT,
     private val clock: () -> Instant = Instant::now,
     /** Argon2id is CPU-bound, not I/O-bound: it belongs off the UI and off the IO pool. */
@@ -147,10 +174,84 @@ class Vault(
             recordFailure()
             throw WrongPasswordException()
         }
+        // Before the key is installed, and so before any concurrent `lock` can wipe
+        // the array this is reading. Nothing else in the process can be holding it
+        // yet, which is what makes migrating here simpler than migrating later.
+        migrateRecords(derived)
         mutex.withLock {
             replaceKey(derived)
             failures = 0
             lockedUntil = null
+        }
+    }
+
+    /**
+     * Brings every stored credential up to the current record format.
+     *
+     * Three properties, and each of them is what makes an interrupted run safe:
+     *
+     * - **A record that is already current is not touched**, so running this twice
+     *   rewrites nothing. That is what makes it safe to run on every unlock, which is
+     *   in turn what makes an interrupted run finish itself the next time the user
+     *   opens the application rather than needing a repair path nobody would test.
+     * - **Each record is rewritten on its own**, one statement per credential. A
+     *   process killed partway through leaves some rows in the old format and some in
+     *   the new, and [Seal] reads both — so every record is still openable, which is
+     *   the property that actually matters. A batch that rewrote all of them in one
+     *   transaction would be tidier and would buy nothing, because there is no state
+     *   in between that a reader cannot handle.
+     * - **A record that will not open is stepped over**, not deleted and not fatal.
+     *   A credential sealed under a different key, or damaged, is already lost to its
+     *   own connection; letting it also keep the user out of the vault, and out of
+     *   the other nine connections, turns one broken row into a broken installation.
+     *
+     * There is deliberately no stored "already migrated" marker. It would save a few
+     * milliseconds of AES per unlock and would be wrong exactly once — after a
+     * restore of an older configuration file whose marker outran its records.
+     *
+     * Failures are logged and swallowed, because the alternative is a build that
+     * cannot open a vault it can read perfectly well. Nothing logged here names a
+     * connection or a credential; the counts are the whole of it.
+     */
+    private suspend fun migrateRecords(key: ByteArray) {
+        val stored = try {
+            secrets.sealedSecrets()
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (failure: Throwable) {
+            log.warn("The stored credentials could not be read for migration; leaving them as they are.")
+            return
+        }
+
+        var rewritten = 0
+        var unreadable = 0
+        for (sealed in stored) {
+            val record = try {
+                Seal.open(key, sealed.identity, sealed.envelope)
+            } catch (_: VaultException) {
+                unreadable++
+                continue
+            }
+            try {
+                if (record.isCurrent) continue
+                secrets.replaceSealedSecret(sealed.identity, Seal.seal(key, sealed.identity, record.secret))
+                rewritten++
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (failure: Throwable) {
+                // Whatever was written stays written and whatever was not is still
+                // readable, so the next unlock picks up where this one stopped.
+                log.warn("Migrating stored credentials stopped after $rewritten of ${stored.size}.")
+                return
+            } finally {
+                record.secret.wipe()
+            }
+        }
+        if (rewritten > 0) {
+            log.info("Migrated $rewritten stored credential(s) to vault record version $RECORD_VERSION.")
+        }
+        if (unreadable > 0) {
+            log.warn("$unreadable stored credential(s) could not be read and were left untouched.")
         }
     }
 
@@ -204,6 +305,8 @@ class Vault(
     }
 
     companion object {
+        private val log = LoggerFactory.getLogger(Vault::class.java)
+
         /** Metadata keys the vault owns. */
         const val META_SALT = "kdf_salt"
         const val META_PARAMS = "kdf_params"

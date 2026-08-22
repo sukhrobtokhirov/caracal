@@ -17,22 +17,11 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 
 class VaultTest {
-    /** A metadata store with no SQLite behind it: the vault's contract is the map. */
-    private class FakeMetadataStore : MetadataStore {
-        val values = mutableMapOf<String, ByteArray>()
-
-        override suspend fun getMetadata(key: String): ByteArray? = values[key]
-
-        override suspend fun putMetadata(key: String, value: ByteArray) {
-            values[key] = value
-        }
-    }
-
-    private val store = FakeMetadataStore()
+    private val store = FakeVaultStore()
     private var now = Instant.parse("2026-08-20T10:00:00Z")
 
     // Argon2id at production cost would make this suite take minutes.
-    private fun vault() = Vault(store, params = KdfParams.TESTING, clock = { now })
+    private fun vault() = Vault(store, store, params = KdfParams.TESTING, clock = { now })
 
     private val masterPassword get() = Secret("correct-horse")
 

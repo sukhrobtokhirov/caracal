@@ -22,6 +22,9 @@ import dev.caracal.core.history.HistoryQuery
 import dev.caracal.core.history.HistoryScope
 import dev.caracal.core.history.MAX_HISTORY_PAGE
 import dev.caracal.core.vault.MetadataStore
+import dev.caracal.core.vault.SealedSecret
+import dev.caracal.core.vault.SealedSecretStore
+import dev.caracal.core.vault.SecretIdentity
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.attribute.PosixFilePermissions
@@ -52,7 +55,7 @@ class ConfigStore private constructor(
     val path: Path,
     private val dispatcher: CoroutineDispatcher,
     private val historyRetention: Int,
-) : MetadataStore, AutoCloseable {
+) : MetadataStore, SealedSecretStore, AutoCloseable {
 
     private val mutex = Mutex()
 
@@ -72,6 +75,49 @@ class ConfigStore private constructor(
         ).use { statement ->
             statement.setString(1, key)
             statement.setBytes(2, value)
+            statement.executeUpdate()
+        }
+        Unit
+    }
+
+    /**
+     * Every stored credential, for the vault to migrate.
+     *
+     * Only the three columns the vault needs, and no settings join: this runs on
+     * every unlock, and it has no business reading a connection's fields to decide
+     * whether its sealed bytes are in the current format. A row whose blob is null or
+     * empty is not a credential and is not returned — a connection that stores no
+     * password has nothing to migrate.
+     */
+    override suspend fun sealedSecrets(): List<SealedSecret> = query { db ->
+        db.prepareStatement(
+            "SELECT id, engine, secret_sealed FROM connections WHERE secret_sealed IS NOT NULL",
+        ).use { statement ->
+            statement.executeQuery().use { rows ->
+                buildList {
+                    while (rows.next()) {
+                        val envelope = rows.getBytes("secret_sealed") ?: continue
+                        if (envelope.isEmpty()) continue
+                        add(SealedSecret(SecretIdentity(rows.getString("id"), rows.getString("engine")), envelope))
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * Replaces one credential's sealed bytes.
+     *
+     * Scoped to the engine it was sealed under as well as the connection: an engine
+     * change reseals under a new identity through [update], and a migration that
+     * arrived after one would otherwise write a record sealed for the old engine over
+     * the new one, which nothing could then open.
+     */
+    override suspend fun replaceSealedSecret(identity: SecretIdentity, envelope: ByteArray) = query { db ->
+        db.prepareStatement("UPDATE connections SET secret_sealed = ? WHERE id = ? AND engine = ?").use { statement ->
+            statement.setBytes(1, envelope)
+            statement.setString(2, identity.connectionId)
+            statement.setString(3, identity.engine)
             statement.executeUpdate()
         }
         Unit

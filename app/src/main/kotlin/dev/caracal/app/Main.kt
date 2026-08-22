@@ -98,7 +98,7 @@ private class Application(
             // that a rename does not read as a vault that lost every connection in it.
             AppPaths.adoptLegacyData()
             val store = ConfigStore.open(AppPaths.configDatabase())
-            val vault = Vault(store)
+            val vault = Vault(store, store)
             val registry = ConnectionRegistry()
             Application(
                 store = store,

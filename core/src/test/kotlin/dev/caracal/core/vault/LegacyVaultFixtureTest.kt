@@ -8,6 +8,7 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.security.MessageDigest
 import kotlin.test.assertEquals
+import kotlin.test.assertNotEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlinx.coroutines.runBlocking
@@ -57,7 +58,7 @@ class LegacyVaultFixtureTest {
             // Opening it migrated the store from the schema the release shipped.
             assertEquals(4, store.schemaVersion())
 
-            val vault = Vault(store)
+            val vault = Vault(store, store)
             assertEquals(VaultState.LOCKED, vault.state())
             vault.unlock(Secret(PASSWORD))
 
@@ -89,10 +90,59 @@ class LegacyVaultFixtureTest {
     }
 
     @Test
+    fun `unlocking a v1 vault migrates its records, and a restart still reads them`(
+        @TempDir directory: Path,
+    ) = runTest {
+        val path = install(directory)
+
+        val before = ConfigStore.open(path).use { store ->
+            val stored = store.sealedSecrets().associate { it.identity to it.envelope.copyOf() }
+            // The two connections that have one. The third stores no password.
+            assertEquals(2, stored.size)
+            stored.forEach { (identity, envelope) ->
+                assertEquals(RECORD_VERSION_LEGACY, record(store, identity, envelope).schemaVersion)
+            }
+
+            Vault(store, store).unlock(Secret(PASSWORD))
+
+            store.sealedSecrets().forEach { sealed ->
+                assertNotEquals(
+                    stored.getValue(sealed.identity).toList(),
+                    sealed.envelope.toList(),
+                    "${sealed.identity} was not rewritten",
+                )
+            }
+            stored
+        }
+
+        // A second process, reading the file the first one left behind: this is what
+        // the user gets when they restart after upgrading.
+        ConfigStore.open(path).use { store ->
+            val vault = Vault(store, store)
+            vault.unlock(Secret(PASSWORD))
+
+            assertEquals(before.keys, store.sealedSecrets().map { it.identity }.toSet())
+            store.sealedSecrets().forEach { sealed ->
+                assertEquals(RECORD_VERSION, record(store, sealed.identity, sealed.envelope).schemaVersion)
+            }
+            assertEquals(
+                "pg-legacy-secret",
+                vault.open(SecretIdentity(POSTGRES_ID, "postgres"), store.get(ConnectionId(POSTGRES_ID)).sealedSecret!!)
+                    .passwordText(),
+            )
+            assertEquals(
+                "redis-legacy-secret",
+                vault.open(SecretIdentity(REDIS_ID, "redis"), store.get(ConnectionId(REDIS_ID)).sealedSecret!!)
+                    .passwordText(),
+            )
+        }
+    }
+
+    @Test
     fun `a secret cannot be moved between the fixture's connections`(@TempDir directory: Path) = runTest {
         val store = ConfigStore.open(install(directory))
         try {
-            val vault = Vault(store)
+            val vault = Vault(store, store)
             vault.unlock(Secret(PASSWORD))
             val postgres = store.get(ConnectionId(POSTGRES_ID))
             // The identity is authenticated, so a v1 envelope is still bound to the
@@ -103,6 +153,16 @@ class LegacyVaultFixtureTest {
         } finally {
             store.close()
         }
+    }
+
+    /** One record's version, read with a key derived from what the file itself stores. */
+    private suspend fun record(store: ConfigStore, identity: SecretIdentity, envelope: ByteArray): VaultRecord {
+        val key = Kdf.deriveKey(
+            Secret(PASSWORD),
+            checkNotNull(store.getMetadata(Vault.META_SALT)),
+            KdfParams.decode(checkNotNull(store.getMetadata(Vault.META_PARAMS))),
+        )
+        return Seal.open(key, identity, envelope)
     }
 
     /** Copies the fixture out of the classpath: opening it migrates the file in place. */

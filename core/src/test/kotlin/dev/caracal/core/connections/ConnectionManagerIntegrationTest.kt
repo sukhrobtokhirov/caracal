@@ -64,7 +64,7 @@ class ConnectionManagerIntegrationTest {
         val store = ConfigStore.open(databasePath)
         val registry = ConnectionRegistry()
         // Argon2id at production cost would add a second to every test here.
-        val vault = Vault(store, params = KdfParams.TESTING)
+        val vault = Vault(store, store, params = KdfParams.TESTING)
         return Session(store, registry, DefaultConnectionService(store, vault, registry))
     }
 
