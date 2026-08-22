@@ -151,7 +151,7 @@ fun TestResultBanner(result: TestResult, onDismiss: (() -> Unit)? = null, modifi
         )
         result.serverVersion?.let { version ->
             Text(
-                "${result.engine.wire} $version",
+                "${result.engineId.value} $version",
                 style = MaterialTheme.typography.labelSmall,
                 fontFamily = FontFamily.Monospace,
                 color = Caracal.colors.onSuccessContainer.copy(alpha = 0.8f),

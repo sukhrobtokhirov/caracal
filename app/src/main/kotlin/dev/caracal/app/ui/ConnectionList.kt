@@ -36,7 +36,7 @@ import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 import dev.caracal.core.connections.ConnectionId
 import dev.caracal.core.connections.ConnectionView
-import dev.caracal.core.connections.Engine
+import dev.caracal.core.engines.Engines
 import dev.caracal.core.connections.Environment
 
 /**
@@ -100,15 +100,16 @@ fun ConnectionList(
                 modifier = Modifier.padding(Space.lg),
             ) {
                 Text(
-                    "No connections yet. Choose New to add a PostgreSQL or Redis server.",
+                    "No connections yet. Choose New to add a server.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.testTag("connections-empty"),
                 )
-                // The two marks the New window opens on. An empty sidebar is the one
-                // place with room to say what the application can talk to.
+                // The marks the New window opens on — every engine the classpath
+                // offers, not two written out here. An empty sidebar is the one place
+                // with room to say what the application can talk to.
                 Row(horizontalArrangement = Arrangement.spacedBy(Space.md)) {
-                    Engine.entries.forEach { engine -> EngineTile(engine, size = 30.dp) }
+                    Engines.all.forEach { engine -> EngineTile(engine.id, size = 30.dp) }
                 }
             }
             return@Column
@@ -260,7 +261,7 @@ private fun ConnectionRow(
                 // word being read to answer a question the eye can answer from a
                 // shape, and it took a third of the width the host needs. It carries
                 // the badge's own content tag, so nothing announces less.
-                EngineLogo(view.config.engine, size = 14.dp, described = true)
+                EngineLogo(view.config.engineId, size = 14.dp, described = true)
                 ColorSwatch(view.config.color)
                 // The name takes everything the status does not. A second weighted
                 // child here would halve it, and half a sidebar is not enough for
@@ -286,7 +287,7 @@ private fun ConnectionRow(
                 if (view.config.environment == Environment.PROD) EnvironmentBadge(Environment.PROD)
                 if (view.config.readOnly) ReadOnlyBadge()
                 Text(
-                    "${view.config.host}:${view.config.port}",
+                    view.config.targetSummary,
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,

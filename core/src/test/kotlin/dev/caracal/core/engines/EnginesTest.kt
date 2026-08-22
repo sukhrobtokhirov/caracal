@@ -1,6 +1,5 @@
 package dev.caracal.core.engines
 
-import dev.caracal.core.connections.Engine
 import dev.caracal.engine.api.ConnectionDescriptor
 import dev.caracal.engine.api.ConnectionForm
 import dev.caracal.engine.api.DatabaseEngine
@@ -45,8 +44,8 @@ class EnginesTest {
         // Every caller has to reach the same instance: an engine is free to hold
         // state — a driver it resolved, a pool built around it — and a second copy
         // would be a second one of whatever it holds.
-        assertSame(Engines.byId(PostgresEngine.ID), Engines.of(Engine.POSTGRES))
-        assertSame(Engines.byId(RedisEngine.ID), Engines.of(Engine.REDIS))
+        assertSame(Engines.byId(PostgresEngine.ID), Engines.require(PostgresEngine.ID))
+        assertSame(Engines.byId(RedisEngine.ID), Engines.require(RedisEngine.ID))
     }
 
     @Test

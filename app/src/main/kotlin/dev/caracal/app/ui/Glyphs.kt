@@ -7,7 +7,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.unit.sp
 import dev.caracal.app.RowKind
-import dev.caracal.core.connections.Engine
+import dev.caracal.engine.api.EngineId
 import dev.caracal.core.connections.Environment
 import dev.caracal.engine.api.KeyType
 import dev.caracal.engine.api.ObjectKind
@@ -33,6 +33,15 @@ object Glyphs {
     // Panes and tabs.
     const val CONNECTIONS = "🔌"
     const val DATABASE = "🐘"
+
+    /**
+     * An engine with no glyph of its own.
+     *
+     * Storage rather than an animal, and chosen from the codepoints that carry emoji
+     * presentation without a variation selector — the filing-cabinet glyph does not,
+     * and renders as a black-and-white box on the fonts that matter.
+     */
+    const val ENGINE = "💾"
     const val KEYS = "🔑"
     const val QUERY = "📝"
     const val VALUE = "🔎"
@@ -61,10 +70,18 @@ object Glyphs {
     const val READ_ONLY = "🔒"
     const val WARNING = "❗"
 
-    /** The engines, for the places a drawn [EngineLogo] is more than the row can hold. */
-    fun of(engine: Engine): String = when (engine) {
-        Engine.POSTGRES -> "🐘"
-        Engine.REDIS -> "🧱"
+    /**
+     * The engines, for the places a drawn [EngineLogo] is more than the row can hold.
+     *
+     * Keyed on the engine's name and with a fallback, for the same reason the logo is:
+     * a glyph cannot be declared in `:engine-api`, and an engine this build has no
+     * glyph for should get the generic database mark rather than an empty space where
+     * a section heading's icon belongs.
+     */
+    fun of(engine: EngineId): String = when (engine.value) {
+        "postgres" -> "🐘"
+        "redis" -> "🧱"
+        else -> ENGINE
     }
 
     fun of(environment: Environment): String = when (environment) {

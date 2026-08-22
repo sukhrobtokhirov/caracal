@@ -1,56 +1,51 @@
 package dev.caracal.core.registry
 
 import dev.caracal.core.connections.ConnectionConfig
-import dev.caracal.core.connections.Engine
 import dev.caracal.core.connections.Secret
 import dev.caracal.core.connections.TlsMode
-import dev.caracal.core.engines.id
+import dev.caracal.core.connections.offersUnverifiedTls
+import dev.caracal.core.connections.tlsModes
 import dev.caracal.core.result.DbError
 import dev.caracal.core.result.DbException
 import dev.caracal.engine.api.ConnectionDescriptor
-import dev.caracal.engine.api.ConnectionTarget
+import dev.caracal.engine.api.DatabaseEngine
+import dev.caracal.engine.api.FormKeys
 import dev.caracal.engine.api.SecretBundle
 import dev.caracal.engine.api.TlsConfig
-import dev.caracal.engine.postgres.PostgresEngine
-import dev.caracal.engine.redis.RedisEngine
 
 /*
  * The stored form of a connection, in the shape an engine dials from.
  *
  * `ConnectionConfig` is what the store holds and the forms edit;
- * [ConnectionDescriptor] is what `DatabaseEngine.connect` takes. They say the same
- * things and neither can be deleted yet — the descriptor cannot carry a colour or a
- * creation time, and the config cannot carry a file path, which is what SQLite will
- * need. So this is a translation and it lives in one place, next to the registry
- * that is its only caller.
- *
- * Phase 3 is where the stored form widens to the descriptor's shape and this
- * shrinks to nothing. Until then, the two facts worth knowing are both about TLS.
+ * [ConnectionDescriptor] is what `DatabaseEngine.connect` takes. Phase 3 widened the
+ * first to the second's shape — a target rather than a host and a port, declared
+ * settings rather than named columns — so most of what this file did is gone. What
+ * is left is the part that was never mechanical, and it is about TLS.
  */
-
-/** Both engines spell the connecting user's option key the same way. */
-private val USER_OPTION: String = PostgresEngine.OPTION_USER.also { check(it == RedisEngine.OPTION_USER) }
 
 /**
  * This connection, as the engine that dials it needs to see it.
  *
- * [readOnly] is not on the descriptor: it is on `SessionPolicy`, because it is the
- * answer core resolved for *this* session rather than a label on the record.
- * [ConnectionDescriptor.writable] carries the label.
+ * [ConnectionConfig.readOnly] is not on the descriptor: it is on `SessionPolicy`,
+ * because it is the answer core resolved for *this* session rather than a label on
+ * the record. [ConnectionDescriptor.writable] carries the label.
  */
-internal fun ConnectionConfig.toDescriptor(): ConnectionDescriptor = ConnectionDescriptor(
-    id = id,
-    engineId = engine.id,
-    displayName = name,
-    target = ConnectionTarget.Network(host = host, port = port, database = database),
-    environment = environment,
-    writable = !readOnly,
-    tls = tlsConfig(),
-    // Not a secret and stored in the clear today, which is why it travels here and
-    // not in the bundle. Phase 4 moves the pair into the vault; both engines already
-    // read the user from either place, so that move does not come back to this file.
-    engineOptions = mapOf(USER_OPTION to username),
-)
+internal fun ConnectionConfig.toDescriptor(engine: DatabaseEngine): ConnectionDescriptor =
+    ConnectionDescriptor(
+        id = id,
+        engineId = engine.id,
+        displayName = name,
+        target = target,
+        environment = environment,
+        writable = !readOnly,
+        tls = tlsConfig(engine),
+        // Every declared, non-secret field, whatever the engine called them. The user
+        // name travels here rather than in the bundle because it is not a secret and
+        // is stored in the clear today; Phase 4 moves the pair into the vault, and
+        // both engines already read the user from either place, so that move does not
+        // come back to this file.
+        engineOptions = settings,
+    )
 
 /**
  * The stored TLS mode, as the SPI spells it.
@@ -60,32 +55,34 @@ internal fun ConnectionConfig.toDescriptor(): ConnectionDescriptor = ConnectionD
  * does not offer encrypt-but-do-not-verify. PostgreSQL's stored `require` *is* that
  * third thing: pgjdbc encrypts and accepts any certificate. Redis's stored `require`
  * is not — the Redis client has always been built with `verifyPeer`, and `require`
- * is the one secure mode it offers. So the same stored word means two different
- * things and is translated as such, rather than being flattened into whichever
- * reading is convenient. Flattening it either way would silently change what a saved
- * connection does: a Redis connection would stop checking certificates, or a
- * PostgreSQL one would start and fail against the self-signed servers it works with
- * today.
+ * is the one secure mode it offers. The same stored word means two different things.
  *
- * `verify-full` on Redis is refused rather than downgraded. The draft validation
- * does not allow it to be saved, so reaching here means a config file that was
- * edited by hand — and answering that with a quietly weaker connection is the one
- * response that must not happen. The sentence is the one the Redis client itself
- * used to raise.
+ * What decides which is meant is the engine's **own declaration** rather than its
+ * name. An engine whose form offers both `require` and `verify-full` is drawing
+ * PostgreSQL's distinction, so its `require` is the weaker of its two modes; an
+ * engine offering `require` alone is saying that word *is* its secure mode. That
+ * rule is right about an engine this file has never heard of, which a `when` on the
+ * engine id could not be.
+ *
+ * A mode the engine does not offer is refused rather than downgraded. The draft
+ * validation does not allow one to be saved, so reaching here means a config file
+ * that was edited by hand — and answering that with a quietly weaker connection is
+ * the one response that must not happen.
  */
-private fun ConnectionConfig.tlsConfig(): TlsConfig = when (engine) {
-    Engine.POSTGRES -> when (tlsMode) {
-        TlsMode.DISABLE -> TlsConfig.Disabled
-        TlsMode.REQUIRE -> TlsConfig.Required(verifyHostname = false)
-        TlsMode.VERIFY_FULL -> TlsConfig.Required(verifyHostname = true)
-    }
-
-    Engine.REDIS -> when (tlsMode) {
-        TlsMode.DISABLE -> TlsConfig.Disabled
-        TlsMode.REQUIRE -> TlsConfig.Required(verifyHostname = true)
-        TlsMode.VERIFY_FULL -> throw DbException(
-            DbError.UnsupportedConfiguration("Redis supports the disable and require TLS modes."),
+private fun ConnectionConfig.tlsConfig(engine: DatabaseEngine): TlsConfig {
+    val offered = engine.tlsModes
+    if (offered.isNotEmpty() && tlsMode !in offered) {
+        throw DbException(
+            DbError.UnsupportedConfiguration(
+                "${engine.displayName} supports the " +
+                    offered.joinToString(" and ") { it.wire } + " TLS modes.",
+            ),
         )
+    }
+    return when (tlsMode) {
+        TlsMode.DISABLE -> TlsConfig.Disabled
+        TlsMode.REQUIRE -> TlsConfig.Required(verifyHostname = !engine.offersUnverifiedTls)
+        TlsMode.VERIFY_FULL -> TlsConfig.Required(verifyHostname = true)
     }
 }
 
@@ -99,7 +96,9 @@ private fun ConnectionConfig.tlsConfig(): TlsConfig = when (engine) {
  * one".
  */
 internal fun ConnectionConfig.secretBundle(password: Secret): SecretBundle = when {
-    username.isNotEmpty() -> SecretBundle.UserPassword(username, password.expose().toCharArray())
+    settings[FormKeys.USER].orEmpty().isNotEmpty() ->
+        SecretBundle.UserPassword(username, password.expose().toCharArray())
+
     !password.isEmpty() -> SecretBundle.Password(password.expose().toCharArray())
     else -> SecretBundle.None
 }

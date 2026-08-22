@@ -36,13 +36,16 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.caracal.app.ConnectionFormState
-import dev.caracal.core.connections.Engine
+import dev.caracal.app.declaredDefault
 import dev.caracal.core.connections.Environment
-import dev.caracal.core.connections.TlsMode
+import dev.caracal.core.connections.fields
 import dev.caracal.core.connections.ValidationError
 import dev.caracal.core.engines.capabilities
-import dev.caracal.core.engines.displayName
+import dev.caracal.engine.api.DatabaseEngine
 import dev.caracal.engine.api.EngineFamily
+import dev.caracal.engine.api.FormField
+import dev.caracal.engine.api.FormKeys
+import dev.caracal.engine.api.FormSection
 
 /**
  * Adding or editing a connection, as a window rather than a pane.
@@ -68,7 +71,12 @@ fun ConnectionDialog(
     onSave: () -> Unit,
     onCancel: () -> Unit,
 ) {
-    val focusRequesters = remember { ValidationFields.associateWith { FocusRequester() } }
+    // One per field the engine declares, plus the two the application asks of every
+    // engine. Remembered against the engine, because switching it changes the set.
+    val focusRequesters = remember(form.engine.id) {
+        (listOf(ValidationError.NAME, ValidationError.COLOR) + form.engine.fields.map { it.key })
+            .associateWith { FocusRequester() }
+    }
 
     // A rejected save should put the cursor where the problem is.
     LaunchedEffect(form.errors) {
@@ -83,7 +91,7 @@ fun ConnectionDialog(
             "Everything stays on this machine. The password is sealed in the local vault."
         },
         tag = if (form.isEditing) "edit-connection-dialog" else "new-connection-dialog",
-        icon = { EngineTile(form.engine, size = 36.dp, selected = true) },
+        icon = { EngineTile(form.engine.id, size = 36.dp, selected = true) },
         onDismiss = onCancel,
         // A half-typed connection is not something to lose to a stray click.
         dismissOnClickOutside = false,
@@ -144,69 +152,13 @@ fun ConnectionDialog(
             }
         }
 
-        DialogSection(title = "Server", glyph = Glyphs.of(form.engine)) {
-            Row(horizontalArrangement = Arrangement.spacedBy(Space.lg)) {
-                Field(
-                    label = "Host",
-                    value = form.host,
-                    onChange = form::onHost,
-                    error = form.errors[ValidationError.HOST],
-                    enabled = !busy,
-                    focusRequester = focusRequesters.getValue(ValidationError.HOST),
-                    tag = "field-host",
-                    placeholder = "localhost",
-                    modifier = Modifier.weight(1f),
-                )
-                Field(
-                    label = "Port",
-                    value = form.port,
-                    onChange = form::onPort,
-                    error = form.errors[ValidationError.PORT],
-                    enabled = !busy,
-                    focusRequester = focusRequesters.getValue(ValidationError.PORT),
-                    tag = "field-port",
-                    placeholder = form.engine.defaultPort.toString(),
-                    modifier = Modifier.width(140.dp),
-                )
-            }
-
-            Row(horizontalArrangement = Arrangement.spacedBy(Space.lg)) {
-                Field(
-                    label = if (form.engine == Engine.REDIS) "Database index" else "Database",
-                    value = form.database,
-                    onChange = form::onDatabase,
-                    error = form.errors[ValidationError.DATABASE],
-                    enabled = !busy,
-                    focusRequester = focusRequesters.getValue(ValidationError.DATABASE),
-                    tag = "field-database",
-                    modifier = Modifier.weight(1f),
-                )
-                Field(
-                    label = if (form.engine == Engine.REDIS) "Username (optional)" else "Username",
-                    value = form.username,
-                    onChange = form::onUsername,
-                    error = form.errors[ValidationError.USERNAME],
-                    enabled = !busy,
-                    focusRequester = focusRequesters.getValue(ValidationError.USERNAME),
-                    tag = "field-username",
-                    modifier = Modifier.weight(1f),
-                )
-            }
-
-            SecretField(form, busy)
-
-            ChipRow("TLS") {
-                form.availableTlsModes.forEach { mode ->
-                    FilterChip(
-                        selected = form.tlsMode == mode,
-                        onClick = { form.onTlsMode(mode) },
-                        enabled = !busy,
-                        label = { Text(mode.wire) },
-                        modifier = Modifier.testTag("tls-choice-${mode.wire}"),
-                    )
-                }
-            }
-            form.errors[ValidationError.TLS_MODE]?.let { FieldError(it) }
+        // Every section the engine declared, drawn from the declaration and not from
+        // a list here. This is the whole of Phase 3's UI half: the dialog has no
+        // opinion about hosts, ports, database indexes or TLS modes, and an engine
+        // that declares a file path and a token gets a dialog for a file path and a
+        // token without this file being opened.
+        form.sections.forEach { section ->
+            DeclaredSection(section = section, form = form, busy = busy, focusRequesters = focusRequesters)
         }
 
         DialogSection(
@@ -281,15 +233,15 @@ fun ConnectionDialog(
 @Composable
 private fun EngineRail(form: ConnectionFormState, busy: Boolean) {
     RailHeading("Engine")
-    Engine.entries.forEach { engine ->
+    form.engines.forEach { engine ->
         RailItem(
-            label = engine.title,
+            label = engine.displayName,
             detail = engine.blurb,
-            tag = "engine-choice-${engine.wire}",
-            selected = form.engine == engine,
+            tag = "engine-choice-${engine.id.value}",
+            selected = form.engine.id == engine.id,
             enabled = !busy,
             onClick = { form.onEngine(engine) },
-            leading = { EngineTile(engine, size = 30.dp, selected = form.engine == engine) },
+            leading = { EngineTile(engine.id, size = 30.dp, selected = form.engine.id == engine.id) },
         )
     }
 
@@ -307,7 +259,7 @@ private fun EngineRail(form: ConnectionFormState, busy: Boolean) {
             horizontalArrangement = Arrangement.spacedBy(Space.md),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            EngineLogo(form.engine, size = 14.dp)
+            EngineLogo(form.engine.id, size = 14.dp)
             Text(
                 text = form.name.ifBlank { "Unnamed" },
                 style = MaterialTheme.typography.bodyMedium,
@@ -317,7 +269,7 @@ private fun EngineRail(form: ConnectionFormState, busy: Boolean) {
             )
         }
         Text(
-            text = "${form.host.ifBlank { "host" }}:${form.port.ifBlank { form.engine.defaultPort.toString() }}",
+            text = form.previewTarget,
             style = MaterialTheme.typography.labelSmall,
             fontFamily = FontFamily.Monospace,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -335,18 +287,31 @@ private fun EngineRail(form: ConnectionFormState, busy: Boolean) {
 }
 
 /**
+ * What the preview says this connection points at.
+ *
+ * Read off the declared fields rather than off a host and a port, because an engine
+ * that opens a file has neither — and the line under the name is the one place the
+ * dialog says where this will actually connect.
+ */
+private val ConnectionFormState.previewTarget: String
+    get() {
+        val path = value(FormKeys.PATH)
+        if (path.isNotBlank()) return path
+        val host = value(FormKeys.HOST).ifBlank { "host" }
+        val port = value(FormKeys.PORT).ifBlank {
+            engine.capabilities.defaultPort?.toString().orEmpty()
+        }
+        return if (port.isBlank()) host else "$host:$port"
+    }
+
+/**
  * What the rail calls an engine, and the one line under it that says why.
  *
  * Both come off the engine's own declaration rather than out of a list here, so the
- * rail is right about an engine this file has never heard of. What is still written
- * out per engine in this dialog is the *form* — which fields it has, what they are
- * called, which are optional — and that is Phase 3's work: `ConnectionForm` already
- * declares all of it, and rendering it is the change that lets an engine appear in
- * this dialog with no edit here at all.
+ * rail is right about an engine this file has never heard of — as is the form beside
+ * it, now that the fields are drawn from `ConnectionForm` too.
  */
-private val Engine.title: String get() = displayName
-
-private val Engine.blurb: String
+private val DatabaseEngine.blurb: String
     get() {
         val shape = when (capabilities.family) {
             EngineFamily.SQL -> "Relational · SQL editor"
@@ -357,6 +322,94 @@ private val Engine.blurb: String
     }
 
 /**
+ * One declared section of the engine's form.
+ *
+ * The glyph is the engine's own for the first section and a generic one after it,
+ * which is the only presentational decision left in here — a section title is a
+ * string the engine chose, and the dialog has nothing to add to it.
+ */
+@Composable
+private fun DeclaredSection(
+    section: FormSection,
+    form: ConnectionFormState,
+    busy: Boolean,
+    focusRequesters: Map<String, FocusRequester>,
+) {
+    DialogSection(title = section.title, glyph = Glyphs.of(form.engine.id)) {
+        section.fields.forEach { field ->
+            DeclaredField(
+                field = field,
+                form = form,
+                busy = busy,
+                focusRequester = focusRequesters[field.key],
+            )
+        }
+    }
+}
+
+/**
+ * One declared field, in whichever control its kind calls for.
+ *
+ * The mapping from kind to control is the only thing this function knows, and it is
+ * deliberately total: a `when` over [FormField]'s subclasses is exhaustive, so a
+ * field kind added to the SPI fails the build here rather than rendering as nothing.
+ */
+@Composable
+private fun DeclaredField(
+    field: FormField,
+    form: ConnectionFormState,
+    busy: Boolean,
+    focusRequester: FocusRequester?,
+) {
+    val error = form.errors[field.key]
+    when (field) {
+        is FormField.Secret -> SecretField(field, form, busy)
+
+        is FormField.Choice -> {
+            ChipRow(field.label) {
+                field.options.forEach { (value, label) ->
+                    FilterChip(
+                        selected = form.value(field.key) == value,
+                        onClick = { form.onValue(field, value) },
+                        enabled = !busy,
+                        label = { Text(label) },
+                        modifier = Modifier.testTag("${field.key}-choice-$value"),
+                    )
+                }
+            }
+            field.help?.let { FieldHelp(it) }
+            error?.let { FieldError(it) }
+        }
+
+        is FormField.Toggle -> {
+            CheckboxRow(
+                checked = form.value(field.key).toBoolean(),
+                onChange = { checked -> form.onValue(field, checked.toString()) },
+                enabled = !busy,
+                label = field.label,
+                tag = "field-${field.key}",
+            )
+            error?.let { FieldError(it) }
+        }
+
+        else -> {
+            Field(
+                label = field.label + if (field.required) "" else " (optional)",
+                value = form.value(field.key),
+                onChange = { typed -> form.onValue(field, typed) },
+                error = error,
+                enabled = !busy,
+                focusRequester = focusRequester,
+                tag = "field-${field.key}",
+                placeholder = field.declaredDefault,
+                help = field.help,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+    }
+}
+
+/**
  * The password field, and the promise attached to it.
  *
  * On an edit this starts as a statement rather than an input: the saved credential
@@ -364,7 +417,7 @@ private val Engine.blurb: String
  * password is removed, which the hint says out loud.
  */
 @Composable
-private fun SecretField(form: ConnectionFormState, busy: Boolean) {
+private fun SecretField(field: FormField.Secret, form: ConnectionFormState, busy: Boolean) {
     Column(verticalArrangement = Arrangement.spacedBy(Space.md)) {
         if (form.isEditing) {
             CheckboxRow(
@@ -372,15 +425,15 @@ private fun SecretField(form: ConnectionFormState, busy: Boolean) {
                 onChange = form::onReplaceSecret,
                 enabled = !busy,
                 label = if (form.replaceSecret) {
-                    "Replace the saved password"
+                    "Replace the saved ${field.label.lowercase()}"
                 } else {
-                    "Leave saved password unchanged"
+                    "Leave saved ${field.label.lowercase()} unchanged"
                 },
                 tag = "replace-password",
             )
             if (!form.replaceSecret && !form.hasStoredSecret) {
                 Text(
-                    "No password is saved for this connection.",
+                    "No ${field.label.lowercase()} is saved for this connection.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -391,17 +444,17 @@ private fun SecretField(form: ConnectionFormState, busy: Boolean) {
             OutlinedTextField(
                 value = form.secret,
                 onValueChange = form::onSecret,
-                label = { Text("Password") },
+                label = { Text(field.label) },
                 singleLine = true,
                 enabled = !busy,
                 visualTransformation = PasswordVisualTransformation(),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .testTag("field-password"),
+                    .testTag("field-${field.key}"),
             )
             if (form.isEditing) {
                 Text(
-                    "Leave this empty to remove the saved password.",
+                    "Leave this empty to remove the saved ${field.label.lowercase()}.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -417,10 +470,11 @@ private fun Field(
     onChange: (String) -> Unit,
     error: String?,
     enabled: Boolean,
-    focusRequester: FocusRequester,
+    focusRequester: FocusRequester?,
     tag: String,
     modifier: Modifier = Modifier,
     placeholder: String? = null,
+    help: String? = null,
 ) {
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(Space.sm)) {
         OutlinedTextField(
@@ -433,11 +487,22 @@ private fun Field(
             placeholder = placeholder?.let { { Text(it) } },
             modifier = Modifier
                 .fillMaxWidth()
-                .focusRequester(focusRequester)
+                .then(focusRequester?.let { Modifier.focusRequester(it) } ?: Modifier)
                 .testTag(tag),
         )
+        help?.let { FieldHelp(it) }
         error?.let { FieldError(it) }
     }
+}
+
+/** What an engine had to say about a field, under the field. */
+@Composable
+private fun FieldHelp(message: String) {
+    Text(
+        message,
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
 }
 
 /**
@@ -496,13 +561,3 @@ private fun ChipRow(label: String, content: @Composable () -> Unit) {
         }
     }
 }
-
-/** The fields that can hold focus, so every validation error has somewhere to land. */
-private val ValidationFields = listOf(
-    ValidationError.NAME,
-    ValidationError.HOST,
-    ValidationError.PORT,
-    ValidationError.DATABASE,
-    ValidationError.USERNAME,
-    ValidationError.COLOR,
-)

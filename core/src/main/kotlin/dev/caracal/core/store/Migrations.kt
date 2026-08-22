@@ -115,6 +115,73 @@ private val MIGRATIONS = listOf(
             "CREATE INDEX idx_history_conn_id ON query_history(connection_id, id DESC)",
         ),
     ),
+    Migration(
+        version = 4,
+        name = "a connection names its engine and declares its own fields",
+        statements = listOf(
+            // Phase 3: an engine is no longer one of two, so a connection can no
+            // longer be four columns the application picked. What it points at is a
+            // target — a host and a port, or a file — and everything else is whatever
+            // that engine's connection form declared, under the engine's own key.
+            //
+            // `username` and `tls_mode` are the two columns that become settings.
+            // They are copied out before the rebuild rather than after, because after
+            // is too late: the rebuild drops the table they are in.
+            """
+            CREATE TABLE connection_settings (
+                connection_id TEXT NOT NULL REFERENCES connections(id) ON DELETE CASCADE,
+                key           TEXT NOT NULL,
+                value         TEXT NOT NULL,
+                PRIMARY KEY (connection_id, key)
+            )
+            """,
+            """
+            INSERT INTO connection_settings(connection_id, key, value)
+            SELECT id, 'user', username FROM connections
+            WHERE username IS NOT NULL AND username <> ''
+            """,
+            """
+            INSERT INTO connection_settings(connection_id, key, value)
+            SELECT id, 'tls', tls_mode FROM connections
+            WHERE tls_mode IS NOT NULL AND tls_mode <> ''
+            """,
+            // host and port lose their NOT NULL because a file target has neither,
+            // and file_path arrives empty for every row that exists: no engine that
+            // opens a file has shipped yet, and inventing a path for a PostgreSQL
+            // connection would be worse than leaving the column null.
+            """
+            CREATE TABLE connections_new (
+                id            TEXT PRIMARY KEY,
+                name          TEXT NOT NULL,
+                engine        TEXT NOT NULL,
+                target_kind   TEXT NOT NULL DEFAULT 'network',
+                host          TEXT,
+                port          INTEGER,
+                "database"    TEXT,
+                file_path     TEXT,
+                secret_sealed BLOB,
+                environment   TEXT NOT NULL DEFAULT 'dev',
+                read_only     INTEGER NOT NULL DEFAULT 1,
+                color         TEXT,
+                created_at    TIMESTAMP NOT NULL
+            )
+            """,
+            """
+            INSERT INTO connections_new
+                (id, name, engine, target_kind, host, port, "database", file_path,
+                 secret_sealed, environment, read_only, color, created_at)
+            SELECT id, name, engine, 'network', host, port, "database", NULL,
+                   secret_sealed, environment, read_only, color, created_at
+            FROM connections
+            """,
+            // Safe because migrations run with foreign keys off — see applyMigration.
+            // With them on, this DROP would cascade into the settings just written
+            // and into every row of query_history.
+            "DROP TABLE connections",
+            "ALTER TABLE connections_new RENAME TO connections",
+            "CREATE UNIQUE INDEX idx_connections_name ON connections(name)",
+        ),
+    ),
 )
 
 /** The schema version this build writes and understands. */

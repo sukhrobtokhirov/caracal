@@ -5,8 +5,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.test.ComposeUiTest
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertIsDisplayed
-import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
@@ -16,9 +16,10 @@ import androidx.compose.ui.test.rightClick
 import androidx.compose.ui.test.v2.runDesktopComposeUiTest
 import dev.caracal.app.EditorTabs
 import dev.caracal.app.FakeConnectionService
+import dev.caracal.app.POSTGRES
+import dev.caracal.app.networkConfig
 import dev.caracal.core.connections.ConnectionConfig
 import dev.caracal.core.connections.ConnectionId
-import dev.caracal.core.connections.Engine
 import dev.caracal.core.connections.Environment
 import dev.caracal.core.connections.TlsMode
 import dev.caracal.core.result.CellValue
@@ -44,10 +45,10 @@ import org.junit.jupiter.api.Test
 @OptIn(ExperimentalTestApi::class)
 class QueryTabsUiTest {
 
-    private fun connection(id: String = "id-1", name: String = "local") = ConnectionConfig(
+    private fun connection(id: String = "id-1", name: String = "local") = networkConfig(
         id = ConnectionId(id),
         name = name,
-        engine = Engine.POSTGRES,
+        engineId = POSTGRES,
         host = "localhost",
         port = 5432,
         database = "caracal",

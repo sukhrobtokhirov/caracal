@@ -8,7 +8,7 @@ package dev.caracal.core.registry
 
 import dev.caracal.core.connections.ConnectionConfig
 import dev.caracal.core.connections.ConnectionId
-import dev.caracal.core.connections.Engine
+import dev.caracal.core.connections.EngineId
 import dev.caracal.core.connections.RuntimeState
 import dev.caracal.core.connections.RuntimeStatus
 import dev.caracal.core.connections.Secret
@@ -57,7 +57,7 @@ class ConnectionRegistry(
     private val stateLock = Mutex()
     private val entries = LinkedHashMap<ConnectionId, Entry>()
 
-    private class Entry(var engine: Engine) {
+    private class Entry(var engine: EngineId) {
         /** Serializes dial and close for this connection only. */
         val operationLock = Mutex()
         var status: RuntimeStatus = RuntimeStatus.CLOSED
@@ -74,14 +74,14 @@ class ConnectionRegistry(
      * for the same configuration and secret.
      */
     suspend fun open(config: ConnectionConfig, password: Secret) {
-        val entry = entryFor(config.id, config.engine)
+        val entry = entryFor(config.id, config.engineId)
         val fingerprint = fingerprint(config, password)
 
         entry.operationLock.withLock {
             val alreadyOpen = stateLock.withLock {
                 entry.status == RuntimeStatus.OPEN &&
                     entry.fingerprint == fingerprint &&
-                    entry.engine == config.engine
+                    entry.engine == config.engineId
             }
             // Open is idempotent for a healthy connection.
             if (alreadyOpen) return
@@ -89,14 +89,15 @@ class ConnectionRegistry(
             // A reopen with changed settings must not leave the old client behind.
             closeClient(entry)
             stateLock.withLock {
-                entry.engine = config.engine
+                entry.engine = config.engineId
                 entry.status = RuntimeStatus.OPENING
                 entry.lastError = null
             }
 
+            val engine = Engines.require(config.engineId)
             val client = try {
-                Engines.of(config.engine).connect(
-                    descriptor = config.toDescriptor(),
+                engine.connect(
+                    descriptor = config.toDescriptor(engine),
                     secrets = config.secretBundle(password),
                     policy = SessionPolicy(readOnly = config.readOnly, statementTimeout = statementTimeout),
                 )
@@ -213,7 +214,7 @@ class ConnectionRegistry(
         entry.client ?: throw NotOpenException()
     }
 
-    private suspend fun entryFor(id: ConnectionId, engine: Engine): Entry = stateLock.withLock {
+    private suspend fun entryFor(id: ConnectionId, engine: EngineId): Entry = stateLock.withLock {
         entries.getOrPut(id) { Entry(engine) }
     }
 
@@ -256,17 +257,21 @@ class ConnectionRegistry(
          */
         fun fingerprint(config: ConnectionConfig, password: Secret): String {
             val digest = MessageDigest.getInstance("SHA-256")
-            listOf(
-                config.engine.wire,
-                config.host,
-                config.port.toString(),
-                config.database,
-                config.username,
-                config.tlsMode.wire,
-                config.readOnly.toString(),
-                config.environment.wire,
-                password.expose(),
-            ).forEach { part ->
+            buildList {
+                add(config.engineId.value)
+                // The whole target and every declared setting, rather than the five
+                // fields a connection used to have. An engine is free to declare a
+                // field this file has never heard of, and a change to one of those is
+                // as much a reason to redial as a change to the host.
+                add(config.target.toString())
+                config.settings.toSortedMap().forEach { (key, value) ->
+                    add(key)
+                    add(value)
+                }
+                add(config.readOnly.toString())
+                add(config.environment.wire)
+                add(password.expose())
+            }.forEach { part ->
                 digest.update(part.toByteArray(Charsets.UTF_8))
                 digest.update(0)
             }

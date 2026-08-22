@@ -15,10 +15,10 @@ import dev.caracal.app.ConnectionsViewModel
 import dev.caracal.app.EditorTabs
 import dev.caracal.app.FakeConnectionService
 import dev.caracal.app.HistoryViewModel
+import dev.caracal.app.POSTGRES
 import dev.caracal.app.RedisWorkspace
 import dev.caracal.app.SchemaTreeViewModel
 import dev.caracal.app.ThemeViewModel
-import dev.caracal.core.connections.Engine
 import dev.caracal.core.connections.Environment
 import dev.caracal.core.connections.RuntimeStatus
 import dev.caracal.core.vault.VaultState
@@ -46,7 +46,7 @@ class ZoomUiTest {
     private fun ComposeUiTest.workspace(service: FakeConnectionService, scale: Float) {
         service.seed(
             name = "Ledger",
-            engine = Engine.POSTGRES,
+            engine = POSTGRES,
             status = RuntimeStatus.OPEN,
             environment = Environment.PROD,
         )

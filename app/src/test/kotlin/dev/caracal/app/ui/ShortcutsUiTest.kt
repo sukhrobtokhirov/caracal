@@ -22,19 +22,21 @@ import dev.caracal.app.ConnectionsViewModel
 import dev.caracal.app.EditorTabs
 import dev.caracal.app.FakeConnectionService
 import dev.caracal.app.HistoryViewModel
+import dev.caracal.app.POSTGRES
 import dev.caracal.app.Platform
+import dev.caracal.app.REDIS
 import dev.caracal.app.RedisWorkspace
 import dev.caracal.app.SchemaTreeViewModel
 import dev.caracal.app.Shortcut
 import dev.caracal.app.Shortcuts
 import dev.caracal.app.ThemeViewModel
-import dev.caracal.core.connections.Engine
 import dev.caracal.core.connections.RuntimeStatus
 import dev.caracal.core.result.CellValue
 import dev.caracal.core.result.Column
 import dev.caracal.core.result.ColumnFormat
 import dev.caracal.core.result.QueryResult
 import dev.caracal.core.vault.VaultState
+import dev.caracal.engine.api.EngineId
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
@@ -71,7 +73,7 @@ class ShortcutsUiTest {
     private fun ComposeUiTest.workspace(
         service: FakeConnectionService,
         platform: Platform = Platform.MAC,
-        engine: Engine = Engine.POSTGRES,
+        engine: EngineId = POSTGRES,
     ): EditorTabs {
         service.seed(name = "Live", engine = engine, status = RuntimeStatus.OPEN)
         lateinit var tabs: EditorTabs
@@ -214,7 +216,7 @@ class ShortcutsUiTest {
     @Test
     fun `the search chord moves the caret into the key browser from another pane`() =
         runDesktopComposeUiTest(width = 1500, height = 900) {
-            workspace(service(), engine = Engine.REDIS)
+            workspace(service(), engine = REDIS)
             // The console's command line, which is a text field in a different pane —
             // so the assertion is that the chord moved the caret, not that it left it
             // where it already was.

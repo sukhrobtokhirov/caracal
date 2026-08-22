@@ -29,7 +29,10 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import dev.caracal.app.Activity
 import dev.caracal.core.connections.ConnectionView
-import dev.caracal.core.connections.Engine
+import dev.caracal.core.connections.ConnectionDraft
+import dev.caracal.core.connections.fields
+import dev.caracal.core.engines.Engines
+import dev.caracal.engine.api.FormField
 import dev.caracal.core.connections.Environment
 
 /** One saved connection: what it points at, what state it is in, and what can be done to it. */
@@ -60,7 +63,7 @@ fun ConnectionDetail(
         ) {
             // The engine's mark at heading size. The badge under it still says the
             // word, so the mark is the shortcut and never the only statement.
-            EngineTile(config.engine, size = 36.dp)
+            EngineTile(config.engineId, size = 36.dp)
             Column(verticalArrangement = Arrangement.spacedBy(Space.xs)) {
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(Space.md),
@@ -70,7 +73,7 @@ fun ConnectionDetail(
                     Text(config.name, style = MaterialTheme.typography.titleMedium)
                 }
                 Text(
-                    "${config.host}:${config.port}",
+                    config.targetSummary,
                     style = MaterialTheme.typography.labelSmall,
                     fontFamily = FontFamily.Monospace,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -82,7 +85,7 @@ fun ConnectionDetail(
             horizontalArrangement = Arrangement.spacedBy(Space.md),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            EngineBadge(config.engine)
+            EngineBadge(config.engineId)
             EnvironmentBadge(config.environment)
             if (config.readOnly) ReadOnlyBadge()
             StatusBadge(view.runtime)
@@ -109,13 +112,23 @@ fun ConnectionDetail(
                 .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
                 .padding(Space.lg),
         ) {
-            DetailRow("Host", "${config.host}:${config.port}")
-            DetailRow(
-                if (config.engine == Engine.REDIS) "Database index" else "Database",
-                config.database.ifEmpty { "—" },
-            )
-            DetailRow("Username", config.username.ifEmpty { "—" })
-            DetailRow("TLS", config.tlsMode.wire)
+            // One row per field the engine declared, under the engine's own labels.
+            // The pane used to name Host, Database, Username and TLS itself, which
+            // made it right about two engines and wrong about the third: a Redis
+            // database is an index and an engine that opens a file has no host at all.
+            val engine = Engines.byId(config.engineId)
+            val stored = ConnectionDraft.of(config).values
+            if (engine == null) {
+                // An engine this build does not have still has to show what it points
+                // at. Its settings are shown under their stored keys, because there is
+                // no declaration left to give them labels.
+                DetailRow("Target", config.targetSummary)
+                config.settings.toSortedMap().forEach { (key, value) -> DetailRow(key, value) }
+            } else {
+                engine.fields
+                    .filterNot { it is FormField.Secret }
+                    .forEach { field -> DetailRow(field.label, stored[field.key].orEmpty().ifEmpty { "—" }) }
+            }
             // The password itself is never shown, at any point, in any state.
             DetailRow("Password", if (view.hasSecret) "Saved" else "Not saved")
         }

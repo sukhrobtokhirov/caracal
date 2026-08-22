@@ -9,6 +9,7 @@ import dev.caracal.core.vault.Vault
 import dev.caracal.engine.api.CatalogFacet
 import dev.caracal.engine.api.KeyValueFacet
 import dev.caracal.engine.api.facet
+import dev.caracal.engine.api.FormKeys
 import dev.caracal.engine.postgres.PostgresEngine
 import dev.caracal.engine.redis.RedisEngine
 import java.nio.file.Path
@@ -74,9 +75,9 @@ class ConnectionManagerIntegrationTest {
         database: String = postgres.databaseName,
         username: String = postgres.username,
         password: String = postgres.password,
-    ) = ConnectionDraft(
+    ) = networkDraft(
+        engineId = PostgresEngine.ID,
         name = name,
-        engine = Engine.POSTGRES,
         host = host,
         port = port,
         database = database,
@@ -90,9 +91,9 @@ class ConnectionManagerIntegrationTest {
         port: Int = redis.firstMappedPort,
         database: String = "0",
         password: String = REDIS_PASSWORD,
-    ) = ConnectionDraft(
+    ) = networkDraft(
+        engineId = RedisEngine.ID,
         name = name,
-        engine = Engine.REDIS,
         host = host,
         port = port,
         database = database,
@@ -106,7 +107,7 @@ class ConnectionManagerIntegrationTest {
             val view = session.service.create(postgresDraft())
 
             val result = session.service.test(view.id)
-            assertEquals(Engine.POSTGRES, result.engine)
+            assertEquals(PostgresEngine.ID, result.engineId)
             assertNotNull(result.serverVersion)
 
             assertTrue(session.service.open(view.id).runtime.isOpen)
@@ -125,7 +126,7 @@ class ConnectionManagerIntegrationTest {
             val view = session.service.create(redisDraft())
 
             val result = session.service.test(view.id)
-            assertEquals(Engine.REDIS, result.engine)
+            assertEquals(RedisEngine.ID, result.engineId)
             assertNotNull(result.serverVersion)
 
             assertTrue(session.service.open(view.id).runtime.isOpen)
@@ -282,7 +283,7 @@ class ConnectionManagerIntegrationTest {
             val view = session.service.create(postgresDraft())
             session.service.open(view.id)
 
-            session.service.update(view.id, ConnectionDraft.of(view.config).copy(port = 1))
+            session.service.update(view.id, ConnectionDraft.of(view.config).let { it.copy(values = it.values + (FormKeys.PORT to "1")) })
 
             assertEquals(RuntimeStatus.CLOSED, session.service.get(view.id).runtime.status)
         }

@@ -33,9 +33,8 @@ import androidx.compose.ui.unit.dp
 import dev.caracal.app.BuildInfo
 import dev.caracal.app.ThemeViewModel
 import dev.caracal.core.appdata.AppPaths
-import dev.caracal.core.connections.Engine
-import dev.caracal.core.engines.capabilities
-import dev.caracal.core.engines.displayName
+import dev.caracal.core.engines.Engines
+import dev.caracal.engine.api.DatabaseEngine
 import dev.caracal.engine.api.EngineFamily
 
 /** Which section of the settings window is showing. */
@@ -99,7 +98,7 @@ fun SettingsDialog(theme: ThemeViewModel, onDismiss: () -> Unit) {
     ) {
         when (section) {
             SettingsSection.APPEARANCE -> Appearance(theme)
-            SettingsSection.ENGINES -> Engines()
+            SettingsSection.ENGINES -> EngineSection()
             SettingsSection.ABOUT -> About()
         }
     }
@@ -170,13 +169,16 @@ private val ThemeMode.blurb: String
 
 /** What this build can connect to, with the marks used everywhere else. */
 @Composable
-private fun Engines() {
+private fun EngineSection() {
     DialogSection(
         title = "Engines",
         glyph = Glyphs.DATABASE,
-        detail = "Both are read through their own driver; neither is proxied through a server of ours.",
+        detail = "Each is read through its own driver; none is proxied through a server of ours.",
     ) {
-        Engine.entries.forEach { engine ->
+        // Every engine the classpath offers. This section used to be a list of two,
+        // which meant an engine module added to the build was absent from the one
+        // window whose job is saying what the build can talk to.
+        Engines.all.forEach { engine ->
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -186,7 +188,7 @@ private fun Engines() {
                 horizontalArrangement = Arrangement.spacedBy(Space.lg),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                EngineTile(engine, size = 38.dp)
+                EngineTile(engine.id, size = 38.dp)
                 Column(verticalArrangement = Arrangement.spacedBy(Space.xs)) {
                     Text(
                         // The engine's own name for itself. This window used to spell
@@ -202,7 +204,7 @@ private fun Engines() {
                     )
                 }
                 Spacer(modifier = Modifier.weight(1f))
-                EngineBadge(engine)
+                EngineBadge(engine.id)
             }
         }
     }
@@ -216,7 +218,7 @@ private fun Engines() {
  * workspace. The port comes off the capability rather than being written out again,
  * because a number typed twice is a number that is wrong once.
  */
-private fun Engine.summary(): String {
+private fun DatabaseEngine.summary(): String {
     val tools = when (capabilities.family) {
         EngineFamily.SQL -> "Schema browser, SQL editor, CSV export."
         EngineFamily.KEY_VALUE -> "Keyspace browser, value viewer, command console."

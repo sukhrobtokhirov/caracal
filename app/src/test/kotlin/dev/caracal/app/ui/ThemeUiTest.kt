@@ -17,11 +17,11 @@ import dev.caracal.app.ConnectionsViewModel
 import dev.caracal.app.EditorTabs
 import dev.caracal.app.FakeConnectionService
 import dev.caracal.app.HistoryViewModel
+import dev.caracal.app.POSTGRES
 import dev.caracal.app.RedisWorkspace
 import dev.caracal.app.SchemaTreeViewModel
 import dev.caracal.app.Shortcuts
 import dev.caracal.app.ThemeViewModel
-import dev.caracal.core.connections.Engine
 import dev.caracal.core.connections.RuntimeStatus
 import dev.caracal.core.vault.MetadataStore
 import dev.caracal.core.vault.VaultState
@@ -104,7 +104,7 @@ class ThemeUiTest {
     @Test
     fun `choosing a theme in settings repaints the window behind it`() = runDesktopComposeUiTest {
         val service = FakeConnectionService(VaultState.UNLOCKED)
-        service.seed(name = "Live", engine = Engine.POSTGRES, status = RuntimeStatus.OPEN)
+        service.seed(name = "Live", engine = POSTGRES, status = RuntimeStatus.OPEN)
         val store = RecordingStore()
         val shell = Observed()
         lateinit var theme: ThemeViewModel

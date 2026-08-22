@@ -2,11 +2,12 @@ package dev.caracal.core.redis
 
 import dev.caracal.core.connections.ConnectionConfig
 import dev.caracal.core.connections.ConnectionId
-import dev.caracal.core.connections.Engine
 import dev.caracal.core.connections.Environment
 import dev.caracal.core.connections.Secret
 import dev.caracal.core.connections.TlsMode
+import dev.caracal.core.connections.networkConfig
 import dev.caracal.engine.api.KeyValueLimits
+import dev.caracal.engine.redis.RedisEngine
 import io.lettuce.core.AclCategory
 import io.lettuce.core.AclSetuserArgs
 import io.lettuce.core.RedisClient
@@ -107,10 +108,10 @@ object RedisFixture {
         readOnly: Boolean = false,
         environment: Environment = Environment.DEV,
         username: String = "",
-    ) = ConnectionConfig(
+    ) = networkConfig(
         id = ConnectionId("redis-fixture"),
         name = name,
-        engine = Engine.REDIS,
+        engineId = RedisEngine.ID,
         host = host,
         port = port,
         database = database.toString(),

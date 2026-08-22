@@ -144,8 +144,8 @@ fun WorkspaceScreen(
     // Only an open connection has anything to browse. A closed one is not reopened to
     // fill a panel: the user closed it.
     val browsing = current?.takeIf { it.runtime.isOpen }
-    val postgres = browsing?.takeIf { it.config.engine.capabilities.family == EngineFamily.SQL }
-    val redisView = browsing?.takeIf { it.config.engine.capabilities.family == EngineFamily.KEY_VALUE }
+    val postgres = browsing?.takeIf { it.config.engineId.capabilities.family == EngineFamily.SQL }
+    val redisView = browsing?.takeIf { it.config.engineId.capabilities.family == EngineFamily.KEY_VALUE }
     // Keyed on the configuration and not just the identifier: §2.4's policy asks the
     // connection whether it is read only and which environment it is, so an edit to
     // either has to reach the editor without the connection being reopened.
@@ -166,7 +166,7 @@ fun WorkspaceScreen(
     // Opening a connection lands on its editor; the connection's own details are one
     // click away and stay there per connection, so switching back and forth does not
     // keep resetting which half is on screen.
-    val panes = tabsFor(browsing?.config?.engine?.capabilities?.family)
+    val panes = tabsFor(browsing?.config?.engineId?.capabilities?.family)
     var tab: WorkspaceTab by remember(browsing?.id) { mutableStateOf(panes.first()) }
 
     // The sidebar is a pane, not a fixture. On a laptop beside a terminal the list of
@@ -297,7 +297,7 @@ fun WorkspaceScreen(
             if (!view.runtime.isOpen) {
                 viewModel.open(view.id)
             } else {
-                tab = tabsFor(view.config.engine.capabilities.family).first()
+                tab = tabsFor(view.config.engineId.capabilities.family).first()
             }
         },
         close = { view -> viewModel.close(view.id) },
@@ -486,7 +486,7 @@ fun WorkspaceScreen(
                                         others = viewModel.connections
                                             .filter {
                                                 it.runtime.isOpen &&
-                                                    it.config.engine == open.config.engine &&
+                                                    it.config.engineId == open.config.engineId &&
                                                     it.id != open.id
                                             }
                                             .map { it.config },
@@ -540,11 +540,11 @@ fun WorkspaceScreen(
                 if (!view.runtime.isOpen) {
                     viewModel.open(view.id)
                 } else {
-                    tab = tabsFor(view.config.engine.capabilities.family).first()
+                    tab = tabsFor(view.config.engineId.capabilities.family).first()
                 }
                 // And the keyboard follows, into whichever pane the engine lands in.
                 // The request waits if the connection is still being dialled.
-                when (view.config.engine.capabilities.family) {
+                when (view.config.engineId.capabilities.family) {
                     EngineFamily.SQL -> editorFocus.raise()
                     EngineFamily.KEY_VALUE -> keyFocus.raise()
                     EngineFamily.DOCUMENT -> Unit
@@ -669,7 +669,7 @@ private fun WorkspaceBar(
                 // The engine's own mark, so the bar says what kind of server this is
                 // before it says which one. The badge that used to carry it is still
                 // in the detail pane, where there is room for a word.
-                EngineLogo(selected.config.engine, size = 14.dp, described = true)
+                EngineLogo(selected.config.engineId, size = 14.dp, described = true)
                 ColorSwatch(selected.config.color)
                 Text(
                     selected.config.name,

@@ -2,11 +2,13 @@ package dev.caracal.app
 
 import dev.caracal.core.connections.ConnectionConfig
 import dev.caracal.core.connections.ConnectionDraft
+import dev.caracal.core.engines.Engines
+import dev.caracal.engine.api.DatabaseEngine
+import dev.caracal.engine.api.EngineId
 import dev.caracal.core.connections.ConnectionId
 import dev.caracal.core.connections.ConnectionService
 import dev.caracal.core.connections.ConnectionSummary
 import dev.caracal.core.connections.ConnectionView
-import dev.caracal.core.connections.Engine
 import dev.caracal.core.connections.Environment
 import dev.caracal.core.connections.RuntimeState
 import dev.caracal.core.connections.RuntimeStatus
@@ -87,7 +89,7 @@ open class FakeConnectionService(
     /** Set to make the next operation fail. */
     var nextFailure: Throwable? = null
 
-    var testResult = TestResult(Engine.POSTGRES, "16.2", latencyMillis = 12)
+    var testResult = TestResult(POSTGRES, "16.2", latencyMillis = 12)
 
     private var counter = 0
 
@@ -130,10 +132,11 @@ open class FakeConnectionService(
         drafts += draft
         await()
         requireUnlocked()
-        val normalized = draft.normalized()
-        normalized.validate().takeIf { it.isNotEmpty() }?.let { throw ValidationException(it) }
+        val engine = engineOf(draft)
+        val normalized = draft.normalized(engine)
+        normalized.validate(engine).takeIf { it.isNotEmpty() }?.let { throw ValidationException(it) }
         val id = ConnectionId("id-${++counter}")
-        return view(normalized.toConfig(id, CREATED_AT), draft.secret.storesSecret())
+        return view(normalized.toConfig(engine, id, CREATED_AT), draft.secret.storesSecret())
             .also { stored[id] = it }
     }
 
@@ -143,13 +146,14 @@ open class FakeConnectionService(
         await()
         requireUnlocked()
         val existing = stored[id] ?: throw ConnectionNotFoundException(id)
-        val normalized = draft.normalized()
-        normalized.validate().takeIf { it.isNotEmpty() }?.let { throw ValidationException(it) }
+        val engine = engineOf(draft)
+        val normalized = draft.normalized(engine)
+        normalized.validate(engine).takeIf { it.isNotEmpty() }?.let { throw ValidationException(it) }
         val hasSecret = when (draft.secret) {
             SecretUpdate.Unchanged -> existing.hasSecret
             else -> draft.secret.storesSecret()
         }
-        return view(normalized.toConfig(id, existing.config.createdAt), hasSecret, existing.runtime)
+        return view(normalized.toConfig(engine, id, existing.config.createdAt), hasSecret, existing.runtime)
             .also { stored[id] = it }
     }
 
@@ -478,23 +482,27 @@ open class FakeConnectionService(
         calls += "shutdown"
     }
 
+    /** The engine a draft names, exactly as the real service resolves it. */
+    private fun engineOf(draft: ConnectionDraft): DatabaseEngine =
+        Engines.byId(draft.engineId) ?: error("no ${draft.engineId} engine on the test classpath")
+
     /** Seeds a saved connection without going through the form. */
     fun seed(
         name: String = "Local",
-        engine: Engine = Engine.POSTGRES,
+        engine: EngineId = POSTGRES,
         environment: Environment = Environment.DEV,
         readOnly: Boolean = false,
         hasSecret: Boolean = true,
         status: RuntimeStatus = RuntimeStatus.CLOSED,
     ): ConnectionView {
         val id = ConnectionId("id-${++counter}")
-        val config = ConnectionConfig(
+        val config = networkConfig(
             id = id,
             name = name,
-            engine = engine,
+            engineId = engine,
             host = "localhost",
-            port = engine.defaultPort,
-            database = if (engine == Engine.REDIS) "0" else "caracal",
+            port = if (engine == REDIS) 6379 else 5432,
+            database = if (engine == REDIS) "0" else "caracal",
             username = "caracal",
             tlsMode = TlsMode.DISABLE,
             environment = environment,

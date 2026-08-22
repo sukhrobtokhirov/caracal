@@ -2,14 +2,15 @@ package dev.caracal.core.redis
 
 import dev.caracal.core.connections.ConnectionConfig
 import dev.caracal.core.connections.ConnectionId
-import dev.caracal.core.connections.Engine
 import dev.caracal.core.connections.Environment
 import dev.caracal.core.connections.TlsMode
+import dev.caracal.core.connections.networkConfig
 import dev.caracal.core.policy.Acknowledgement
 import dev.caracal.core.policy.CommandClearance
 import dev.caracal.core.result.DbError
 import dev.caracal.engine.api.CommandLine
 import dev.caracal.engine.api.RawCommand
+import dev.caracal.engine.redis.RedisEngine
 import java.time.Instant
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -291,10 +292,10 @@ class RedisCommandGuardTest {
         name: String = "local",
         environment: Environment = Environment.DEV,
         readOnly: Boolean = false,
-    ) = ConnectionConfig(
+    ) = networkConfig(
         id = ConnectionId("id-1"),
         name = name,
-        engine = Engine.REDIS,
+        engineId = RedisEngine.ID,
         host = "localhost",
         port = 6379,
         database = "0",

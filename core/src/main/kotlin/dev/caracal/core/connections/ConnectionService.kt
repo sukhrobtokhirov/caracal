@@ -9,10 +9,11 @@ import dev.caracal.core.history.ExecutionRecord
 import dev.caracal.core.history.HistoryPage
 import dev.caracal.core.history.HistoryQuery
 import dev.caracal.core.history.HistoryScope
-import dev.caracal.core.postgres.PostgresConnectionConfig
-import dev.caracal.core.postgres.PostgresProbe
-import dev.caracal.core.redis.RedisSession
+import dev.caracal.core.engines.Engines
+import dev.caracal.core.postgres.PostgresAdapter
 import dev.caracal.core.registry.ConnectionRegistry
+import dev.caracal.core.registry.secretBundle
+import dev.caracal.core.registry.toDescriptor
 import dev.caracal.core.registry.WrongEngineException
 import dev.caracal.core.result.QueryResult
 import dev.caracal.core.result.toFailure
@@ -23,6 +24,7 @@ import dev.caracal.core.vault.VaultException
 import dev.caracal.core.vault.VaultLockedException
 import dev.caracal.core.vault.VaultState
 import dev.caracal.engine.api.CatalogFacet
+import dev.caracal.engine.api.DatabaseEngine
 import dev.caracal.engine.api.CatalogObject
 import dev.caracal.engine.api.ColumnInfo
 import dev.caracal.engine.api.CommandConsent
@@ -40,6 +42,7 @@ import dev.caracal.engine.api.ScanCursor
 import dev.caracal.engine.api.ScanPage
 import dev.caracal.engine.api.SchemaInfo
 import dev.caracal.engine.api.ServerInfo
+import dev.caracal.engine.api.SessionPolicy
 import dev.caracal.engine.api.ValuePage
 import dev.caracal.engine.api.ValueRequest
 import java.nio.file.Path
@@ -47,6 +50,7 @@ import java.time.Instant
 import java.util.UUID
 import kotlin.time.TimeSource
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
@@ -312,9 +316,10 @@ class DefaultConnectionService(
     /** Saves a new connection and seals its secret. */
     override suspend fun create(draft: ConnectionDraft): ConnectionView {
         requireUnlocked()
-        val normalized = draft.normalized().validated()
+        val engine = engineFor(draft)
+        val normalized = draft.normalized(engine).validated(engine)
 
-        val config = normalized.toConfig(newId(), clock())
+        val config = normalized.toConfig(engine, newId(), clock())
         val sealed = sealFor(config, normalized.secret, existing = null)
         val record = ConnectionRecord(config, sealed)
 
@@ -328,10 +333,11 @@ class DefaultConnectionService(
      */
     override suspend fun update(id: ConnectionId, draft: ConnectionDraft): ConnectionView {
         val existing = record(id)
-        val normalized = draft.normalized().validated()
+        val engine = engineFor(draft)
+        val normalized = draft.normalized(engine).validated(engine)
 
         // created_at is immutable: an edit is not a new connection.
-        val config = normalized.toConfig(id, existing.config.createdAt)
+        val config = normalized.toConfig(engine, id, existing.config.createdAt)
         val sealed = sealFor(config, normalized.secret, existing)
         val updated = ConnectionRecord(config, sealed)
 
@@ -362,13 +368,42 @@ class DefaultConnectionService(
 
     // --- Runtime operations --------------------------------------------------
 
-    /** Dials, authenticates, and disconnects without touching the registry. */
+    /**
+     * Dials, authenticates, and disconnects without touching the registry.
+     *
+     * One path for every engine, where there used to be a probe per engine and a
+     * `when` to choose between them. What proves the connection is the engine's own
+     * `connect`, which already dials, authenticates and makes a round trip before it
+     * returns a session — a second implementation of that per engine was a second
+     * place for the dialling rules to drift.
+     *
+     * The session is opened with the connection's own read-only setting, so testing a
+     * read-only connection cannot open a writable one, and closed on the IO
+     * dispatcher: closing a pool blocks, and the caller is a Compose scope on the AWT
+     * thread.
+     */
     override suspend fun test(id: ConnectionId): TestResult {
         val record = record(id)
+        val engine = Engines.require(record.config.engineId)
         return withPassword(record) { password ->
-            when (record.config.engine) {
-                Engine.POSTGRES -> PostgresProbe.test(PostgresConnectionConfig.of(record.config, password))
-                Engine.REDIS -> RedisSession.test(record.config, password)
+            val started = TimeSource.Monotonic.markNow()
+            val session = engine.connect(
+                descriptor = record.config.toDescriptor(engine),
+                secrets = record.config.secretBundle(password),
+                policy = SessionPolicy(
+                    readOnly = record.config.readOnly,
+                    statementTimeout = PostgresAdapter.DEFAULT_STATEMENT_TIMEOUT,
+                ),
+            )
+            val latency = started.elapsedNow().inWholeMilliseconds
+            try {
+                TestResult(
+                    engineId = engine.id,
+                    serverVersion = session.serverVersion.raw,
+                    latencyMillis = latency,
+                )
+            } finally {
+                withContext(NonCancellable + Dispatchers.IO) { runCatching { session.close() } }
             }
         }
     }
@@ -588,11 +623,29 @@ class DefaultConnectionService(
     private suspend fun view(record: ConnectionRecord) =
         ConnectionView(record.summarize(), registry.state(record.id))
 
-    private fun ConnectionDraft.validated(): ConnectionDraft {
-        val errors = validate()
+    private fun ConnectionDraft.validated(engine: DatabaseEngine): ConnectionDraft {
+        val errors = validate(engine)
         if (errors.isNotEmpty()) throw ValidationException(errors)
         return this
     }
+
+    /**
+     * The engine a draft names, or a validation failure saying this build has none.
+     *
+     * A form cannot produce one — it offers the engines that exist — so this is about
+     * a configuration file naming an engine whose module is not installed. Reporting
+     * it as a validation error rather than an exception puts the sentence where the
+     * user is looking.
+     */
+    private fun engineFor(draft: ConnectionDraft): DatabaseEngine =
+        Engines.byId(draft.engineId) ?: throw ValidationException(
+            listOf(
+                ValidationError(
+                    ValidationError.FORM,
+                    "This build has no ${draft.engineId.value} engine installed.",
+                ),
+            ),
+        )
 
     /**
      * Runs [body] with the connection's decrypted password, then clears it. A

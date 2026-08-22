@@ -12,10 +12,10 @@ import dev.caracal.app.ConnectionsViewModel
 import dev.caracal.app.EditorTabs
 import dev.caracal.app.FakeConnectionService
 import dev.caracal.app.HistoryViewModel
+import dev.caracal.app.REDIS
 import dev.caracal.app.RedisWorkspace
 import dev.caracal.app.SchemaTreeViewModel
 import dev.caracal.app.ThemeViewModel
-import dev.caracal.core.connections.Engine
 import dev.caracal.core.connections.RuntimeStatus
 import dev.caracal.core.vault.VaultState
 import dev.caracal.engine.api.KeyMetadata
@@ -88,7 +88,7 @@ class RedisWorkspaceUiTest {
     fun `an open Redis connection gets the key browser and the Redis tabs`() =
         runDesktopComposeUiTest(width = 1500, height = 900) {
             val service = service()
-            service.seed(name = "Cache", engine = Engine.REDIS, status = RuntimeStatus.OPEN)
+            service.seed(name = "Cache", engine = REDIS, status = RuntimeStatus.OPEN)
             workspace(service)
 
             onNodeWithTag("connection-Cache").performClick()
@@ -106,7 +106,7 @@ class RedisWorkspaceUiTest {
     fun `clicking a key shows its value`() =
         runDesktopComposeUiTest(width = 1500, height = 900) {
             val service = service()
-            service.seed(name = "Cache", engine = Engine.REDIS, status = RuntimeStatus.OPEN)
+            service.seed(name = "Cache", engine = REDIS, status = RuntimeStatus.OPEN)
             workspace(service)
             onNodeWithTag("connection-Cache").performClick()
             waitForIdle()
@@ -124,7 +124,7 @@ class RedisWorkspaceUiTest {
     fun `the console and the server summary are one click away`() =
         runDesktopComposeUiTest(width = 1500, height = 900) {
             val service = service()
-            service.seed(name = "Cache", engine = Engine.REDIS, status = RuntimeStatus.OPEN)
+            service.seed(name = "Cache", engine = REDIS, status = RuntimeStatus.OPEN)
             workspace(service)
             onNodeWithTag("connection-Cache").performClick()
             waitForIdle()
@@ -142,7 +142,7 @@ class RedisWorkspaceUiTest {
     fun `a closed Redis connection is not browsed`() =
         runDesktopComposeUiTest(width = 1500, height = 900) {
             val service = service()
-            service.seed(name = "Cache", engine = Engine.REDIS, status = RuntimeStatus.CLOSED)
+            service.seed(name = "Cache", engine = REDIS, status = RuntimeStatus.CLOSED)
             workspace(service)
 
             onNodeWithTag("connection-Cache").performClick()

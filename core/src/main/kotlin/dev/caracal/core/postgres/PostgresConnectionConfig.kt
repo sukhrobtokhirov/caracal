@@ -1,6 +1,5 @@
 package dev.caracal.core.postgres
 
-import dev.caracal.core.connections.ConnectionConfig
 import dev.caracal.core.connections.Secret
 import dev.caracal.core.connections.TlsMode
 import dev.caracal.core.text.Redaction
@@ -8,9 +7,14 @@ import dev.caracal.core.text.Redaction
 /**
  * Everything needed to reach one PostgreSQL server.
  *
- * This is the dialing form, built from a stored connection at the moment a client
- * is opened or tested. It holds a plaintext password, so it lives no longer than
- * the operation that needs it.
+ * This is the dialing form, built by `PostgresEngine` from a descriptor at the
+ * moment a client is opened. It holds a plaintext password, so it lives no longer
+ * than the operation that needs it.
+ *
+ * It used to be built from a `ConnectionConfig` too, by a `companion` this file no
+ * longer has: the stored form and the dialing form were mapped in two places, here
+ * and in the engine, and Phase 3 left the engine as the only one. What the store
+ * holds is now a descriptor's shape anyway.
  */
 data class PostgresConnectionConfig(
     val host: String,
@@ -40,17 +44,4 @@ data class PostgresConnectionConfig(
     fun redaction(): Redaction = Redaction(identity(), listOf(password.expose()))
 
     override fun toString(): String = "PostgresConnectionConfig(tlsMode=$tlsMode)"
-
-    companion object {
-        /** Builds the dialing form from a saved connection and its decrypted secret. */
-        fun of(config: ConnectionConfig, password: Secret) = PostgresConnectionConfig(
-            host = config.host,
-            port = config.port,
-            database = config.database,
-            user = config.username,
-            password = password,
-            tlsMode = config.tlsMode,
-            readOnly = config.readOnly,
-        )
-    }
 }

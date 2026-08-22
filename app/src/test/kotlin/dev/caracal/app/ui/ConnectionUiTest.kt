@@ -13,24 +13,26 @@ import androidx.compose.ui.test.doubleClick
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.test.performMouseInput
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.rightClick
 import androidx.compose.ui.test.v2.runDesktopComposeUiTest
 import dev.caracal.app.ConnectionsViewModel
 import dev.caracal.app.EditorTabs
-import dev.caracal.app.HistoryViewModel
 import dev.caracal.app.FakeConnectionService
+import dev.caracal.app.HistoryViewModel
+import dev.caracal.app.REDIS
 import dev.caracal.app.RedisWorkspace
 import dev.caracal.app.SchemaTreeViewModel
 import dev.caracal.app.ThemeViewModel
 import dev.caracal.app.VaultUiState
 import dev.caracal.app.VaultViewModel
-import dev.caracal.core.connections.Engine
 import dev.caracal.core.connections.Environment
 import dev.caracal.core.connections.RuntimeStatus
 import dev.caracal.core.connections.SecretUpdate
 import dev.caracal.core.vault.VaultState
+import dev.caracal.engine.api.FormKeys
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
@@ -320,7 +322,6 @@ class ConnectionUiTest {
 
             onNodeWithTag("new-connection").performClick()
             onNodeWithTag("field-name").performTextInput("Cache")
-            onNodeWithTag("field-host").performTextInput("localhost")
             onNodeWithTag("engine-choice-redis", useUnmergedTree = true).performClick()
             waitForIdle()
 
@@ -330,9 +331,9 @@ class ConnectionUiTest {
             waitUntil { model.connections.isNotEmpty() }
 
             val draft = service.drafts.single()
-            assertEquals(Engine.REDIS, draft.engine)
-            assertEquals(6379, draft.port)
-            assertEquals("0", draft.database)
+            assertEquals(REDIS, draft.engineId)
+            assertEquals("6379", draft.values[FormKeys.PORT])
+            assertEquals("0", draft.values[FormKeys.DATABASE])
         }
 
     @Test
@@ -398,16 +399,20 @@ class ConnectionUiTest {
         val model = workspace(service)
 
         onNodeWithTag("new-connection").performClick()
+        onNodeWithTag("engine-choice-postgres", useUnmergedTree = true).performClick()
+        waitForIdle()
         onNodeWithTag("field-name").performTextInput("Local")
-        onNodeWithTag("field-host").performTextInput("localhost")
+        // The host is already `localhost`: the form opens with the defaults the
+        // engine declared, so only the fields it has no answer for are typed.
         onNodeWithTag("field-database").performTextInput("caracal")
+        onNodeWithTag("field-user").performTextInput("caracal")
         onNodeWithTag("field-password").performTextInput("hunter2")
         onNodeWithTag("save-connection").performClick()
         waitUntil { model.connections.isNotEmpty() }
 
         val draft = service.drafts.single()
         assertEquals("Local", draft.name)
-        assertEquals("localhost", draft.host)
+        assertEquals("localhost", draft.values[FormKeys.HOST])
         assertTrue(draft.secret is SecretUpdate.Replace)
     }
 
@@ -417,12 +422,17 @@ class ConnectionUiTest {
         workspace(service)
 
         onNodeWithTag("new-connection").performClick()
+        onNodeWithTag("engine-choice-postgres", useUnmergedTree = true).performClick()
+        waitForIdle()
+        // The form opens with the engine's declared defaults in it — a host of
+        // `localhost` among them — so emptying one is what makes it incomplete.
+        onNodeWithTag("field-host").performTextClearance()
         onNodeWithTag("save-connection").performClick()
         waitForIdle()
 
         assertFalse(service.calls.contains("create"))
         onNodeWithText("A name is required.").assertIsDisplayed()
-        onNodeWithText("A host is required.").assertIsDisplayed()
+        onNodeWithText("Host is required.").assertIsDisplayed()
     }
 
     @Test
@@ -430,6 +440,8 @@ class ConnectionUiTest {
         workspace(FakeConnectionService(VaultState.UNLOCKED))
 
         onNodeWithTag("new-connection").performClick()
+        onNodeWithTag("engine-choice-postgres", useUnmergedTree = true).performClick()
+        waitForIdle()
         onNodeWithTag("tls-choice-verify-full").assertExists()
 
         onNodeWithTag("engine-choice-redis", useUnmergedTree = true).performClick()
@@ -609,7 +621,7 @@ class ConnectionUiTest {
     fun `a Redis connection is labelled by its engine and shows a database index`() =
         runDesktopComposeUiTest(width = 1400, height = 1600) {
             val service = FakeConnectionService(VaultState.UNLOCKED)
-            service.seed(name = "Cache", engine = Engine.REDIS)
+            service.seed(name = "Cache", engine = REDIS)
             val model = workspace(service)
             waitUntil { model.connections.isNotEmpty() }
 

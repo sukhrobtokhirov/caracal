@@ -1,9 +1,15 @@
 package dev.caracal.core.engines
 
-import dev.caracal.core.connections.Engine
 import dev.caracal.engine.api.DatabaseEngine
+import dev.caracal.engine.api.CancellationSupport
 import dev.caracal.engine.api.EngineCapabilities
+import dev.caracal.engine.api.EngineFamily
 import dev.caracal.engine.api.EngineId
+import dev.caracal.engine.api.NamespaceModel
+import dev.caracal.engine.api.QuoteStyle
+import dev.caracal.engine.api.ReadOnlyEnforcement
+import dev.caracal.engine.api.RowIdentitySupport
+import dev.caracal.engine.api.TransactionSupport
 import java.util.ServiceConfigurationError
 import java.util.ServiceLoader
 import org.slf4j.LoggerFactory
@@ -42,9 +48,16 @@ object Engines {
      */
     val all: List<DatabaseEngine> by lazy { register(discover()) }
 
-    /** The implementation behind a stored connection's engine. */
-    fun of(engine: Engine): DatabaseEngine = byId(EngineId(engine.wire))
-        ?: throw IllegalStateException("This build has no ${engine.wire} engine on its classpath.")
+    /**
+     * The implementation behind a stored connection's engine.
+     *
+     * Throws for an engine this build does not have, and that is the honest answer to
+     * "open this connection": the record names an engine nobody here can dial. The
+     * lookup that expects to fail is [byId], and the list that shows a connection
+     * without opening it uses that one.
+     */
+    fun require(id: EngineId): DatabaseEngine = byId(id)
+        ?: throw IllegalStateException("This build has no ${id.value} engine on its classpath.")
 
     /** The implementation with this identifier, or null for one this build does not have. */
     fun byId(id: EngineId): DatabaseEngine? = all.firstOrNull { it.id == id }
@@ -109,11 +122,41 @@ object Engines {
     }
 }
 
-/** What this engine can do, in the form the UI is allowed to ask. */
-val Engine.capabilities: EngineCapabilities get() = Engines.of(this).capabilities
+/**
+ * What this engine can do, or what a missing one is assumed to be able to do.
+ *
+ * A stored connection can name an engine this build does not have — an engine module
+ * that was removed, or a file written by a build that had more of them — and the
+ * connection list still has to draw its row. Falling back to a declaration of "no"
+ * is what keeps that row from being a crash: nothing is offered, nothing is enabled,
+ * and opening it fails with a sentence rather than an exception.
+ */
+val EngineId.capabilities: EngineCapabilities get() = Engines.byId(this)?.capabilities ?: UNKNOWN_ENGINE
 
-/** Shown to people. `PostgreSQL`, not `postgres`. */
-val Engine.displayName: String get() = Engines.of(this).displayName
+/** Shown to people. `PostgreSQL`, not `postgres`; the identifier for one we do not have. */
+val EngineId.displayName: String get() = Engines.byId(this)?.displayName ?: value
 
-/** This engine's identifier in the SPI's vocabulary. */
-val Engine.id: EngineId get() = Engines.of(this).id
+/** Whether this build can actually dial this engine. */
+val EngineId.isAvailable: Boolean get() = Engines.byId(this) != null
+
+/**
+ * The capabilities of an engine that is not here: a SQL-shaped nothing.
+ *
+ * SQL rather than a fourth family because the family decides which workspace opens,
+ * and a connection that cannot open needs a workspace that says so rather than no
+ * workspace at all.
+ */
+private val UNKNOWN_ENGINE = EngineCapabilities(
+    family = EngineFamily.SQL,
+    namespaceModel = NamespaceModel.NONE,
+    transactions = TransactionSupport.NONE,
+    readOnlyEnforcement = ReadOnlyEnforcement.COMMAND_GUARD_ONLY,
+    cancellation = CancellationSupport.NONE,
+    rowIdentity = RowIdentitySupport.NONE,
+    identifierQuote = QuoteStyle.NONE,
+    supportsMultipleResultSets = false,
+    supportsExplain = false,
+    supportsSchemaDiff = false,
+    maxIdentifierLength = 0,
+    defaultPort = null,
+)

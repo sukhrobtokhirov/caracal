@@ -18,11 +18,11 @@ import dev.caracal.app.ConnectionsViewModel
 import dev.caracal.app.EditorTabs
 import dev.caracal.app.FakeConnectionService
 import dev.caracal.app.HistoryViewModel
+import dev.caracal.app.REDIS
 import dev.caracal.app.RedisWorkspace
 import dev.caracal.app.SchemaTreeViewModel
 import dev.caracal.app.ThemeViewModel
 import dev.caracal.core.connections.ConnectionId
-import dev.caracal.core.connections.Engine
 import dev.caracal.core.connections.RuntimeStatus
 import dev.caracal.core.history.ExecutionOutcome
 import dev.caracal.core.history.ExecutionRecord
@@ -285,7 +285,7 @@ class HistoryUiTest {
     fun `a machine that has run nothing says so rather than showing a blank pane`() =
         runDesktopComposeUiTest(width = 1500, height = 1000) {
             val service = FakeConnectionService(VaultState.UNLOCKED)
-            service.seed(name = "Cache", engine = Engine.REDIS, status = RuntimeStatus.OPEN)
+            service.seed(name = "Cache", engine = REDIS, status = RuntimeStatus.OPEN)
 
             openHistory(service, connection = "Cache")
 

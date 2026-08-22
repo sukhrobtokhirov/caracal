@@ -243,7 +243,7 @@ private fun SwitcherRow(
                 .fillMaxHeight()
                 .background(if (highlighted) MaterialTheme.colorScheme.primary else Color.Transparent),
         )
-        EngineLogo(config.engine, size = 14.dp, described = true)
+        EngineLogo(config.engineId, size = 14.dp, described = true)
         ColorSwatch(config.color)
         Text(
             text = config.name,

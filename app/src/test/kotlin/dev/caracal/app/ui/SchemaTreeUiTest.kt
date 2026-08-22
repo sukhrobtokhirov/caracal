@@ -17,11 +17,11 @@ import dev.caracal.app.ConnectionsViewModel
 import dev.caracal.app.EditorTabs
 import dev.caracal.app.FakeConnectionService
 import dev.caracal.app.HistoryViewModel
+import dev.caracal.app.REDIS
 import dev.caracal.app.RedisWorkspace
 import dev.caracal.app.SchemaTreeViewModel
 import dev.caracal.app.ThemeViewModel
 import dev.caracal.core.connections.ConnectionId
-import dev.caracal.core.connections.Engine
 import dev.caracal.core.connections.RuntimeStatus
 import dev.caracal.core.vault.VaultState
 import dev.caracal.engine.api.ColumnInfo
@@ -301,7 +301,7 @@ class SchemaTreeUiTest {
     fun `a Redis connection has no schema browser`() =
         runDesktopComposeUiTest(width = 1400, height = 900) {
             val service = service()
-            service.seed(name = "Cache", engine = Engine.REDIS, status = RuntimeStatus.OPEN)
+            service.seed(name = "Cache", engine = REDIS, status = RuntimeStatus.OPEN)
             setContent {
                 val scope = rememberCoroutineScope()
                 val connections = remember { ConnectionsViewModel(service, scope) }

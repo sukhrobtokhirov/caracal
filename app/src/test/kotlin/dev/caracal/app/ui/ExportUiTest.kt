@@ -16,9 +16,10 @@ import dev.caracal.app.EditorViewModel
 import dev.caracal.app.ExportText
 import dev.caracal.app.ExportViewModel
 import dev.caracal.app.FakeConnectionService
+import dev.caracal.app.POSTGRES
+import dev.caracal.app.networkConfig
 import dev.caracal.core.connections.ConnectionConfig
 import dev.caracal.core.connections.ConnectionId
-import dev.caracal.core.connections.Engine
 import dev.caracal.core.connections.Environment
 import dev.caracal.core.connections.TlsMode
 import dev.caracal.core.export.CsvExportReport
@@ -84,10 +85,10 @@ class ExportUiTest {
         return model
     }
 
-    private fun connection(readOnly: Boolean) = ConnectionConfig(
+    private fun connection(readOnly: Boolean) = networkConfig(
         id = ConnectionId("id-1"),
         name = "Local",
-        engine = Engine.POSTGRES,
+        engineId = POSTGRES,
         host = "localhost",
         port = 5432,
         database = "caracal",

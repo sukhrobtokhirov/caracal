@@ -1,10 +1,12 @@
 package dev.caracal.app
 
 import dev.caracal.core.connections.ConnectionDraft
-import dev.caracal.core.connections.Engine
 import dev.caracal.core.connections.Environment
 import dev.caracal.core.connections.RuntimeStatus
 import dev.caracal.core.connections.SecretUpdate
+import dev.caracal.core.connections.tlsModes
+import dev.caracal.core.engines.Engines
+import dev.caracal.engine.api.FormKeys
 import dev.caracal.core.connections.ValidationError
 import dev.caracal.core.result.DbError
 import dev.caracal.core.result.DbException
@@ -31,10 +33,13 @@ class ConnectionsViewModelTest {
 
     private fun ConnectionsViewModel.fillValidForm(name: String = "Local") {
         val form = assertIs<Pane.Form>(pane).state
+        // Chosen rather than assumed: the dialog opens on the first engine offered,
+        // and which one that is depends on what the classpath holds.
+        form.onEngine(assertNotNull(Engines.byId(POSTGRES)))
         form.onName(name)
-        form.onHost("localhost")
-        form.onDatabase("caracal")
-        form.onUsername("caracal")
+        form.type(FormKeys.HOST, "localhost")
+        form.type(FormKeys.DATABASE, "caracal")
+        form.type(FormKeys.USER, "caracal")
         form.onSecret("hunter2")
     }
 
@@ -75,7 +80,7 @@ class ConnectionsViewModelTest {
 
         val draft = service.drafts.single()
         assertEquals("Local", draft.name)
-        assertEquals("localhost", draft.host)
+        assertEquals("localhost", draft.values[FormKeys.HOST])
         assertIs<SecretUpdate.Replace>(draft.secret)
         assertIs<Pane.Detail>(model.pane)
         assertEquals(listOf("Local"), model.connections.map { it.config.name })
@@ -87,14 +92,18 @@ class ConnectionsViewModelTest {
         val model = model(service)
 
         model.startCreating()
-        // No name and no host: `:core` would reject this, but so does the form.
+        // No name, and a host emptied of the default the form opened with: `:core`
+        // would reject this, but so does the form.
+        val empty = assertIs<Pane.Form>(model.pane).state
+        empty.onEngine(assertNotNull(Engines.byId(POSTGRES)))
+        empty.type(FormKeys.HOST, "")
         model.save()
         advanceUntilIdle()
 
         assertTrue(service.calls.isEmpty())
         val form = assertIs<Pane.Form>(model.pane).state
         assertEquals("A name is required.", form.errors[ValidationError.NAME])
-        assertEquals("A host is required.", form.errors[ValidationError.HOST])
+        assertEquals("Host is required.", form.errors[FormKeys.HOST])
     }
 
     @Test
@@ -111,7 +120,7 @@ class ConnectionsViewModelTest {
         assertEquals("duplicate_name", assertNotNull(model.failure).code)
         val form = assertIs<Pane.Form>(model.pane).state
         assertEquals("Local", form.name)
-        assertEquals("localhost", form.host)
+        assertEquals("localhost", form.value(FormKeys.HOST))
     }
 
     @Test
@@ -125,8 +134,8 @@ class ConnectionsViewModelTest {
         advanceUntilIdle()
 
         val form = assertIs<Pane.Form>(model.pane).state
-        assertEquals("caracal", form.database)
-        assertEquals("caracal", form.username)
+        assertEquals("caracal", form.value(FormKeys.DATABASE))
+        assertEquals("caracal", form.value(FormKeys.USER))
     }
 
     @Test
@@ -239,7 +248,7 @@ class ConnectionsViewModelTest {
         advanceUntilIdle()
 
         val result = assertNotNull(model.testResult)
-        assertEquals(Engine.POSTGRES, result.engine)
+        assertEquals(POSTGRES, result.engineId)
         assertEquals("16.2", result.serverVersion)
         assertNull(model.failure)
     }
@@ -352,13 +361,14 @@ class ConnectionsViewModelTest {
         val model = model(service())
         model.startCreating()
         val form = assertIs<Pane.Form>(model.pane).state
-        form.onDatabase("caracal")
+        form.onEngine(assertNotNull(Engines.byId(POSTGRES)))
+        form.type(FormKeys.DATABASE, "caracal")
 
-        form.onEngine(Engine.REDIS)
+        form.onEngine(assertNotNull(Engines.byId(REDIS)))
 
-        assertEquals("6379", form.port)
-        assertEquals("0", form.database)
-        assertEquals(listOf("disable", "require"), form.availableTlsModes.map { it.wire })
+        assertEquals("6379", form.value(FormKeys.PORT))
+        assertEquals("0", form.value(FormKeys.DATABASE))
+        assertEquals(listOf("disable", "require"), form.engine.tlsModes.map { it.wire })
     }
 
     @Test
@@ -370,12 +380,12 @@ class ConnectionsViewModelTest {
         model.fillValidForm()
 
         // The field filters digits, so the only way in is a value set directly.
-        form.onPort("99999")
+        form.type(FormKeys.PORT, "99999")
         model.save()
         advanceUntilIdle()
 
         assertTrue(service.calls.isEmpty())
-        assertEquals("A port must be between 1 and 65535.", form.errors[ValidationError.PORT])
+        assertEquals("Port must be between 1 and 65535.", form.errors[FormKeys.PORT])
     }
 
     @Test
@@ -388,7 +398,7 @@ class ConnectionsViewModelTest {
         model.save()
         advanceUntilIdle()
 
-        assertEquals(5432, service.drafts.single().port)
+        assertEquals("5432", service.drafts.single().values[FormKeys.PORT])
     }
 
     @Test

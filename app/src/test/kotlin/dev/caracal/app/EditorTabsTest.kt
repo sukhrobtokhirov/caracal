@@ -4,7 +4,6 @@ import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue
 import dev.caracal.core.connections.ConnectionConfig
 import dev.caracal.core.connections.ConnectionId
-import dev.caracal.core.connections.Engine
 import dev.caracal.core.connections.Environment
 import dev.caracal.core.connections.TlsMode
 import dev.caracal.core.result.CellValue
@@ -55,10 +54,10 @@ class EditorTabsTest {
         id: String = "id-1",
         name: String = "local",
         readOnly: Boolean = false,
-    ) = ConnectionConfig(
+    ) = networkConfig(
         id = ConnectionId(id),
         name = name,
-        engine = Engine.POSTGRES,
+        engineId = POSTGRES,
         host = "localhost",
         port = 5432,
         database = "caracal",

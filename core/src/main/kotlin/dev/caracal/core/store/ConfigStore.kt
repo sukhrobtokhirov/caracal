@@ -10,9 +10,9 @@ package dev.caracal.core.store
 import dev.caracal.core.connections.ConnectionConfig
 import dev.caracal.core.connections.ConnectionId
 import dev.caracal.core.connections.ConnectionRecord
-import dev.caracal.core.connections.Engine
+import dev.caracal.core.connections.EngineId
 import dev.caracal.core.connections.Environment
-import dev.caracal.core.connections.TlsMode
+import dev.caracal.engine.api.ConnectionTarget
 import dev.caracal.core.history.DEFAULT_HISTORY_RETENTION
 import dev.caracal.core.history.ExecutionOutcome
 import dev.caracal.core.history.ExecutionRecord
@@ -77,8 +77,14 @@ class ConfigStore private constructor(
         Unit
     }
 
-    /** Inserts a new connection record. */
-    suspend fun create(record: ConnectionRecord) = query { db ->
+    /**
+     * Inserts a new connection record and the settings its engine declared.
+     *
+     * Two statements, in one transaction: a connection whose settings did not arrive
+     * is a connection with no user and no TLS mode, which would dial — and dial
+     * differently from the one the user described.
+     */
+    suspend fun create(record: ConnectionRecord) = transaction { db ->
         db.prepareStatement(
             "INSERT INTO connections ($COLUMNS) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         ).use { statement ->
@@ -87,15 +93,17 @@ class ConfigStore private constructor(
             statement.setString(13, record.config.createdAt.toString())
             statement.executeUpdate()
         }
+        db.writeSettings(record)
         Unit
     }
 
     /** Replaces every mutable field of an existing connection. `created_at` is immutable. */
-    suspend fun update(record: ConnectionRecord) = query { db ->
+    suspend fun update(record: ConnectionRecord) = transaction { db ->
         db.prepareStatement(
             """
-            UPDATE connections SET name = ?, engine = ?, host = ?, port = ?, "database" = ?,
-                username = ?, secret_sealed = ?, tls_mode = ?, environment = ?, read_only = ?, color = ?
+            UPDATE connections SET name = ?, engine = ?, target_kind = ?, host = ?, port = ?,
+                "database" = ?, file_path = ?, secret_sealed = ?, environment = ?,
+                read_only = ?, color = ?
             WHERE id = ?
             """.trimIndent(),
         ).use { statement ->
@@ -105,16 +113,24 @@ class ConfigStore private constructor(
             statement.setString(12, record.id.value)
             if (statement.executeUpdate() == 0) throw ConnectionNotFoundException(record.id)
         }
+        // Replaced rather than merged: a field the engine no longer declares, or one
+        // the user cleared, has to leave the store with the same edit that cleared it.
+        db.prepareStatement("DELETE FROM connection_settings WHERE connection_id = ?").use { statement ->
+            statement.setString(1, record.id.value)
+            statement.executeUpdate()
+        }
+        db.writeSettings(record)
         Unit
     }
 
     /** Reads one connection, including its sealed secret. */
     suspend fun get(id: ConnectionId): ConnectionRecord = query { db ->
+        val settings = db.readSettings(id)
         db.prepareStatement("SELECT $COLUMNS FROM connections WHERE id = ?").use { statement ->
             statement.setString(1, id.value)
             statement.executeQuery().use { rows ->
                 if (!rows.next()) throw ConnectionNotFoundException(id)
-                rows.toRecord()
+                rows.toRecord(settings)
             }
         }
     }
@@ -131,8 +147,16 @@ class ConfigStore private constructor(
                      name COLLATE NOCASE, id
             """.trimIndent(),
         ).use { statement ->
+            // One query for every connection's settings rather than one per row: a
+            // list of thirty connections is thirty round trips through a mutex.
+            val settings = db.readAllSettings()
             statement.executeQuery().use { rows ->
-                buildList { while (rows.next()) add(rows.toRecord()) }
+                buildList {
+                    while (rows.next()) {
+                        val id = ConnectionId(rows.getString("id"))
+                        add(rows.toRecord(settings[id].orEmpty()))
+                    }
+                }
             }
         }
     }
@@ -282,6 +306,14 @@ class ConfigStore private constructor(
         if (value == null) setNull(index, Types.INTEGER) else setLong(index, value)
     }
 
+    private fun PreparedStatement.setIntOrNull(index: Int, value: Int?) {
+        if (value == null) setNull(index, Types.INTEGER) else setInt(index, value)
+    }
+
+    private fun PreparedStatement.setStringOrNull(index: Int, value: String?) {
+        if (value == null) setNull(index, Types.VARCHAR) else setString(index, value)
+    }
+
     /**
      * One history row.
      *
@@ -338,41 +370,104 @@ class ConfigStore private constructor(
     }
 
     /**
+     * Runs several statements as one unit.
+     *
+     * A connection and its settings are two tables and one fact, and the halfway
+     * state — a row with no settings — is a connection that dials with no user and
+     * no TLS. The connection is serialized by the same mutex [query] uses, so
+     * nothing else can be inside a transaction at the same time.
+     */
+    private suspend fun <T> transaction(body: (Connection) -> T): T = query { db ->
+        db.autoCommit = false
+        try {
+            val result = body(db)
+            db.commit()
+            result
+        } catch (failure: Throwable) {
+            runCatching { db.rollback() }
+            throw failure
+        } finally {
+            db.autoCommit = true
+        }
+    }
+
+    /**
      * Binds the eleven mutable fields in a fixed order, starting at [from]. Insert
      * and update differ only in what surrounds them: an id first, or an id last.
      */
     private fun PreparedStatement.bindFields(record: ConnectionRecord, from: Int) {
         val config = record.config
+        val target = config.target
         var index = from
         setString(index++, config.name)
-        setString(index++, config.engine.wire)
-        setString(index++, config.host)
-        setInt(index++, config.port)
-        setString(index++, config.database)
-        setString(index++, config.username)
+        setString(index++, config.engineId.value)
+        setString(index++, target.storedKind)
+        setStringOrNull(index++, (target as? ConnectionTarget.Network)?.host)
+        setIntOrNull(index++, (target as? ConnectionTarget.Network)?.port)
+        setStringOrNull(index++, (target as? ConnectionTarget.Network)?.database)
+        setStringOrNull(index++, (target as? ConnectionTarget.File)?.path?.toString())
         setBytes(index++, record.sealedSecret)
-        setString(index++, config.tlsMode.wire)
         setString(index++, config.environment.wire)
         setInt(index++, if (config.readOnly) 1 else 0)
         setString(index, config.color)
     }
 
-    private fun ResultSet.toRecord(): ConnectionRecord {
+    /** Writes one connection's declared settings. The caller owns the transaction. */
+    private fun Connection.writeSettings(record: ConnectionRecord) {
+        if (record.config.settings.isEmpty()) return
+        prepareStatement(
+            "INSERT INTO connection_settings(connection_id, key, value) VALUES (?, ?, ?)",
+        ).use { statement ->
+            record.config.settings.forEach { (key, value) ->
+                statement.setString(1, record.id.value)
+                statement.setString(2, key)
+                statement.setString(3, value)
+                statement.addBatch()
+            }
+            statement.executeBatch()
+        }
+    }
+
+    private fun Connection.readSettings(id: ConnectionId): Map<String, String> =
+        prepareStatement("SELECT key, value FROM connection_settings WHERE connection_id = ?").use { statement ->
+            statement.setString(1, id.value)
+            statement.executeQuery().use { rows ->
+                buildMap { while (rows.next()) put(rows.getString(1), rows.getString(2)) }
+            }
+        }
+
+    private fun Connection.readAllSettings(): Map<ConnectionId, Map<String, String>> =
+        prepareStatement("SELECT connection_id, key, value FROM connection_settings").use { statement ->
+            statement.executeQuery().use { rows ->
+                buildMap<ConnectionId, MutableMap<String, String>> {
+                    while (rows.next()) {
+                        getOrPut(ConnectionId(rows.getString(1))) { mutableMapOf() }[rows.getString(2)] =
+                            rows.getString(3)
+                    }
+                }
+            }
+        }
+
+    /**
+     * Rebuilds a stored connection.
+     *
+     * An engine name is read and not resolved: a connection naming an engine this
+     * build does not have still lists, still shows what it points at, and still
+     * refuses to open with a sentence about the engine. Refusing to *read* it would
+     * mean one missing engine module makes the whole store unopenable, which is the
+     * failure the [EngineId] change was for.
+     */
+    private fun ResultSet.toRecord(settings: Map<String, String>): ConnectionRecord {
         val id = ConnectionId(getString("id"))
-        val engine = Engine.from(getString("engine"))
-            ?: throw StoreReadException("Connection $id names an engine this build does not support.")
         val createdAt = runCatching { Instant.parse(getString("created_at")) }.getOrElse {
             throw StoreReadException("Connection $id has an unreadable creation time.")
         }
         val config = ConnectionConfig(
             id = id,
             name = getString("name"),
-            engine = engine,
-            host = getString("host"),
-            port = getInt("port"),
-            database = getString("database").orEmpty(),
-            username = getString("username").orEmpty(),
-            tlsMode = TlsMode.from(getString("tls_mode")) ?: TlsMode.DEFAULT,
+            engineId = EngineId(getString("engine")),
+            target = readTarget(id),
+            settings = settings,
             environment = Environment.from(getString("environment")) ?: Environment.DEFAULT,
             readOnly = getInt("read_only") != 0,
             color = getString("color")?.takeIf { it.isNotBlank() },
@@ -381,12 +476,36 @@ class ConfigStore private constructor(
         return ConnectionRecord(config, getBytes("secret_sealed"))
     }
 
+    private fun ResultSet.readTarget(id: ConnectionId): ConnectionTarget = when (getString("target_kind")) {
+        TARGET_FILE -> {
+            val path = getString("file_path")
+                ?: throw StoreReadException("Connection $id opens a file but names none.")
+            ConnectionTarget.File(runCatching { Path.of(path) }.getOrElse {
+                throw StoreReadException("Connection $id names a file path that cannot be read.")
+            })
+        }
+
+        else -> ConnectionTarget.Network(
+            host = getString("host").orEmpty(),
+            port = getInt("port"),
+            database = getString("database"),
+        )
+    }
+
     companion object {
         private val log = LoggerFactory.getLogger(ConfigStore::class.java)
 
         private const val COLUMNS =
-            """id, name, engine, host, port, "database", username, secret_sealed,
-               tls_mode, environment, read_only, color, created_at"""
+            """id, name, engine, target_kind, host, port, "database", file_path,
+               secret_sealed, environment, read_only, color, created_at"""
+
+        /** The stored spelling of a [ConnectionTarget.File]. Everything else is a network. */
+        private const val TARGET_FILE = "file"
+
+        private const val TARGET_NETWORK = "network"
+
+        private val ConnectionTarget.storedKind: String
+            get() = if (this is ConnectionTarget.File) TARGET_FILE else TARGET_NETWORK
 
         private const val BUSY_TIMEOUT_MS = 5_000
 

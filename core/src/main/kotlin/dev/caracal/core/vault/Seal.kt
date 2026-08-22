@@ -2,7 +2,7 @@ package dev.caracal.core.vault
 
 import dev.caracal.core.connections.ConnectionConfig
 import dev.caracal.core.connections.ConnectionId
-import dev.caracal.core.connections.Engine
+import dev.caracal.core.connections.EngineId
 import dev.caracal.core.connections.Secret
 import dev.caracal.core.connections.secretOfBytes
 import dev.caracal.core.connections.toBytes
@@ -39,9 +39,9 @@ data class SecretIdentity(val connectionId: String, val engine: String) {
         byteArrayOf(ENVELOPE_VERSION) + "$connectionId/$engine".toByteArray(Charsets.UTF_8)
 
     companion object {
-        fun of(config: ConnectionConfig) = SecretIdentity(config.id.value, config.engine.wire)
+        fun of(config: ConnectionConfig) = SecretIdentity(config.id.value, config.engineId.value)
 
-        fun of(id: ConnectionId, engine: Engine) = SecretIdentity(id.value, engine.wire)
+        fun of(id: ConnectionId, engine: EngineId) = SecretIdentity(id.value, engine.value)
 
         /** The fixed identity of the unlock verifier. */
         internal val VERIFIER = SecretIdentity("master", "verifier")

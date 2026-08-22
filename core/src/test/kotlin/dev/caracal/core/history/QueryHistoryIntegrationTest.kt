@@ -4,14 +4,15 @@ import dev.caracal.core.connections.ConnectionDraft
 import dev.caracal.core.connections.ConnectionId
 import dev.caracal.core.connections.ConnectionService
 import dev.caracal.core.connections.DefaultConnectionService
-import dev.caracal.core.connections.Engine
 import dev.caracal.core.connections.Secret
 import dev.caracal.core.connections.SecretUpdate
+import dev.caracal.core.connections.networkDraft
 import dev.caracal.core.registry.ConnectionRegistry
 import dev.caracal.core.result.DbException
 import dev.caracal.core.store.ConfigStore
 import dev.caracal.core.vault.KdfParams
 import dev.caracal.core.vault.Vault
+import dev.caracal.engine.postgres.PostgresEngine
 import java.nio.file.Path
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -72,9 +73,9 @@ class QueryHistoryIntegrationTest {
     private suspend fun ConfigStore.history(id: ConnectionId) =
         history(HistoryQuery(connectionId = id)).items
 
-    private fun draft(name: String = "Postgres", readOnly: Boolean = true) = ConnectionDraft(
+    private fun draft(name: String = "Postgres", readOnly: Boolean = true) = networkDraft(
+        engineId = PostgresEngine.ID,
         name = name,
-        engine = Engine.POSTGRES,
         host = postgres.host,
         port = postgres.firstMappedPort,
         database = postgres.databaseName,

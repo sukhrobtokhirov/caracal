@@ -23,7 +23,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import dev.caracal.core.connections.Engine
+import dev.caracal.engine.api.EngineId
 
 /**
  * The engines' own marks, drawn rather than shipped.
@@ -52,9 +52,13 @@ object BrandColors {
     val redis = Color(0xFFD82C20)
     val redisShadow = Color(0xFF9E2018)
 
-    fun of(engine: Engine): Color = when (engine) {
-        Engine.POSTGRES -> postgres
-        Engine.REDIS -> redis
+    /** The unbranded mark's colour, for an engine this build has no artwork for. */
+    val generic = Color(0xFF6B7280)
+
+    fun of(engine: EngineId): Color = when (engine.value) {
+        POSTGRES_ID -> postgres
+        REDIS_ID -> redis
+        else -> generic
     }
 }
 
@@ -69,7 +73,7 @@ object BrandColors {
  */
 @Composable
 fun EngineLogo(
-    engine: Engine,
+    engine: EngineId,
     modifier: Modifier = Modifier,
     size: Dp = 16.dp,
     described: Boolean = false,
@@ -79,15 +83,21 @@ fun EngineLogo(
             .size(size)
             .then(
                 if (described) {
-                    Modifier.testTag("engine-${engine.wire}")
+                    Modifier.testTag("engine-${engine.value}")
                 } else {
                     Modifier.clearAndSetSemantics {}
                 },
             ),
     ) {
-        when (engine) {
-            Engine.POSTGRES -> drawElephant()
-            Engine.REDIS -> drawStack()
+        // Artwork is the one thing that stays keyed on the engine's name, and it is
+        // the one thing that cannot be declared in `:engine-api`: a drawing in the
+        // module every other module depends on drags a UI toolkit in behind it. So an
+        // engine this build has no mark for gets a generic one — a database cylinder —
+        // rather than a blank square.
+        when (engine.value) {
+            POSTGRES_ID -> drawElephant()
+            REDIS_ID -> drawStack()
+            else -> drawCylinder()
         }
     }
 }
@@ -101,7 +111,7 @@ fun EngineLogo(
  */
 @Composable
 fun EngineTile(
-    engine: Engine,
+    engine: EngineId,
     modifier: Modifier = Modifier,
     size: Dp = 34.dp,
     selected: Boolean = false,
@@ -120,6 +130,57 @@ fun EngineTile(
         contentAlignment = Alignment.Center,
     ) {
         EngineLogo(engine, size = size * 0.62f)
+    }
+}
+
+/** The engines this build draws. Anything else gets [drawCylinder]. */
+private const val POSTGRES_ID = "postgres"
+
+private const val REDIS_ID = "redis"
+
+// --- Anything else ---------------------------------------------------------
+
+/**
+ * A database cylinder: three stacked ellipses and two sides.
+ *
+ * The mark for an engine nobody here has drawn one for. It is deliberately the most
+ * generic picture in computing, because it has to say "a database, and this build
+ * does not know which" — a blank tile says nothing, and borrowing another engine's
+ * colour says something false.
+ */
+private fun DrawScope.drawCylinder() {
+    val s = size.minDimension / 100f
+    val colour = BrandColors.generic
+    val width = 62f * s
+    val left = 19f * s
+    val lidHeight = 20f * s
+
+    // The body, between the top and bottom lids.
+    drawRect(
+        color = colour,
+        topLeft = Offset(left, 26f * s),
+        size = Size(width, 48f * s),
+    )
+    // The bottom lid, drawn before the top so the top edge stays crisp.
+    drawOval(
+        color = colour,
+        topLeft = Offset(left, 64f * s),
+        size = Size(width, lidHeight),
+    )
+    drawOval(
+        color = colour,
+        topLeft = Offset(left, 16f * s),
+        size = Size(width, lidHeight),
+    )
+    // Two rings across the body, which is what makes it read as stacked storage
+    // rather than as a pill.
+    listOf(36f, 52f).forEach { y ->
+        drawOval(
+            color = Color.White.copy(alpha = 0.35f),
+            topLeft = Offset(left, y * s),
+            size = Size(width, lidHeight),
+            style = Stroke(width = 3f * s),
+        )
     }
 }
 

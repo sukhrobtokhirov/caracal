@@ -2,11 +2,12 @@ package dev.caracal.core.policy
 
 import dev.caracal.core.connections.ConnectionConfig
 import dev.caracal.core.connections.ConnectionId
-import dev.caracal.core.connections.Engine
 import dev.caracal.core.connections.Environment
 import dev.caracal.core.connections.TlsMode
+import dev.caracal.core.connections.networkConfig
 import dev.caracal.core.sql.StatementClassifier
 import dev.caracal.core.sql.StatementKind
+import dev.caracal.engine.postgres.PostgresEngine
 import java.time.Instant
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -297,10 +298,10 @@ class DataSafetyPolicyTest {
         name: String = "local",
         environment: Environment = Environment.DEV,
         readOnly: Boolean = false,
-    ) = ConnectionConfig(
+    ) = networkConfig(
         id = ConnectionId("id-1"),
         name = name,
-        engine = Engine.POSTGRES,
+        engineId = PostgresEngine.ID,
         host = "localhost",
         port = 5432,
         database = "caracal",

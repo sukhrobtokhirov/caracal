@@ -4,7 +4,6 @@ import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue
 import dev.caracal.core.connections.ConnectionConfig
 import dev.caracal.core.connections.ConnectionId
-import dev.caracal.core.connections.Engine
 import dev.caracal.core.connections.Environment
 import dev.caracal.core.connections.TlsMode
 import dev.caracal.core.history.ExecutionOutcome
@@ -83,10 +82,10 @@ class ScaleTest {
         assertEquals(16 * 1024 * 1024, ResultLimits().totalCharacters)
     }
 
-    private fun evictionConnection() = ConnectionConfig(
+    private fun evictionConnection() = networkConfig(
         id = ConnectionId("id-1"),
         name = "local",
-        engine = dev.caracal.core.connections.Engine.POSTGRES,
+        engineId = POSTGRES,
         host = "localhost",
         port = 5432,
         database = "caracal",

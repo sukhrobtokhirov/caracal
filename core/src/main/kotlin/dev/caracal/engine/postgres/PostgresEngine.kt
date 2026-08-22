@@ -59,6 +59,18 @@ class PostgresEngine : DatabaseEngine {
         /** The connection's username. Not a secret: it is stored and displayed in the clear. */
         const val OPTION_USER = "user"
 
+        /**
+         * The lengths this engine will accept, which used to be constants in core.
+         *
+         * They are the engine's facts and not the form's: PostgreSQL truncates an
+         * identifier at 63 bytes and a database name is one, so anything past this is
+         * a paste rather than a name. Core's own cap is a backstop an order of
+         * magnitude looser, and it does not know these.
+         */
+        const val MAX_DATABASE = 100
+
+        const val MAX_USER = 100
+
         val CAPABILITIES = EngineCapabilities(
             family = EngineFamily.SQL,
             // A connection is bound to one database and browses the schemas inside it.
@@ -158,8 +170,20 @@ class PostgresEngine : DatabaseEngine {
                 field = "database",
             )
         }
-        if (descriptor.engineOptions[OPTION_USER].isNullOrBlank()) {
+        if (target.database.orEmpty().length > MAX_DATABASE) {
+            issues += ValidationIssue(
+                "A database name may be at most $MAX_DATABASE characters.",
+                field = "database",
+            )
+        }
+        val user = descriptor.engineOptions[OPTION_USER]
+        if (user.isNullOrBlank()) {
             issues += ValidationIssue("Enter the user to connect as.", field = OPTION_USER)
+        } else if (user.length > MAX_USER) {
+            issues += ValidationIssue(
+                "A user name may be at most $MAX_USER characters.",
+                field = OPTION_USER,
+            )
         }
         return issues
     }

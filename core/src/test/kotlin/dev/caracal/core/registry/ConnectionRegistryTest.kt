@@ -2,12 +2,15 @@ package dev.caracal.core.registry
 
 import dev.caracal.core.connections.ConnectionConfig
 import dev.caracal.core.connections.ConnectionId
-import dev.caracal.core.connections.Engine
+import dev.caracal.core.connections.EngineId
 import dev.caracal.core.connections.Environment
 import dev.caracal.core.connections.RuntimeStatus
 import dev.caracal.core.connections.Secret
 import dev.caracal.core.connections.TlsMode
+import dev.caracal.core.connections.networkConfig
 import dev.caracal.core.result.DbException
+import dev.caracal.engine.postgres.PostgresEngine
+import dev.caracal.engine.redis.RedisEngine
 import java.time.Instant
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -43,21 +46,21 @@ class ConnectionRegistryTest {
      */
     private fun unreachable(
         id: String = "id-1",
-        engine: Engine = Engine.REDIS,
-    ) = config(id = id, engine = engine, port = 1)
+        engineId: EngineId = RedisEngine.ID,
+    ) = config(id = id, engineId = engineId, port = 1)
 
     private fun config(
         id: String = "id-1",
-        engine: Engine = Engine.POSTGRES,
+        engineId: EngineId = PostgresEngine.ID,
         host: String = "127.0.0.1",
         port: Int = 5432,
         database: String = "caracal",
         username: String = "caracal",
         tlsMode: TlsMode = TlsMode.DISABLE,
-    ) = ConnectionConfig(
+    ) = networkConfig(
         id = ConnectionId(id),
         name = "Connection $id",
-        engine = engine,
+        engineId = engineId,
         host = host,
         port = port,
         database = database,
@@ -88,7 +91,7 @@ class ConnectionRegistryTest {
     fun `a failed dial leaves the status in error with a safe message`() = runBlocking {
         // PostgreSQL specifically: its driver messages are the ones that name the
         // host, port, user, and database, so this is where redaction has to hold.
-        val config = unreachable(engine = Engine.POSTGRES)
+        val config = unreachable(engineId = PostgresEngine.ID)
         assertThrows<DbException> { runBlocking { registry.open(config, Secret("")) } }
 
         val state = registry.state(ConnectionId("id-1"))
@@ -104,7 +107,7 @@ class ConnectionRegistryTest {
     @Test
     fun `a failed PostgreSQL dial is classified too`() = runBlocking {
         assertThrows<DbException> {
-            runBlocking { registry.open(unreachable(engine = Engine.POSTGRES), Secret("")) }
+            runBlocking { registry.open(unreachable(engineId = PostgresEngine.ID), Secret("")) }
         }
 
         assertEquals(RuntimeStatus.ERROR, registry.state(ConnectionId("id-1")).status)
@@ -191,16 +194,20 @@ class ConnectionRegistryTest {
         val original = ConnectionRegistry.fingerprint(base, password)
 
         listOf(
-            base.copy(host = "db.internal"),
-            base.copy(port = 6432),
-            base.copy(database = "other"),
-            base.copy(username = "someone"),
-            base.copy(tlsMode = TlsMode.REQUIRE),
-            base.copy(engine = Engine.REDIS),
-        ).forEach { changed ->
+            "host" to config(host = "db.internal"),
+            "port" to config(port = 6432),
+            "database" to config(database = "other"),
+            "user" to config(username = "someone"),
+            "tls" to config(tlsMode = TlsMode.REQUIRE),
+            "engine" to config(engineId = RedisEngine.ID),
+            // A field no engine here declares. The fingerprint covers whatever the
+            // settings map holds, so an engine that declares its own field gets the
+            // same protection without this test knowing what the field is.
+            "an engine's own field" to base.copy(settings = base.settings + ("region" to "eu-west-1")),
+        ).forEach { (changed, config) ->
             assertFalse(
-                original == ConnectionRegistry.fingerprint(changed, password),
-                "a change to ${changed.host}/${changed.port}/${changed.engine} went unnoticed",
+                original == ConnectionRegistry.fingerprint(config, password),
+                "a change to $changed went unnoticed",
             )
         }
     }

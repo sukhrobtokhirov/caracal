@@ -21,7 +21,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.caracal.app.HistoryFormat
-import dev.caracal.core.connections.Engine
+import dev.caracal.engine.api.EngineId
 import dev.caracal.core.connections.Environment
 import dev.caracal.core.connections.RuntimeState
 import dev.caracal.core.connections.RuntimeStatus
@@ -76,16 +76,16 @@ fun ReadOnlyBadge(modifier: Modifier = Modifier) {
  * is the one that gives up its fill.
  */
 @Composable
-fun EngineBadge(engine: Engine, modifier: Modifier = Modifier) {
+fun EngineBadge(engine: EngineId, modifier: Modifier = Modifier) {
     Text(
-        text = engine.wire.uppercase(),
+        text = engine.value.uppercase(),
         style = MaterialTheme.typography.labelSmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         modifier = modifier
             .clip(MaterialTheme.shapes.extraSmall)
             .border(Sizes.hairline, Caracal.colors.hairline, MaterialTheme.shapes.extraSmall)
             .padding(horizontal = Space.sm, vertical = 1.dp)
-            .testTag("engine-${engine.wire}"),
+            .testTag("engine-${engine.value}"),
     )
 }
 

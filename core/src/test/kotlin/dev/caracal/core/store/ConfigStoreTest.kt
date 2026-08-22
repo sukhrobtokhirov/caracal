@@ -3,26 +3,30 @@ package dev.caracal.core.store
 import dev.caracal.core.connections.ConnectionConfig
 import dev.caracal.core.connections.ConnectionId
 import dev.caracal.core.connections.ConnectionRecord
-import dev.caracal.core.connections.Engine
+import dev.caracal.core.connections.EngineId
+import dev.caracal.engine.api.ConnectionTarget
+import dev.caracal.engine.api.FormKeys
 import dev.caracal.core.connections.Environment
 import dev.caracal.core.connections.TlsMode
+import dev.caracal.core.connections.networkConfig
 import dev.caracal.core.history.ExecutionOutcome
 import dev.caracal.core.history.ExecutionRecord
 import dev.caracal.core.history.HistoryQuery
 import dev.caracal.core.history.HistoryScope
+import dev.caracal.engine.postgres.PostgresEngine
 import java.nio.file.Files
 import java.nio.file.Path
 import java.sql.DriverManager
 import java.time.Instant
 import kotlin.io.path.exists
-import kotlin.time.Duration
-import kotlin.time.Duration.Companion.milliseconds
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.milliseconds
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
@@ -53,16 +57,16 @@ class ConfigStoreTest {
     private fun record(
         id: String = "id-1",
         name: String = "Local",
-        engine: Engine = Engine.POSTGRES,
+        engine: EngineId = PostgresEngine.ID,
         environment: Environment = Environment.DEV,
         sealed: ByteArray? = byteArrayOf(1, 2, 3),
         createdAt: Instant = Instant.parse("2026-08-20T10:00:00Z"),
         readOnly: Boolean = false,
     ) = ConnectionRecord(
-        ConnectionConfig(
+        networkConfig(
             id = ConnectionId(id),
             name = name,
-            engine = engine,
+            engineId = engine,
             host = "localhost",
             port = 5432,
             database = "caracal",
@@ -146,8 +150,7 @@ class ConfigStoreTest {
             val changed = ConnectionRecord(
                 record().config.copy(
                     name = "Renamed",
-                    host = "db.internal",
-                    port = 6432,
+                    target = ConnectionTarget.Network("db.internal", 6432, "caracal"),
                     environment = Environment.PROD,
                     readOnly = true,
                     color = null,
@@ -166,6 +169,64 @@ class ConfigStoreTest {
             assertNull(read.config.color)
             assertContentEquals(byteArrayOf(4, 5), read.sealedSecret)
         }
+    }
+
+    @Test
+    fun `the fields an engine declared survive a round trip`() = runTest {
+        withStore { store ->
+            // A key no engine in this build declares. The store does not interpret
+            // any of them, and the one that proves it is the one it has never seen.
+            val declared = record().config.copy(
+                settings = mapOf(FormKeys.USER to "reader", FormKeys.TLS to "require", "region" to "eu-west-1"),
+            )
+            store.create(ConnectionRecord(declared, byteArrayOf(1)))
+
+            val read = store.get(declared.id).config
+
+            assertEquals(declared.settings, read.settings)
+            assertEquals("reader", read.username)
+            assertEquals(TlsMode.REQUIRE, read.tlsMode)
+        }
+    }
+
+    @Test
+    fun `an update removes a setting the edit dropped`() = runTest {
+        withStore { store ->
+            val original = record().config.copy(settings = mapOf(FormKeys.USER to "reader", "region" to "eu-west-1"))
+            store.create(ConnectionRecord(original, null))
+
+            store.update(ConnectionRecord(original.copy(settings = mapOf(FormKeys.USER to "reader")), null))
+
+            // Merged rather than replaced would leave a field the user cleared still
+            // being dialled with.
+            assertEquals(mapOf(FormKeys.USER to "reader"), store.get(original.id).config.settings)
+        }
+    }
+
+    @Test
+    fun `a connection that opens a file round trips as one`() = runTest {
+        withStore { store ->
+            val file = record().config.copy(target = ConnectionTarget.File(Path.of("/tmp/caracal.db")))
+            store.create(ConnectionRecord(file, null))
+
+            val read = store.get(file.id).config
+
+            assertEquals(ConnectionTarget.File(Path.of("/tmp/caracal.db")), read.target)
+            assertEquals("", read.host)
+        }
+    }
+
+    @Test
+    fun `a connection naming an engine this build does not have still reads`() = runTest {
+        // A user who removed an engine module, or a file written by a build that had
+        // more of them. Refusing to read the row would make one absent engine take
+        // the whole connection list with it.
+        withStore { store -> store.create(ConnectionRecord(record().config.copy(engineId = EngineId("cassandra")), null)) }
+
+        val read = withStore { store -> store.list().single().config }
+
+        assertEquals(EngineId("cassandra"), read.engineId)
+        assertEquals("localhost", read.host)
     }
 
     @Test
@@ -584,6 +645,24 @@ class ConfigStoreTest {
 
     private fun connect() = DriverManager.getConnection("jdbc:sqlite:$databasePath").also { connection ->
         connection.createStatement().use { it.execute("PRAGMA foreign_keys = ON") }
+    }
+
+    @Test
+    fun `the declared-fields migration moves a user and a TLS mode into the settings`() = runTest {
+        // Step 4 turns two columns into rows of `connection_settings`, and it has to
+        // copy them out before the table rebuild rather than after — the rebuild
+        // drops the table they are in. A connection that lost its user would dial
+        // anonymously and a connection that lost its TLS mode would dial in the clear.
+        writeSchemaVersionOneDatabase()
+
+        val migrated = withStore { store -> store.list().associate { it.config.name to it.config } }
+
+        val writable = migrated.getValue("Writable")
+        assertEquals("caracal", writable.username)
+        assertEquals(TlsMode.DISABLE, writable.tlsMode)
+        assertEquals(mapOf(FormKeys.USER to "caracal", FormKeys.TLS to "disable"), writable.settings)
+        // And the target survived the rebuild that made room for a file path.
+        assertEquals(ConnectionTarget.Network("localhost", 5432, "caracal"), writable.target)
     }
 
     @Test

@@ -1,7 +1,6 @@
 package dev.caracal.engine.redis
 
 import dev.caracal.core.connections.ConnectionConfig
-import dev.caracal.core.connections.Engine
 import dev.caracal.core.connections.Secret
 import dev.caracal.core.connections.TlsMode
 import dev.caracal.core.redis.RedisSession
@@ -19,6 +18,7 @@ import dev.caracal.engine.api.EngineCapabilities
 import dev.caracal.engine.api.EngineFamily
 import dev.caracal.engine.api.EngineId
 import dev.caracal.engine.api.FormField
+import dev.caracal.engine.api.FormKeys
 import dev.caracal.engine.api.FormSection
 import dev.caracal.engine.api.IntentClassifier
 import dev.caracal.engine.api.NamespaceModel
@@ -61,6 +61,11 @@ class RedisEngine : DatabaseEngine {
 
         /** The ACL username, where the server has ACLs. Empty means legacy `AUTH`. */
         const val OPTION_USER = "user"
+
+        /** Redis ships with databases 0..15, and a stock server has no more. */
+        const val MAX_DATABASE = 15
+
+        const val MAX_USER = 100
 
         val CAPABILITIES = EngineCapabilities(
             family = EngineFamily.KEY_VALUE,
@@ -115,8 +120,15 @@ class RedisEngine : DatabaseEngine {
                     ),
                     FormField.Number(
                         key = "database",
-                        label = "Database",
+                        // "Database index" rather than "Database": the dialog used to
+                        // special-case this label for Redis, and the label is exactly
+                        // the kind of thing a declaration is for.
+                        label = "Database index",
                         default = 0,
+                        // Declared rather than checked in `validate`, because a range
+                        // on a number is exactly what a declaration can carry — and
+                        // the form can then refuse 16 before anything is saved.
+                        range = 0..MAX_DATABASE,
                         help = "The numbered database to select. Most servers have sixteen.",
                     ),
                 ),
@@ -169,6 +181,12 @@ class RedisEngine : DatabaseEngine {
                 field = "database",
             )
         }
+        if (descriptor.engineOptions[OPTION_USER].orEmpty().length > MAX_USER) {
+            issues += ValidationIssue(
+                "A user name may be at most $MAX_USER characters.",
+                field = OPTION_USER,
+            )
+        }
         // v0.1 offers Redis one secure mode, and it is the one that checks the
         // certificate. Encrypt-but-do-not-verify defends against nothing an attacker
         // on the path cannot do anyway, and offering it means somebody picks it.
@@ -215,12 +233,12 @@ class RedisEngine : DatabaseEngine {
         return ConnectionConfig(
             id = descriptor.id,
             name = descriptor.displayName,
-            engine = Engine.REDIS,
-            host = target.host,
-            port = target.port,
-            database = target.database.orEmpty(),
-            username = descriptor.engineOptions[OPTION_USER].orEmpty(),
-            tlsMode = tlsMode(descriptor.tls),
+            engineId = ID,
+            target = target,
+            settings = buildMap {
+                descriptor.engineOptions[OPTION_USER]?.let { put(FormKeys.USER, it) }
+                put(FormKeys.TLS, tlsMode(descriptor.tls).wire)
+            },
             environment = descriptor.environment,
             readOnly = policy.readOnly,
             color = null,

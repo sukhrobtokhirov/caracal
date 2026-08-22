@@ -15,9 +15,10 @@ import androidx.compose.ui.test.v2.runDesktopComposeUiTest
 import dev.caracal.app.EditorViewModel
 import dev.caracal.app.ExportViewModel
 import dev.caracal.app.FakeConnectionService
+import dev.caracal.app.POSTGRES
+import dev.caracal.app.networkConfig
 import dev.caracal.core.connections.ConnectionConfig
 import dev.caracal.core.connections.ConnectionId
-import dev.caracal.core.connections.Engine
 import dev.caracal.core.connections.Environment
 import dev.caracal.core.connections.TlsMode
 import dev.caracal.core.vault.VaultState
@@ -213,10 +214,10 @@ class WriteConfirmationUiTest {
         name: String = "local",
         environment: Environment = Environment.DEV,
         readOnly: Boolean = false,
-    ) = ConnectionConfig(
+    ) = networkConfig(
         id = ConnectionId("id-1"),
         name = name,
-        engine = Engine.POSTGRES,
+        engineId = POSTGRES,
         host = "localhost",
         port = 5432,
         database = "caracal",

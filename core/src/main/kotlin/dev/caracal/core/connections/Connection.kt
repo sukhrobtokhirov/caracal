@@ -6,9 +6,12 @@
  */
 package dev.caracal.core.connections
 
+import dev.caracal.engine.api.ConnectionTarget
+import dev.caracal.engine.api.FormKeys
 import java.nio.ByteBuffer
 import java.nio.CharBuffer
 import java.nio.charset.StandardCharsets
+import java.nio.file.Path
 import java.time.Instant
 
 /**
@@ -36,17 +39,17 @@ class Secret(private val chars: CharArray) {
     }
 }
 
-/** The database a connection talks to. */
-enum class Engine(val wire: String, val defaultPort: Int) {
-    POSTGRES("postgres", 5432),
-    REDIS("redis", 6379),
-    ;
-
-    companion object {
-        fun from(value: String?): Engine? =
-            entries.firstOrNull { it.wire.equals(value?.trim(), ignoreCase = true) }
-    }
-}
+/**
+ * The database a connection talks to, named rather than enumerated.
+ *
+ * An enum was two engines' worth of correct and no more: a third one cannot be added
+ * to it from another module, which is the whole of what Phase 3 is for. The stored
+ * word is unchanged — a schema-3 database holds `postgres` and `redis` in the same
+ * column it always did — and what changed is that reading one no longer has to
+ * succeed. A connection naming an engine this build does not have is a connection
+ * that lists, says so, and refuses to open, instead of a store that will not load.
+ */
+typealias EngineId = dev.caracal.engine.api.EngineId
 
 /**
  * How dangerous a connection is.
@@ -71,11 +74,11 @@ enum class TlsMode(val wire: String) {
         fun from(value: String?): TlsMode? =
             entries.firstOrNull { it.wire.equals(value?.trim(), ignoreCase = true) }
 
-        /** Redis gets `disable` and `require` in v0.1; `verify-full` is PostgreSQL only. */
-        fun supportedBy(engine: Engine): List<TlsMode> = when (engine) {
-            Engine.POSTGRES -> listOf(DISABLE, REQUIRE, VERIFY_FULL)
-            Engine.REDIS -> listOf(DISABLE, REQUIRE)
-        }
+        // Which modes an engine offers is no longer asked here. It is a
+        // `FormField.Choice` in the engine's own connection form, and the options on
+        // it are the answer — read through `DatabaseEngine.tlsModes` in
+        // `dev.caracal.core.engines`. A list written here could only ever be right
+        // about the engines it was written for.
     }
 }
 
@@ -90,23 +93,63 @@ typealias ConnectionId = dev.caracal.engine.api.ConnectionId
 /**
  * The non-secret part of a connection: everything needed to dial a server except
  * the password.
+ *
+ * Host, port, database and user were fields here and are now derived. What the store
+ * holds is [target] — what this connection points at, in the SPI's own sum type, so
+ * that a file is expressible and not only a host and a port — and [settings], which
+ * is whatever the engine's [dev.caracal.engine.api.ConnectionForm] declared, keyed by
+ * [dev.caracal.engine.api.FormField.key] and otherwise unread.
+ *
+ * The accessors below are the small set of keys core does read, and each is named in
+ * [FormKeys] with the reason. They are conveniences over [settings] rather than a
+ * schema: an engine that declares no `user` field simply has an empty [username], and
+ * nothing in core has to know which engines those are.
  */
 data class ConnectionConfig(
     val id: ConnectionId,
     val name: String,
-    val engine: Engine,
-    val host: String,
-    val port: Int,
-    val database: String,
-    val username: String,
-    val tlsMode: TlsMode,
-    val environment: Environment,
-    val readOnly: Boolean,
-    val color: String?,
-    val createdAt: Instant,
+    val engineId: EngineId,
+    val target: ConnectionTarget,
+    /** Every non-secret field the engine declared, as the user left it. */
+    val settings: Map<String, String> = emptyMap(),
+    val environment: Environment = Environment.DEFAULT,
+    val readOnly: Boolean = true,
+    val color: String? = null,
+    val createdAt: Instant = Instant.EPOCH,
 ) {
+    private val network: ConnectionTarget.Network? get() = target as? ConnectionTarget.Network
+
+    val host: String get() = network?.host.orEmpty()
+
+    val port: Int get() = network?.port ?: 0
+
+    val database: String get() = network?.database.orEmpty()
+
+    /** The file this connection opens, for the engines that open one. */
+    val path: Path? get() = (target as? ConnectionTarget.File)?.path
+
+    val username: String get() = settings[FormKeys.USER].orEmpty()
+
+    /** The stored transport mode. What it *means* is the engine's to say; see `Descriptors`. */
+    val tlsMode: TlsMode get() = TlsMode.from(settings[FormKeys.TLS]) ?: TlsMode.DEFAULT
+
     /** The Redis database index. Non-numeric input cannot survive validation, so this is total. */
     val redisDatabaseIndex: Int get() = database.trim().toIntOrNull() ?: 0
+
+    /** How this connection reads in a list: `localhost:5432`, or the file it opens. */
+    val targetSummary: String
+        get() = when (val target = target) {
+            is ConnectionTarget.Network -> "${target.host}:${target.port}"
+            is ConnectionTarget.File -> target.path.toString()
+            // A URL is where credentials hide, and this one is shown in a list.
+            is ConnectionTarget.Url -> target.raw.replace(CREDENTIALS_IN_URL, "$1")
+            is ConnectionTarget.Cluster -> target.nodes.joinToString(", ") { "${it.host}:${it.port}" }
+        }
+
+    private companion object {
+        /** The `user:password@` a URL target can carry, for stripping before display. */
+        private val CREDENTIALS_IN_URL = Regex("(//)[^/@\\s]*@")
+    }
 }
 
 /**
@@ -155,7 +198,7 @@ data class RuntimeState(
 
 /** What a successful connection test found. */
 data class TestResult(
-    val engine: Engine,
+    val engineId: EngineId,
     val serverVersion: String?,
     val latencyMillis: Long,
 )

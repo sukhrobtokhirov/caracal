@@ -1,5 +1,6 @@
 package dev.caracal.core.connections
 
+import dev.caracal.core.history.HistoryScope
 import dev.caracal.core.registry.ConnectionRegistry
 import dev.caracal.core.store.ConfigStore
 import dev.caracal.core.store.ConnectionNotFoundException
@@ -7,11 +8,13 @@ import dev.caracal.core.store.DuplicateNameException
 import dev.caracal.core.vault.KdfParams
 import dev.caracal.core.vault.SecretIdentity
 import dev.caracal.core.vault.Vault
-import dev.caracal.core.history.HistoryScope
 import dev.caracal.core.vault.VaultDamagedException
 import dev.caracal.core.vault.VaultLockedException
 import dev.caracal.core.vault.VaultState
 import dev.caracal.core.vault.WrongPasswordException
+import dev.caracal.engine.api.FormKeys
+import dev.caracal.engine.postgres.PostgresEngine
+import dev.caracal.engine.redis.RedisEngine
 import java.nio.file.Path
 import java.sql.DriverManager
 import java.time.Instant
@@ -74,10 +77,9 @@ class ConnectionServiceTest {
     private fun postgresDraft(
         name: String = "Local",
         secret: SecretUpdate = SecretUpdate.Replace(Secret("hunter2")),
-    ) = ConnectionDraft(
+    ) = networkDraft(
+        engineId = PostgresEngine.ID,
         name = name,
-        engine = Engine.POSTGRES,
-        host = "localhost",
         database = "caracal",
         username = "caracal",
         secret = secret,
@@ -188,7 +190,7 @@ class ConnectionServiceTest {
             val view = session.service.create(postgresDraft())
 
             assertEquals("Local", view.config.name)
-            assertEquals(Engine.POSTGRES, view.config.engine)
+            assertEquals(PostgresEngine.ID, view.config.engineId)
             assertEquals(5432, view.config.port)
             assertTrue(view.hasSecret)
             assertEquals(RuntimeStatus.CLOSED, view.runtime.status)
@@ -200,7 +202,7 @@ class ConnectionServiceTest {
     fun `an engine default is applied on the way in`() = runTest {
         unlocked().use { session ->
             val view = session.service.create(
-                ConnectionDraft(name = "Cache", engine = Engine.REDIS, host = "localhost"),
+                networkDraft(engineId = RedisEngine.ID, name = "Cache"),
             )
 
             assertEquals(6379, view.config.port)
@@ -224,11 +226,11 @@ class ConnectionServiceTest {
     fun `an invalid draft is refused with the offending fields named`() = runTest {
         unlocked().use { session ->
             val failure = assertThrows<ValidationException> {
-                session.service.create(ConnectionDraft(name = "", engine = Engine.POSTGRES, host = ""))
+                session.service.create(networkDraft(engineId = PostgresEngine.ID, name = "", host = ""))
             }
 
             assertEquals(
-                listOf(ValidationError.NAME, ValidationError.HOST, ValidationError.DATABASE),
+                listOf(ValidationError.NAME, FormKeys.HOST, FormKeys.DATABASE, FormKeys.USER),
                 failure.errors.map { it.field },
             )
         }
@@ -332,7 +334,12 @@ class ConnectionServiceTest {
 
             val updated = session.service.update(
                 view.id,
-                ConnectionDraft.of(view.config).copy(engine = Engine.REDIS, database = "0"),
+                // A PostgreSQL database name is not a Redis index, so the switch
+                // carries the fields the form would have reset. What is being
+                // asserted is the resealing, not the form's carry-over rules.
+                ConnectionDraft.of(view.config).let {
+                    it.copy(engineId = RedisEngine.ID, values = it.values + (FormKeys.DATABASE to "0"))
+                },
             )
 
             // The engine is authenticated alongside the ciphertext, so an unresealed
@@ -363,7 +370,7 @@ class ConnectionServiceTest {
             val view = session.service.create(postgresDraft())
 
             assertThrows<ValidationException> {
-                session.service.update(view.id, ConnectionDraft.of(view.config).copy(host = ""))
+                session.service.update(view.id, ConnectionDraft.of(view.config).let { it.copy(values = it.values + (FormKeys.HOST to "")) })
             }
 
             assertEquals("localhost", session.service.get(view.id).config.host)

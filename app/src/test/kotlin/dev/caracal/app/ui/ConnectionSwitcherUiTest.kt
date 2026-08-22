@@ -27,7 +27,6 @@ import dev.caracal.app.Shortcuts
 import dev.caracal.app.ThemeViewModel
 import dev.caracal.core.connections.ConnectionId
 import dev.caracal.core.connections.ConnectionView
-import dev.caracal.core.connections.Engine
 import dev.caracal.core.connections.Environment
 import dev.caracal.core.connections.RuntimeStatus
 import dev.caracal.core.vault.VaultState

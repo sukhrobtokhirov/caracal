@@ -4,7 +4,6 @@ import dev.caracal.core.connections.ConnectionConfig
 import dev.caracal.core.connections.ConnectionId
 import dev.caracal.core.connections.ConnectionSummary
 import dev.caracal.core.connections.ConnectionView
-import dev.caracal.core.connections.Engine
 import dev.caracal.core.connections.Environment
 import dev.caracal.core.connections.RuntimeState
 import dev.caracal.core.connections.TlsMode
@@ -17,10 +16,10 @@ class ConnectionSearchTest {
 
     private fun view(name: String) = ConnectionView(
         summary = ConnectionSummary(
-            config = ConnectionConfig(
+            config = networkConfig(
                 id = ConnectionId(name),
                 name = name,
-                engine = Engine.POSTGRES,
+                engineId = POSTGRES,
                 host = "localhost",
                 port = 5432,
                 database = "caracal",

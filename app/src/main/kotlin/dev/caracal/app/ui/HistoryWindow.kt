@@ -109,7 +109,7 @@ fun HistoryWindow(
                     tag = "history-filter-${view.id.value}",
                     selected = model.connectionId == view.id,
                     onClick = { model.showConnection(view.id) },
-                    leading = { EngineLogo(view.config.engine, size = 13.dp, described = false) },
+                    leading = { EngineLogo(view.config.engineId, size = 13.dp, described = false) },
                 )
             }
         },

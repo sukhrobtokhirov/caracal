@@ -7,6 +7,7 @@ import dev.caracal.engine.api.ConnectionTarget
 import dev.caracal.engine.api.DatabaseEngine
 import dev.caracal.engine.api.EngineFamily
 import dev.caracal.engine.api.FormField
+import dev.caracal.engine.api.FormKeys
 import dev.caracal.engine.api.NamespaceModel
 import dev.caracal.engine.api.ReadOnlyEnforcement
 import dev.caracal.core.engines.Engines
@@ -16,6 +17,7 @@ import dev.caracal.engine.redis.RedisEngine
 import java.nio.file.Path
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import org.junit.jupiter.api.Test
 
@@ -90,14 +92,21 @@ class EngineDeclarationTest {
         // Two places that have to agree, and nothing else makes them. A form that
         // suggests 5432 for an engine whose default is 3306 is the sort of thing
         // nobody notices until a connection dialog is wrong for a whole release.
+        //
+        // An engine that dials no host has neither, and that is the same agreement
+        // read the other way: a declared default port with no field to put it in is
+        // as wrong as a field with the wrong number in it.
         engines.forEach { engine ->
-            val port = engine.connectionForm.sections
-                .flatMap { it.fields }
-                .filterIsInstance<FormField.Number>()
-                .firstOrNull { it.key == "port" }
+            val port = engine.fields.filterIsInstance<FormField.Number>().firstOrNull { it.key == FormKeys.PORT }
 
-            assertNotNull(port, "${engine.id} has no port field")
-            assertEquals(engine.capabilities.defaultPort, port.default, "${engine.id}")
+            if (port == null) {
+                assertNull(
+                    engine.capabilities.defaultPort,
+                    "${engine.id} declares a default port and no field to type one into",
+                )
+            } else {
+                assertEquals(engine.capabilities.defaultPort, port.default, "${engine.id}")
+            }
         }
     }
 
@@ -121,14 +130,17 @@ class EngineDeclarationTest {
     }
 
     @Test
-    fun `an engine that dials a host refuses a file`() {
-        val file = descriptor(postgres).copy(
-            target = ConnectionTarget.File(Path.of("/tmp/whatever.db")),
-        )
-
+    fun `an engine refuses the kind of target it does not have`() {
+        // Both directions, because both are reachable: a hand-edited store, and an
+        // engine switched in a form. Neither engine kind may shrug and dial anyway.
         engines.forEach { engine ->
-            val issues = engine.validate(file.copy(engineId = engine.id))
-            assertTrue(issues.isNotEmpty(), "${engine.id} accepted a file path")
+            val wrong = if (engine.dialsAFile) {
+                descriptor(engine).copy(target = ConnectionTarget.Network("localhost", 1234, "app"))
+            } else {
+                descriptor(engine).copy(target = ConnectionTarget.File(Path.of("/tmp/whatever.db")))
+            }
+
+            assertTrue(engine.validate(wrong).isNotEmpty(), "${engine.id} accepted the wrong kind of target")
         }
     }
 
@@ -141,19 +153,19 @@ class EngineDeclarationTest {
 
     @Test
     fun `a port outside the range is rejected, and says so about the port`() {
-        engines.forEach { engine ->
+        engines.filterNot { it.dialsAFile }.forEach { engine ->
             val issues = engine.validate(descriptor(engine, port = 70_000))
 
-            assertTrue(issues.any { it.field == "port" }, "${engine.id} accepted port 70000")
+            assertTrue(issues.any { it.field == FormKeys.PORT }, "${engine.id} accepted port 70000")
         }
     }
 
     @Test
     fun `an empty host is rejected, and says so about the host`() {
-        engines.forEach { engine ->
+        engines.filterNot { it.dialsAFile }.forEach { engine ->
             val issues = engine.validate(descriptor(engine, host = "   "))
 
-            assertTrue(issues.any { it.field == "host" }, "${engine.id} accepted a blank host")
+            assertTrue(issues.any { it.field == FormKeys.HOST }, "${engine.id} accepted a blank host")
         }
     }
 
@@ -204,11 +216,32 @@ class EngineDeclarationTest {
         id = ConnectionId("test"),
         engineId = engine.id,
         displayName = "Test",
-        target = ConnectionTarget.Network(
+        target = if (engine.dialsAFile) engine.fileTarget() else ConnectionTarget.Network(
             host = host,
             port = port,
             database = if (engine.capabilities.namespaceModel == NamespaceModel.DATABASE) "0" else "app",
         ),
+        // Harmless to an engine that declares no user: an option nobody reads.
         engineOptions = mapOf(PostgresEngine.OPTION_USER to "caracal"),
     )
+
+    /**
+     * Whether this engine opens a file, read off the form rather than off its name.
+     *
+     * The distinction is a real one and the conformance suite has to make it without
+     * a list: an engine with no host has no host to reject, and asserting that it
+     * rejects a blank one would fail every file engine that ever exists.
+     */
+    private val DatabaseEngine.dialsAFile: Boolean
+        get() = fields.any { it is FormField.FilePath }
+
+    /** A path this engine would accept, in whichever extension it declared. */
+    private fun DatabaseEngine.fileTarget(): ConnectionTarget.File {
+        val field = fields.filterIsInstance<FormField.FilePath>().first()
+        return ConnectionTarget.File(Path.of("/tmp/conformance${field.extensions.firstOrNull().orEmpty()}"))
+    }
+
+    /** Every field of every section, without depending on `:core`'s extension. */
+    private val DatabaseEngine.fields: List<FormField>
+        get() = connectionForm.sections.flatMap { it.fields }
 }

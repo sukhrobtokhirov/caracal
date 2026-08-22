@@ -27,14 +27,15 @@ import dev.caracal.app.EditorViewModel
 import dev.caracal.app.ExportViewModel
 import dev.caracal.app.FakeConnectionService
 import dev.caracal.app.HistoryViewModel
+import dev.caracal.app.POSTGRES
 import dev.caracal.app.Platform
 import dev.caracal.app.RedisWorkspace
 import dev.caracal.app.SchemaTreeViewModel
 import dev.caracal.app.Shortcuts
 import dev.caracal.app.ThemeViewModel
+import dev.caracal.app.networkConfig
 import dev.caracal.core.connections.ConnectionConfig
 import dev.caracal.core.connections.ConnectionId
-import dev.caracal.core.connections.Engine
 import dev.caracal.core.connections.Environment
 import dev.caracal.core.connections.RuntimeStatus
 import dev.caracal.core.connections.TlsMode
@@ -73,10 +74,10 @@ class SqlEditorUiTest {
     private fun connection(
         environment: Environment = Environment.DEV,
         readOnly: Boolean = false,
-    ) = ConnectionConfig(
+    ) = networkConfig(
         id = ConnectionId("id-1"),
         name = "local",
-        engine = Engine.POSTGRES,
+        engineId = POSTGRES,
         host = "localhost",
         port = 5432,
         database = "caracal",

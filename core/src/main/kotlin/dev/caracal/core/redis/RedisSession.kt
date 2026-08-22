@@ -7,9 +7,7 @@
 package dev.caracal.core.redis
 
 import dev.caracal.core.connections.ConnectionConfig
-import dev.caracal.core.connections.Engine
 import dev.caracal.core.connections.Secret
-import dev.caracal.core.connections.TestResult
 import dev.caracal.core.connections.TlsMode
 import dev.caracal.core.result.DbError
 import dev.caracal.core.result.DbException
@@ -127,25 +125,6 @@ class RedisSession private constructor(
             }
             session
         }
-
-        /** Dials, authenticates, reads the server version, and disconnects. */
-        suspend fun test(config: ConnectionConfig, password: Secret): TestResult =
-            // On the IO dispatcher for the closing brace, not the opening one: `open`
-            // manages its own dispatcher, but `use` closes on the caller's, and
-            // `close` blocks on Lettuce's graceful Netty shutdown for up to two
-            // seconds. The caller is a Compose scope on the AWT thread, so testing a
-            // Redis connection froze the window for that long after it succeeded.
-            withContext(Dispatchers.IO) {
-                val started = TimeSource.Monotonic.markNow()
-                open(config, password).use { session ->
-                    val latency = started.elapsedNow().inWholeMilliseconds
-                    TestResult(
-                        engine = Engine.REDIS,
-                        serverVersion = session.serverVersion(),
-                        latencyMillis = latency,
-                    )
-                }
-            }
 
         /**
          * The strings that must never survive into a message or a log line.
