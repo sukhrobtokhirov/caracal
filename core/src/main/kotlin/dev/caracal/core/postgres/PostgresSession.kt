@@ -38,6 +38,21 @@ class PostgresSession(
     /** Live pool statistics. Tests assert on these instead of trusting the code. */
     val activeConnections: Int get() = dataSource.hikariPoolMXBean?.activeConnections ?: 0
 
+    /**
+     * The server's version string, or null when it would not say.
+     *
+     * pgjdbc reads this from the startup parameters the server sends before the first
+     * query, so it costs a pooled connection and no round trip — the same reason
+     * [PostgresProbe] reads it there. Failure is swallowed on purpose: a session that
+     * cannot name its server is still a working session, and this is decoration on a
+     * dashboard rather than something a caller acts on.
+     */
+    internal suspend fun serverVersion(): String? = withContext(Dispatchers.IO) {
+        runCatching { dataSource.connection.use { it.metaData.databaseProductVersion } }
+            .getOrNull()
+            ?.takeIf { it.isNotBlank() }
+    }
+
     override fun close() = dataSource.close()
 
     companion object {

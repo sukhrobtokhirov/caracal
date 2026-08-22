@@ -39,6 +39,13 @@ fun classpathIds(configuration: String): Provider<List<String>> =
 val assertNoComposeDependency = tasks.register("assertNoComposeDependency") {
     val runtimeIds = classpathIds("runtimeClasspath")
     val testIds = classpathIds("testRuntimeClasspath")
+    // Resolving a classpath that contains a project dependency means building that
+    // project's jar first, and Gradle will not let a task read the answer before the
+    // producing task has run. Declaring the configurations as inputs is what carries
+    // that ordering across; without it the check fails the moment :core gains its
+    // first project dependency, which is exactly what :engine-api is.
+    inputs.files(configurations.named("runtimeClasspath"))
+    inputs.files(configurations.named("testRuntimeClasspath"))
     doLast {
         val offenders = (runtimeIds.get() + testIds.get()).filter {
             it.startsWith("org.jetbrains.compose") ||

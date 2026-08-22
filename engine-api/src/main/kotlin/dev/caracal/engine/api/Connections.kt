@@ -9,6 +9,34 @@ value class ConnectionId(val value: String) {
 }
 
 /**
+ * How dangerous a connection is.
+ *
+ * A closed set, because it drives the production treatment: an arbitrary string
+ * would make the badge mean nothing. [severity] orders lists so that the dangerous
+ * connections are never the ones buried at the bottom.
+ *
+ * It is in the SPI rather than in `:core` because it is on the descriptor, and it is
+ * on the descriptor because an engine needs it today: the Redis command guard reads
+ * the environment off the connection it captured, and that is how `FLUSHDB` against
+ * production asks for a typed phrase instead of a click. §7 will eventually take
+ * that decision back into core and leave the guard classifying — at which point this
+ * can leave the descriptor, and not before.
+ */
+enum class Environment(val wire: String, val severity: Int) {
+    PROD("prod", 0),
+    STAGING("staging", 1),
+    DEV("dev", 2),
+    ;
+
+    companion object {
+        val DEFAULT = DEV
+
+        fun from(value: String?): Environment? =
+            entries.firstOrNull { it.wire.equals(value?.trim(), ignoreCase = true) }
+    }
+}
+
+/**
  * Everything an engine needs to dial one server, except the secret.
  *
  * The current stored form is host, port, database, user, password, and SQLite breaks
@@ -16,24 +44,19 @@ value class ConnectionId(val value: String) {
  * generalization, made now rather than when it is urgent, so the widening is a
  * change to one type instead of a change to every form that reads it.
  *
- * Two fields §5.1 of the spec puts here are deliberately absent.
- *
- * `environment` is one. Which environment a connection is tagged with decides
- * whether a write needs a click or a typed name, and no engine has any use for that:
- * it dials a server. §7 already splits the responsibility this way — classification
- * per engine, policy in core — and carrying the tag across the boundary would invite
- * an engine to read it. Core keeps it, on its own record, where the decision is made.
- *
- * `writable` is the other, and it is here in spirit as [SessionPolicy.readOnly].
- * The distinction is worth the extra type: `writable` is a label on a saved
- * connection, and what the engine needs at connect time is the answer core resolved
- * for *this* session.
+ * [writable] and [SessionPolicy.readOnly] are not the same fact and both are kept.
+ * [writable] is the label on the saved connection; [SessionPolicy.readOnly] is the
+ * answer core resolved for *this* session, which is what the engine enforces at
+ * connect time.
  */
 data class ConnectionDescriptor(
     val id: ConnectionId,
     val engineId: EngineId,
     val displayName: String,
     val target: ConnectionTarget,
+    val environment: Environment = Environment.DEFAULT,
+    /** The label on the saved connection. What is enforced is [SessionPolicy.readOnly]. */
+    val writable: Boolean = false,
     val transport: Transport = Transport.Direct,
     val tls: TlsConfig = TlsConfig.Disabled,
     /** Null for SQLite and for an unauthenticated Redis. */

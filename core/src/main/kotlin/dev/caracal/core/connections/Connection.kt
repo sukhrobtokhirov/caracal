@@ -49,24 +49,14 @@ enum class Engine(val wire: String, val defaultPort: Int) {
 }
 
 /**
- * How dangerous a connection is. This drives the production treatment in the UI,
- * so the set is closed — an arbitrary string would make the badge meaningless.
+ * How dangerous a connection is.
  *
- * [severity] orders lists so the dangerous connections are never buried.
+ * The type is `dev.caracal.engine.api.Environment` now, because it sits on
+ * [dev.caracal.engine.api.ConnectionDescriptor] and the SPI cannot see `:core`. The
+ * alias keeps every existing use of it — the badge, the sort order, the safety
+ * policy's decision table — pointing at the same class it always did.
  */
-enum class Environment(val wire: String, val severity: Int) {
-    PROD("prod", 0),
-    STAGING("staging", 1),
-    DEV("dev", 2),
-    ;
-
-    companion object {
-        val DEFAULT = DEV
-
-        fun from(value: String?): Environment? =
-            entries.firstOrNull { it.wire.equals(value?.trim(), ignoreCase = true) }
-    }
-}
+typealias Environment = dev.caracal.engine.api.Environment
 
 /** Transport security requested for a connection. */
 enum class TlsMode(val wire: String) {
@@ -89,11 +79,13 @@ enum class TlsMode(val wire: String) {
     }
 }
 
-/** A saved connection's identity. Distinct from its name, which the user can change. */
-@JvmInline
-value class ConnectionId(val value: String) {
-    override fun toString(): String = value
-}
+/**
+ * A saved connection's identity. Distinct from its name, which the user can change.
+ *
+ * Moved into the SPI with [Environment], and for the same reason: a descriptor has
+ * to name the connection it describes.
+ */
+typealias ConnectionId = dev.caracal.engine.api.ConnectionId
 
 /**
  * The non-secret part of a connection: everything needed to dial a server except

@@ -36,6 +36,7 @@ val assertSpiHasNoDependencies = tasks.register("assertSpiHasNoDependencies") {
             artifacts.map { it.id.componentIdentifier.displayName }
         }
     }
+    inputs.files(configurations.named("runtimeClasspath"))
     doLast {
         val offenders = runtimeIds.get().filterNot { id ->
             allowedPrefixes.any { id.startsWith(it) }

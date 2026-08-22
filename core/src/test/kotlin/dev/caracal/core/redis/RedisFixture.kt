@@ -37,11 +37,12 @@ import org.testcontainers.containers.GenericContainer
  */
 object RedisFixture {
 
-    /** Database indices, one per suite. Redis offers sixteen and M3 uses five. */
+    /** Database indices, one per suite. Redis offers sixteen and this uses six. */
     const val BROWSE_DB = 1
     const val VALUE_DB = 2
     const val CONSOLE_DB = 3
     const val PERMISSIONS_DB = 4
+    const val ENGINE_DB = 5
 
     /** An ACL user that may read keys and nothing else — §3.10's read-only column. */
     const val READER = "reader"
