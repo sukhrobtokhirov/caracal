@@ -59,6 +59,11 @@ note: is this a single Gradle module or already multi-module, and does the UI la
 > indirection at all. Fourteen files do so, and there are nine `when (engine)` switches.
 > The root package is **`dev.caracal`**, not `caracal`, so every package name below gains
 > that prefix.
+>
+> **As of Phase 2, none do.** `:engine-api` is a third module, the UI reads the SPI's
+> vocabulary and `EngineCapabilities`, and `ArchitectureTest` is enabled and green.
+> The `when (engine)` switches that remain are the connection form's, which Phase 3
+> replaces with `ConnectionForm` rendering, and the artwork's, which stays.
 
 ---
 
@@ -122,9 +127,14 @@ concrete engine.** Enforce it mechanically, not by discipline:
 > as much of a dependency. Comment lines are excused: one file mentions
 > `dev.caracal.core.redis` only in a KDoc link.
 >
-> It is `@Disabled` as Phase 1 requires, and it is joined by a second test that is
-> *not* disabled, asserting that the scan finds sources at all. A disabled check that
+> It was `@Disabled` as Phase 1 requires, and it is joined by a second test that was
+> never disabled, asserting that the scan finds sources at all. A disabled check that
 > would also have passed against an empty file list is worth nothing.
+>
+> **Phase 2 deleted the `@Disabled` and it passes.** The two `dev.caracal.core.*`
+> entries stay on the forbidden list: the engines still live there, so removing them
+> now would make the test pass by matching nothing, which is the trap this note is
+> about. They come off when the module split moves the engines out.
 >
 > `:engine-api`'s equivalent is a build rule rather than a test —
 > `assertSpiHasNoDependencies` in `engine-api/build.gradle.kts`, modelled on `:core`'s
@@ -237,9 +247,16 @@ Facet catalogue:
 > model, a RESP reply tree and a metrics record, in the module nobody may change
 > without touching every engine. They arrive in Phase 2, with a caller to answer to.
 >
-> `RedisEngineSession` therefore provides no facets and says so in its `facet()`,
+> **Phase 2 declared all three**, and the waiting was worth it: every one of them is
+> shaped by what the UI already needed rather than by what seemed likely. The whole
+> vocabulary moved with them — `KeyRef`, `ScanPage`, `ValuePage`, `CommandReply`,
+> `ServerInfo` — and `KeyValueFacet` publishes its `KeyValueLimits`, which was not
+> obvious in advance and is the value viewer's only way to say what a page was cut at.
+>
+> `RedisEngineSession` provided no facets in Phase 1 and said so in its `facet()`,
 > which the integration suite asserts: asking a key-value engine for a `QueryFacet`
-> returns null rather than a surprise. That is the facet model working, not failing.
+> returns null rather than a surprise. That assertion still holds and is still the
+> point — the three it does provide are looked up the same way.
 
 | Facet | Provided by | Purpose |
 |---|---|---|
@@ -1001,6 +1018,63 @@ Every `when (engine)` becomes a capability or facet check.
 **Acceptance:** §2.2 architecture test enabled and green. Manual smoke: connect to
 Postgres and Redis, run a query, browse keys, cancel a statement, trigger an error and
 confirm the underline is still on the exact character.
+
+> **Done 2026-08-22.** `ArchitectureTest` is enabled and green, `./gradlew check`
+> passes, and `CARACAL_INTEGRATION=1 ./gradlew test` runs 823 `:core` tests against
+> real PostgreSQL and Redis containers with none failing — including the Phase 0
+> characterization floor, the error-position suite, and the browse, value and console
+> integration tests.
+>
+> Three commits, structure and behaviour kept apart as §0's second rule asks:
+>
+> 1. **the vocabulary** — the types the UI holds, moved into `:engine-api`.
+> 2. **the facets** — `KeyValueFacet`, `CommandFacet`, `MetricsFacet`, the Redis
+>    session providing them, and a registry that hands out `DatabaseSession`.
+> 3. **the flip** — the workspace reading capabilities, and the `@Disabled` deleted.
+>
+> **What actually bound the UI was not a session.** The view models go through
+> `ConnectionService` and always have; not one of them held a `RedisSession`. What
+> they held was the *vocabulary* — a key, a paged value, a reply tree, an `INFO`
+> summary — all of it in `dev.caracal.core.redis`. So the flip was a move, and the
+> types lost the engine's name where the concept was general: `RedisKey` → `KeyRef`,
+> `RedisText` → `TextValue`, `RedisReply` → `CommandReply`, `RedisCursor` →
+> `ScanCursor`, `RedisLimits` → `KeyValueLimits`, `RedisBytes` → `TextValues`. A type
+> named after one engine, in the module every other module depends on, is the seam
+> being decoration.
+>
+> **`ScanCursor.of` and `CommandLine` throw across a module that cannot see
+> `DbError`.** The SPI raises `InvalidRequestException`; `:core` joins it back to
+> `DbError.InvalidRequest` in `asDbError` and `toFailure`, on the same code and the
+> same sentence. `InvalidRequestTest` exists because nothing would stop compiling if
+> that join were dropped — `toFailure` has an `else` arm, and a bad cursor would
+> quietly become "something went wrong".
+>
+> **`require` means two different things and the descriptor mapping says so.**
+> PostgreSQL's `require` encrypts and accepts any certificate; Redis's verifies. The
+> SPI deliberately has no encrypt-but-do-not-verify arm, so `ConnectionConfig` →
+> `ConnectionDescriptor` translates the stored word per engine rather than flattening
+> it, and `verify-full` on a Redis connection is refused rather than downgraded.
+> `DescriptorsTest` is that table, and it is the sharpest thing this phase added.
+>
+> Two things are deliberately not done, and both belong to Phase 3.
+>
+> - **The connection form still switches on the engine.** Which fields the dialog
+>   draws, what they are called, which are optional, what a Redis database field
+>   defaults to — every one of those is already declared in
+>   `DatabaseEngine.connectionForm`, and rendering that declaration is Phase 3's
+>   stated job. Converting them by hand now would be writing the same table twice and
+>   then deleting one copy a phase later.
+> - **The PostgreSQL execute path still goes through the adapter**, by way of one
+>   named accessor, `ConnectionRegistry.postgresAdapter`. `QueryFacet` streams
+>   outcomes and `:core` returns a whole `QueryResult`; reconciling those changes the
+>   result model, the error position mapping that rides on it, and every grid that
+>   reads one. That is a phase of its own, not a rider on a module boundary — and it
+>   is not what §2.2 is about, since the UI cannot reach the accessor.
+>
+> One thing will never move: **artwork**. `Glyphs` and `EngineLogo` key on the engine
+> because a logo cannot be declared in `:engine-api` without dragging a UI toolkit
+> into the module everything depends on. Phase 3 rekeys them on `EngineId` with a
+> fallback mark, so a new engine gets a generic one rather than a blank.
 
 ### Phase 3 — Engine registry
 

@@ -106,6 +106,18 @@ object. View models hold a `RedisSession`/`PostgresSession` directly.
 > Phase 2 has somewhere to move the view models *to*. Thirteen files still import the
 > concrete engines, and `ArchitectureTest` is the disabled test that will say when
 > none do.
+>
+> **Phase 2. No longer true: none do.** `ArchitectureTest` is enabled and green. The
+> view models never held a session — they go through `ConnectionService` and always
+> did — so what actually bound them was the *vocabulary*: a key, a paged value, a
+> reply tree, a server summary, all named `dev.caracal.core.redis.*`. Those moved
+> into `:engine-api`, losing the engine's name where the concept was general
+> (`RedisKey` → `KeyRef`, `RedisText` → `TextValue`, `RedisReply` → `CommandReply`,
+> `RedisCursor` → `ScanCursor`, `RedisLimits` → `KeyValueLimits`), and `KeyValueFacet`,
+> `CommandFacet` and `MetricsFacet` are declared in terms of them. `CommandClearance`
+> and `CommandConfirmationRequired` moved to `dev.caracal.core.policy`, next to the
+> SQL `Clearance` they are the analogue of — the guard that produces them stays in the
+> engine, per §12.
 
 `when (engine)` switches, all on the `Engine` enum:
 
@@ -126,6 +138,32 @@ tabs) become engine-declared metadata; the two `:core` switches become
 `DatabaseEngine` methods; `ConnectionDraft`'s becomes `engine.validate()`;
 `Connection.kt`'s becomes a capability.
 
+> **Phase 2 took the behavioural ones and left the rest, on purpose.**
+>
+> Gone: the workspace tab list, the workspace body, and which pane the keyboard lands
+> in all read `EngineCapabilities.family` now; the settings and connection-dialog copy
+> reads `DatabaseEngine.displayName` and `capabilities.defaultPort`; the registry
+> dials through `DatabaseEngine.connect` and has one accessor, `session(id)`, instead
+> of two typed ones.
+>
+> Still switching, and deliberately: the connection **form** — which fields a dialog
+> draws, what they are called, which are optional, what a Redis database field
+> defaults to. Every one of those facts is already declared in
+> `DatabaseEngine.connectionForm`, and rendering that declaration is Phase 3's stated
+> job. Converting them by hand now would be writing the same table twice.
+>
+> Also still switching, and permanently: **artwork**. `Glyphs.of` and `EngineLogo` key
+> on the engine because a logo cannot be declared in `:engine-api` — putting a drawing
+> in the module every other module depends on drags a UI toolkit in behind it. Phase 3
+> gives them an `EngineId` key and a fallback mark, so an engine with no artwork gets
+> a generic one rather than a blank.
+>
+> The three `:core` switches that remain — `TlsMode.supportedBy`,
+> `ConnectionDraft`'s database validation, and the test-button probe — are `:core`'s
+> to make and are not what the rule is about. `Engines` in
+> `dev.caracal.core.engines` is now the one place that knows which engines exist, and
+> Phase 3 replaces its body with a `ServiceLoader` without anything above it changing.
+
 `ConnectionRegistry` already has the shape the SPI wants: a private sealed
 `RuntimeClient` with `Postgres`/`Redis` arms, and typed accessors `postgres(id)` /
 `redis(id)` that throw `WrongEngineException` on a mismatch. That sealed hierarchy is
@@ -135,6 +173,24 @@ what `DatabaseSession` + facets replaces.
 > open a session; the registry still opens them the old way. Repointing it at
 > `DatabaseSession` is what makes the `:ui` flip possible, so it belongs with that
 > flip rather than a phase before it.
+>
+> **Phase 2 repointed it.** `RuntimeClient` is gone; an entry holds a
+> `DatabaseSession`, opened by `Engines.of(engine).connect(...)`. `postgres(id)` and
+> `redis(id)` are gone with it, replaced by `session(id)` — and by one named escape
+> hatch, `postgresAdapter(id)`, which `execute` and `exportCsv` still use because
+> `QueryFacet` streams outcomes and `:core` returns a whole `QueryResult`.
+> Reconciling those is a change to the result model, to the error position mapping
+> that rides on it, and to every grid that reads one; it is not a change to make in
+> the same phase as a module boundary, and Phase 2 stops there and says so.
+>
+> The translation between `ConnectionConfig` and `ConnectionDescriptor` lives in
+> `core/registry/Descriptors.kt`. One thing in it is not mechanical: **`require`
+> means two different things**. PostgreSQL's `require` encrypts and accepts any
+> certificate; Redis's `require` verifies, because the Redis client has always been
+> built with `verifyPeer` and that is the only secure mode it offers. The SPI has no
+> encrypt-but-do-not-verify arm, so the stored word is translated per engine rather
+> than flattened, and `verify-full` on Redis is refused rather than quietly
+> downgraded. `DescriptorsTest` is that table.
 
 ## 5. Engine model today
 

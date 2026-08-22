@@ -7,6 +7,31 @@ version is 0, a minor bump may change behaviour.
 
 ## [Unreleased]
 
+### Changed
+
+**Internal — the seam a second wave of engines will arrive through.** No behaviour
+changes; every one of these is a refactor covered by the existing tests, including
+the ones that run against real PostgreSQL and Redis servers.
+
+- A new `:engine-api` module holds the service-provider interface: `DatabaseEngine`,
+  `DatabaseSession`, `EngineCapabilities`, and the facets a session provides —
+  `QueryFacet` and `CatalogFacet` for SQL engines, `KeyValueFacet`, `CommandFacet`
+  and `MetricsFacet` for key-value ones. It depends on nothing but Kotlin and
+  coroutines, and its build fails if that ever stops being true.
+- The window no longer compiles against a database driver. It reads capabilities and
+  facets instead: which panes an open connection has, which one the keyboard lands
+  in, and what the settings window says about an engine are all answers the engine
+  gives rather than a list kept in the UI. A test enforces it.
+- Connections are dialled through the engine rather than through a `when`, and the
+  connection registry hands out one kind of session instead of one per engine.
+- The stored `require` TLS mode is now translated per engine on the way to a driver,
+  because it means two different things: PostgreSQL encrypts without checking the
+  server's certificate, Redis checks it. Both connections behave exactly as before;
+  what changed is that the difference is written down and tested rather than implied
+  by two separate code paths. A Redis connection asking for `verify-full` — which the
+  forms have never been able to save — is still refused rather than quietly
+  downgraded.
+
 ### Fixed
 
 **Correctness**
