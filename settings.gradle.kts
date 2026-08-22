@@ -17,4 +17,4 @@ dependencyResolutionManagement {
     }
 }
 
-include(":core", ":app")
+include(":engine-api", ":core", ":app")

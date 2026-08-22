@@ -1,9 +1,13 @@
 plugins {
     alias(libs.plugins.kotlin.jvm)
     alias(libs.plugins.kover)
+    // `api` needs it, and `api` is the right configuration for :engine-api: the SPI
+    // is in the signatures :core hands out, not an implementation detail behind them.
+    `java-library`
 }
 
 dependencies {
+    api(project(":engine-api"))
     implementation(libs.kotlinx.coroutines.core)
     implementation(libs.postgresql)
     implementation(libs.hikaricp)
