@@ -287,13 +287,8 @@ What is planned, and what has been deliberately deferred, is in
 | Build | Gradle (Kotlin DSL), packaged with `jpackage` |
 | Tests | JUnit 5 + Testcontainers |
 
-> **History.** M0 and M1 first shipped in Go with a React SPA in a browser window.
-> On 2026-08-20 the project moved to Kotlin + Compose Desktop; that implementation
-> is preserved under the `go-implementation` git tag, and plan
-> [§10](db-ide-mvp-plan.md#10-stack-move-record--2026-08-20) records what the move
-> simplified and what it made harder. The application was called Database IDE until
-> M5 named it Caracal; an installation under the old name is migrated on first
-> launch.
+> **History.** The application was called Database IDE until M5 named it Caracal; an
+> installation under the old name is migrated on first launch.
 
 ## Contributing
 

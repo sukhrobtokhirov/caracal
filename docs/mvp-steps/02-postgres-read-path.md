@@ -10,7 +10,7 @@ This milestone establishes the application's core trust contract. Values shown i
 
 1. Select and open a PostgreSQL connection.
 2. Expand schemas, tables/views, and columns in a lazy schema tree.
-3. Write SQL in a CodeMirror editor.
+3. Write SQL in the editor.
 4. Select text or place the cursor in a statement and run it.
 5. See running state and cancel if needed.
 6. Inspect column names, PostgreSQL types, exact values, NULLs, row count, duration, truncation state, notices, or a positioned error.
@@ -21,11 +21,11 @@ This milestone establishes the application's core trust contract. Values shown i
 ### Included
 
 - Lazy schema/object/column browser based on `pg_catalog`
-- CodeMirror 6 SQL editor and basic PostgreSQL highlighting
+- SQL editor with basic PostgreSQL highlighting
 - PostgreSQL-aware statement splitter
 - Execute and cancel lifecycle with unique query IDs
 - Bounded query results and explicit truncation
-- Type-safe server-to-frontend result encoding
+- Type-safe result encoding
 - Virtualized, read-only result grid
 - CSV export for successful tabular queries
 - Production/write confirmations and server-side read-only enforcement
@@ -84,7 +84,7 @@ Suggested successful response:
 }
 ```
 
-The `limit` is a requested value capped by the server's configured maximum. Never let the frontend raise the hard safety limit.
+The `limit` is a requested value capped by the configured maximum. Never let the UI raise the hard safety limit.
 
 ## Work packages
 
@@ -109,13 +109,13 @@ The cancel route must be idempotent:
 Scope the lookup to both route connection ID and query ID so an identifier from another connection cannot be cancelled or exported accidentally.
 
 > **Deviation, 2026-08-21 — there is no execution registry, and no query IDs.**
-> This section describes a registry because the original design put the editor and
-> the database in different processes: a browser that had started a query held only
-> a string, so it needed an identifier to name that query in a later `POST /cancel`
-> or `GET /export` request, and the server needed a table mapping identifiers back
-> to cancel functions with an expiry to stop it growing.
+> A registry only earns its keep when the editor and the database sit in different
+> processes: a caller that had started a query would hold only a string, so it would
+> need an identifier to name that query in a later cancel or export call, and the
+> other side would need a table mapping identifiers back to cancel functions with an
+> expiry to stop it growing.
 >
-> The UI now calls suspend functions in the same process. What the editor holds while
+> The UI calls suspend functions in the same process. What the editor holds while
 > a query runs is the `Job` that is running it, so cancelling is `job.cancel()` and
 > `PostgresAdapter` turns that into `Statement.cancel()` from another thread. There is
 > nothing to look up, nothing to expire, and no window in which an identifier is valid
@@ -161,7 +161,7 @@ Rules:
 - Return a structured lexical error for an unterminated quote/comment/dollar block.
 - Treat Unicode as UTF-8 and be explicit about whether offsets are bytes or editor character positions. Add a conversion helper instead of mixing the two.
 
-The backend splitter is authoritative. A small frontend helper may choose the candidate range for responsive editor UX, but the server must validate that the submitted text is one allowed execution unit.
+The `:core` splitter is authoritative. The editor may choose the candidate range for responsive UX, but `:core` must validate that the submitted text is one allowed execution unit.
 
 Minimum test corpus:
 
@@ -182,14 +182,14 @@ Fuzz the splitter with the invariant that it never panics, hangs, or returns ove
 
 Use one predictable rule:
 
-- If text is selected, execute exactly the selected text after backend validation.
+- If text is selected, execute exactly the selected text after `:core` validation.
 - Otherwise execute the statement containing the primary cursor.
 - If the cursor is between statements, choose the next non-empty statement; if none exists, choose the previous one.
 - The normal Run action executes one statement. A separate **Run script** action can execute multiple statements sequentially only if it is included without jeopardizing the milestone; it is not required for exit.
 
 Before sending, show the statement range visually. Disable duplicate Run actions for the same editor while it is active, but do not freeze schema browsing or other tabs.
 
-CodeMirror configuration should include PostgreSQL SQL highlighting, line numbers, bracket matching, search, selection, undo/redo, and accessible keyboard focus. Autocomplete remains intentionally lexical/basic in v0.1.
+The editor should provide PostgreSQL SQL highlighting, line numbers, bracket matching, search, selection, undo/redo, and accessible keyboard focus. Autocomplete remains intentionally lexical/basic in v0.1.
 
 > **Deviation, 2026-08-21 — the editor is `BasicTextField`, not RSyntaxTextArea.**
 > Plan [§5.8](../../db-ide-mvp-plan.md#58-the-sql-editor) recommends RSyntaxTextArea
@@ -284,7 +284,7 @@ Command-only results should return an empty `columns`/`rows` pair plus `commandT
 
 ### 2.6 Preserve PostgreSQL type fidelity
 
-Build an explicit server-side encoder driven by field OID and PostgreSQL text representations. Do not rely on Go's generic JSON encoding for arbitrary driver values.
+Build an explicit encoder driven by field OID and PostgreSQL text representations. Do not rely on generic serialization of arbitrary driver values.
 
 Wire-value rules:
 
@@ -303,7 +303,7 @@ Test exact values around JavaScript's safe-integer boundary, high-precision nume
 
 ### 2.7 Build the virtualized result grid
 
-Use TanStack Table for column behavior and TanStack Virtual for row rendering. Virtualization is required even with a 1,000-row default because wide and tall cells can still create expensive DOM trees.
+Virtualize both column behavior and row rendering. Virtualization is required even with a 1,000-row default because wide and tall cells are expensive to lay out.
 
 Grid behavior:
 
@@ -321,9 +321,8 @@ Grid behavior:
 Column resizing and basic sorting may be local-only. Do not imply that sorting the first 1,000 rows sorts the database result; label client-only operations or defer them.
 
 > **Deviation, 2026-08-21 — the grid is hand-built, and sorting is deferred.**
-> TanStack Table and TanStack Virtual are React libraries and left with the browser;
-> plan [§5.9](../../db-ide-mvp-plan.md#59-the-result-grid) already budgets the grid as
-> this project's own code. It virtualizes both axes — rows through `LazyColumn`,
+> Plan [§5.9](../../db-ide-mvp-plan.md#59-the-result-grid) budgets the grid as this
+> project's own code. It virtualizes both axes — rows through `LazyColumn`,
 > columns through `columnWindow` — because a result can be wide as well as tall.
 >
 > Client-side sorting is not implemented rather than implemented and labelled: the
@@ -341,7 +340,7 @@ Use `pg_catalog`, not `information_schema` alone, so object identity and Postgre
 
 `GET /columns` returns ordinal, name, formatted type, nullable flag, default expression, and key indicators when cheaply available. Use schema plus table identity carefully so quoted/mixed-case names work.
 
-Frontend tree behavior:
+UI tree behavior:
 
 - Load only schemas initially.
 - Fetch objects when a schema is expanded.
@@ -430,7 +429,7 @@ For v0.1, re-run only a single row-producing statement inside a PostgreSQL read-
 CSV requirements:
 
 - UTF-8 output with a header row.
-- RFC 4180-style quoting through Go's `encoding/csv`.
+- RFC 4180-style quoting.
 - Empty database strings remain empty quoted/unquoted CSV fields as encoded by the library.
 - Choose and document a NULL representation; an empty field is ambiguous, so default to `NULL` or expose a future option.
 - Preserve exact textual values from the type encoder.
@@ -451,9 +450,8 @@ If the original statement cannot be guaranteed read-only, disable export and exp
 > Everything else in the list survives, and is where you would expect:
 >
 > - `CsvWriter` is the RFC 4180 quoting, and it streams: one record at a time into a
->   `Writer`, never a document assembled in memory. `encoding/csv` was Go's; this is
->   the same rules written out, including the `\.` a `COPY` stream would read as a
->   terminator.
+>   `Writer`, never a document assembled in memory. The rules are written out here,
+>   including the `\.` a `COPY` stream would read as a terminator.
 > - **NULL is the word `NULL`**, written unquoted, with any value that happens to
 >   equal it written quoted — so `NULL` and `"NULL"` are different things in the file.
 >   An empty field is ambiguous against the empty string, which is the distinction the
@@ -551,7 +549,7 @@ Run against supported PostgreSQL versions in CI where practical. Create fixtures
 - result truncation and CSV streaming;
 - backend disconnect during execution.
 
-### Frontend tests
+### UI tests
 
 - schema-tree lazy loading, refresh, and node-local errors;
 - selection/current-statement execution behavior;

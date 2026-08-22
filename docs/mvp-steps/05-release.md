@@ -14,13 +14,6 @@ This milestone assumes [M4](04-product-polish.md) shipped. What is being package
 is a desktop application, so the artifacts, the first-launch instructions, and the
 demo must all show a window.
 
-> **This guide was rewritten for the Kotlin stack.** Its previous version was
-> written against the Go implementation: GoReleaser, `CGO_ENABLED`, a WebView2
-> runtime, an embedded SPA, a loopback HTTP server, and a session token. None of
-> those exist any more. The behaviour it asked for survived; the mechanics were
-> replaced rather than translated. What changed, and why, is recorded under
-> [Deviations](#deviations).
-
 ## Scope
 
 ### Included
@@ -306,20 +299,16 @@ patch version instead.
 
 ## Deviations
 
-Recorded against the Go-era version of this guide, which the stack move left
-stranded.
+Recorded against the previous version of this guide.
 
 | The guide said | What shipped |
 |---|---|
-| GoReleaser with a `.goreleaser.yaml` | Compose Desktop's `nativeDistributions` and `jpackage`. One tool owns packaging, as the guide itself asked — it just is not that one. |
+| A dedicated release tool driven by its own config file | Compose Desktop's `nativeDistributions` and `jpackage`. One tool owns packaging, as the guide itself asked — it just is not that one. |
 | `.tar.gz` and `.zip` archives containing an executable | Native `.dmg`, `.deb`, and `.msi` installers. There is no loose executable to archive, and an installer is what "launch it" means on a desktop. |
 | Six targets, including Windows ARM64 | Five. Windows on ARM has no dependable JDK 25 build to `jlink` from; the x86-64 installer runs under emulation, and the README says so. |
-| `CGO_ENABLED`, `-trimpath`, Go module verification, an npm lockfile pre-hook | Gone with Go and the SPA. The Gradle version catalog and wrapper are what pin this build. |
-| Embedded `index.html`, WebView2 detection, a missing-WebKitGTK message | Gone with the browser. Compose renders through Skia, which the installer carries. |
-| `GET /api/health`, a session token, loopback binding, CSP and Origin checks | Deleted in the stack move. There is no server to health-check and no token to reject. |
+| A separate lockfile pre-hook to pin dependencies | The Gradle version catalog and wrapper are what pin this build. |
 | A `version` subcommand | `--version`, which is what a desktop launcher can be given. |
 | "Each archive contains the executable plus the license" | The license is set through `licenseFile` so the installer presents it; there is no archive for a user to open. |
-| Source maps and a frontend dependency audit | Not applicable. |
 
 Two further notes:
 

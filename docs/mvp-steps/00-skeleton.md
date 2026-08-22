@@ -6,11 +6,9 @@ Produce the smallest end-to-end application that proves the chosen architecture:
 
 This milestone is about retiring architecture and packaging risk. It is not a miniature connection manager or SQL IDE.
 
-> **This is a rewrite, not a fresh start.** The Go implementation of M0 and M1 is tagged `go-implementation`. Read it while working — the vault design, the error classification, and the M1 test cases are worth carrying over as *designs*, even though none of the code is. Resist translating Go line by line: coroutines replace `context.Context` plumbing, and `use {}` replaces `defer`.
-
 ## Why the window comes first
 
-The previous stack spent M0–M4 in a browser and planned to acquire a native window at the end. Compose inverts that: you get a window in the first hour, and every milestone after this one is a real application. The packaging risk that used to be deferred to release week is retired here instead, in the milestone that exists specifically to retire risk.
+Compose gives you a window in the first hour, so every milestone after this one is a real application. The packaging risk a project can easily defer to release week is retired here instead, in the milestone that exists specifically to retire risk.
 
 That is why M0 ends at an *installer*, not at a `./gradlew run`. Running from Gradle proves nothing about whether a stranger can use this.
 
@@ -196,8 +194,7 @@ An installer produced by `./gradlew :app:packageDistributionForCurrentOS`, insta
 ## Implementation notes
 
 Status: **complete** (Kotlin). Verified on 2026-08-20 on macOS 15 (arm64) against
-PostgreSQL 16 in Docker. The Go implementation of this milestone is tagged
-`go-implementation`.
+PostgreSQL 16 in Docker.
 
 ### Versions used
 
@@ -255,17 +252,13 @@ it; the measurement stays in the code because M5 has to check this number again.
 | Packaging output can be redirected out of `build/` | `codesign` refuses to sign an app image carrying a `com.apple.FinderInfo` xattr, and iCloud Drive attaches one to everything it syncs — which breaks `jpackage` for any checkout inside a synced folder. `-Pcaracal.distributionsDir=…` (or `CARACAL_DISTRIBUTIONS_DIR`) points the output somewhere local. Default behaviour is unchanged. |
 | The installer was not yet installed on a machine with no JDK | The exit criterion's final step is a clean-machine install. The bundle carries its own 13-module runtime and was launched from the packaged binary, but a JDK exists on this machine, so that step is still owed. |
 
-### Carried over from the Go implementation
+### Settled decisions
 
 These decisions were made once and still hold. Do not re-litigate them:
 
 - Errors returned to the UI never contain the host, port, username, or connection string.
 - Readiness and health checks are ordinary calls, not a privileged side channel.
 - The temporary hardcoded connection is scaffolding and is removed in M1.
-
-### No longer applicable
-
-The Go M0 carried a loopback HTTP server, a session token, an `Origin` check, a CSP, and a browser opener. All of it existed to make an HTML UI safe to serve, and all of it is gone. Do not reintroduce any of it — an in-process Compose UI has no such boundary to defend.
 
 ### Verification record
 

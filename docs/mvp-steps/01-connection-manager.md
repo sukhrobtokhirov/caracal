@@ -17,7 +17,7 @@ For each connection, the UI shows name, engine, host and port, database/index, e
 
 ### Included
 
-- Pure-Go SQLite configuration store
+- SQLite configuration store
 - First-run master-password setup and later unlock flow
 - Argon2id key derivation and AES-GCM secret sealing
 - PostgreSQL and Redis connection CRUD
@@ -107,7 +107,7 @@ Later runs:
 3. Attempt to open the verifier.
 4. Unlock only if authenticated decryption succeeds.
 
-Do not store the master password, derived key, or plaintext verifier. Clear references to sensitive byte slices when practical, understanding that Go does not guarantee perfect memory erasure.
+Do not store the master password, derived key, or plaintext verifier. Clear references to sensitive byte arrays when practical, understanding that the JVM does not guarantee perfect memory erasure.
 
 Set a minimum master-password length for accidental weak-password prevention, but explain that the local threat model and Argon2id cost matter more than arbitrary composition rules. Rate-limit repeated unlock attempts within the process.
 
@@ -160,7 +160,7 @@ Recommended test operations are PostgreSQL `Ping` and Redis `PING`. Apply short 
 - If a saved connection changes host, TLS, user, database, or secret, close and invalidate its old runtime client.
 - Close all clients during application shutdown.
 
-Do not write decrypted configuration to temporary files or store it in React state.
+Do not write decrypted configuration to temporary files or hold it in UI state.
 
 ### 1.6 Build the connection UI
 
@@ -248,10 +248,7 @@ Real PostgreSQL and Redis connections can be saved securely, survive a restart, 
 ## Implementation notes
 
 Status: **complete** (Kotlin). Verified on 2026-08-20 on macOS 15 (arm64) against
-PostgreSQL 16 and Redis 7 in Docker. The Go implementation of this milestone is
-preserved under the `go-implementation` git tag; its designs — the vault, the
-secret-change contract, the locked-state rules, the schema versioning — carried
-over intact, and its HTTP shape did not.
+PostgreSQL 16 and Redis 7 in Docker.
 
 ### Versions used
 
@@ -265,12 +262,12 @@ Everything else is unchanged from [M0](00-skeleton.md#versions-used).
 
 ### Decisions this guide left open
 
-- **The secret-change contract is a sealed type, not a flag pair.** Go needed
-  `{"changed": bool, "value": string}` because JSON has no sum type and an empty
-  password field must not be read as "delete the credential". Kotlin has
-  `SecretUpdate.Unchanged | Clear | Replace`, so the ambiguity cannot be
-  expressed: a form that submits an empty password field sends `Unchanged`, and
-  removing a credential takes a deliberate `Clear`.
+- **The secret-change contract is a sealed type, not a flag pair.** A `changed`
+  boolean beside a `value` string leaves an empty password field ambiguous — it
+  could mean "unchanged" or "delete the credential". `SecretUpdate.Unchanged |
+  Clear | Replace` cannot express that ambiguity: a form that submits an empty
+  password field sends `Unchanged`, and removing a credential takes a deliberate
+  `Clear`.
 - **Locked state covers listing, not just secrets.** Every `ConnectionService`
   operation requires an unlocked vault. Summaries carry no credentials, but they
   are still a map of where this user's databases live.

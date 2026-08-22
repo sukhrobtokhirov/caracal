@@ -309,9 +309,9 @@ gap** and the one guarding the precision guarantee §6.1 is built around.
 ## 9. Release prerequisite
 
 The spec's prerequisite is "v0.1.0 tagged and released from current `main`". Neither
-holds: the only tag is `go-implementation` (from the pre-Kotlin implementation), and
-the working branch is `master`, not `main`. `gradle.properties` says `version=0.1.0`
-and the release workflow refuses a tag that disagrees with it.
+holds: the repository has no tags at all, and the working branch is `master`, not
+`main`. `gradle.properties` says `version=0.1.0` and the release workflow refuses a
+tag that disagrees with it.
 
 Phase 0 is test-only and safe to do ahead of the tag. Phase 1 onward should wait for
 it, since v0.1.0 is the baseline every migration test is written against.

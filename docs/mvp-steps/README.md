@@ -6,8 +6,6 @@ The source plan remains the product and architecture contract. These guides expl
 
 The product is a native desktop IDE for PostgreSQL and Redis — the category of DataGrip, DBeaver, and TablePlus. It is built in **Kotlin with Compose Multiplatform for Desktop**. There is no browser, no webview, and no HTTP server anywhere in it: the UI calls suspend functions in the same process as the database code.
 
-> **Stack move, 2026-08-20.** M0 and M1 originally shipped in Go with a React SPA served over loopback HTTP and viewed in a browser. The project moved to Kotlin/Compose; the Go implementation is preserved under the `go-implementation` git tag. Plan [§10](../../db-ide-mvp-plan.md#10-stack-move-record--2026-08-20) records what carried over. Where these guides describe *behavior*, the content survived the move intact — it was always about databases, not languages. Where they described HTTP endpoints, JSON envelopes, or browser concerns, it has been removed rather than translated.
-
 ## How to use these documents
 
 Work through the steps in order. A later step may rely on interfaces or decisions established by an earlier one. Do not begin the next milestone until the current milestone's acceptance scenario works from a clean build.
@@ -31,7 +29,7 @@ Within each guide:
 | M4 | [Product polish](04-product-polish.md) | Daily-use workflow with history, tabs, shortcuts, and clear errors | M2 and M3 |
 | M5 | [Release](05-release.md) | Reproducible cross-platform v0.1.0 installers and contributor docs | M4 |
 
-There is no desktop-shell milestone. Compose opens a real window in M0, so every milestone after it is a working application rather than a browser tab with a promise attached.
+There is no desktop-shell milestone. Compose opens a real window in M0, so every milestone after it is a working application.
 
 ## Rules that apply to every step
 

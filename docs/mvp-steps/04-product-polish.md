@@ -81,7 +81,7 @@ Suggested response:
 }
 ```
 
-Use an opaque cursor so the frontend does not construct SQLite predicates. `DELETE` clears either all history or one connection after an explicit confirmation and Origin check. It does not delete saved connections.
+Use an opaque cursor so the caller does not construct SQLite predicates. Clearing removes either all history or one connection's, after an explicit confirmation. It does not delete saved connections.
 
 History contains sensitive SQL. Keep it local, exclude it from normal logs, and make clearing discoverable. Do not send history to analytics or crash services.
 
@@ -115,7 +115,7 @@ Each SQL tab owns:
 - stable in-process tab ID;
 - connection ID and captured environment/read-only display state;
 - title, initially derived from the statement or `Untitled`;
-- SQL text and CodeMirror editor state;
+- SQL text and editor state;
 - dirty/clean flag;
 - active query ID and execution state;
 - latest result/error for that tab;
@@ -147,15 +147,13 @@ Recommended low-risk additions:
 
 | Action | macOS | Windows/Linux |
 |---|---|---|
-| New SQL tab | `Cmd+T` only if browser handling is safely prevented in app context | `Ctrl+T` with same caveat |
+| New SQL tab | `Cmd+T` | `Ctrl+T` |
 | Close active tab | `Cmd+W` only with reliable dirty-state handling | `Ctrl+W` with same caveat |
 | Cancel active query | `Cmd+.` | `Ctrl+.` |
 | Focus schema/key search | `Cmd+Shift+F` | `Ctrl+Shift+F` |
 | Show shortcuts | `Cmd+/` | `Ctrl+/` |
 
-The `Cmd/Ctrl+T` and `Cmd/Ctrl+W` caveats exist only because this milestone still runs in a browser tab. [M5](05-desktop-shell.md) removes the browser and revisits both, along with the native menu accelerators — so treat them as provisional here and do not ship the caveat wording in user-facing help text.
-
-Do not intercept shortcuts while a confirmation dialog, dropdown, or text field needs the same keys, except for an explicit global Escape behavior. Respect CodeMirror's own undo, redo, search, and selection keymaps.
+Do not intercept shortcuts while a confirmation dialog, dropdown, or text field needs the same keys, except for an explicit global Escape behavior. Respect the editor's own undo, redo, search, and selection keymaps.
 
 Expose shortcuts in button tooltips and a searchable help dialog. Use platform-appropriate labels detected at runtime. Every shortcut action must also be reachable by pointer and assistive technology.
 
@@ -181,13 +179,13 @@ Production connections must keep their red `PROD` label inside the switcher and 
 
 ### 4.6 Standardize error presentation
 
-Create one normalized frontend error model matching the backend envelope. Decide presentation by scope:
+Create one normalized error model shared by every surface. Decide presentation by scope:
 
 - **Field error:** invalid form input, attached to the field.
 - **Inline panel error:** schema node, result tab, Redis value, dashboard section.
 - **Banner:** locked state, disconnected connection, production/read-only context, global server issue.
 - **Toast:** transient success or non-blocking notification; never the only home for an actionable error.
-- **Fatal boundary:** unexpected React render failure, with a safe reload/recovery action.
+- **Fatal boundary:** an unexpected render failure, with a safe reload/recovery action.
 
 Every error should answer what failed, whether work/data was changed, and what the user can do next. Avoid raw driver text when a stable explanation exists, but preserve useful PostgreSQL SQLSTATE, detail, and hint fields from M2.
 
@@ -233,7 +231,7 @@ Token categories should cover:
 - grid header, alternating row if used, NULL, and selected cell;
 - Redis type badges and connection colors with adequate contrast.
 
-Persist only the theme preference locally; it is non-sensitive. Apply the preferred theme before first paint to avoid a bright flash. Test native controls, scrollbars where styleable, CodeMirror, grid overlays, dialogs, JSON views, and focus indicators in both themes.
+Persist only the theme preference locally; it is non-sensitive. Apply the preferred theme before first paint to avoid a bright flash. Test native controls, scrollbars where styleable, the editor, grid overlays, dialogs, JSON views, and focus indicators in both themes.
 
 Do not use low-contrast gray text as the only difference for NULL or disabled state. Meet WCAG AA contrast for normal text and visible keyboard focus where practical.
 
@@ -258,10 +256,10 @@ Exercise normal and intentionally awkward workloads:
 - many Redis scan pages and prefix nodes;
 - 50+ open history entries and 20 tabs;
 - rapid tab/connection switches while a query is running;
-- backend restart while the SPA remains open;
-- expired session token/process replacement.
+- a connection dropping while the window remains open;
+- the vault locking out from under open work.
 
-Look for listener leaks, stale requests updating the wrong tab, excess re-rendering, retained large results, and unbounded caches. Cancel obsolete frontend requests with `AbortController`; backend contexts should end when clients disconnect.
+Look for listener leaks, stale requests updating the wrong tab, excess recomposition, retained large results, and unbounded caches. Cancel obsolete work by cancelling the scope that owns it; closing a tab or a connection must end the work it started.
 
 Keep at most a bounded number/size of result models in memory. If evicting an old result, preserve its query text and show that the result must be rerun.
 
@@ -300,11 +298,10 @@ Recorded as the milestone is implemented, per the process in [`README.md`](READM
 
 ### 4.1 and 4.2 — query history
 
-**There is no HTTP API, so there are no endpoints.** The stack move removed the
-loopback server; `GET /api/history` is `ConnectionService.history(HistoryQuery)` and
-`DELETE /api/history` is `ConnectionService.clearHistory(HistoryScope)`, both
-`suspend fun`s called in-process. The Origin check has nothing to check. What
-survived the translation intact is everything the section was actually about: a
+**There is no HTTP API, so there are no endpoints.** `GET /api/history` is
+`ConnectionService.history(HistoryQuery)` and `DELETE /api/history` is
+`ConnectionService.clearHistory(HistoryScope)`, both `suspend fun`s called
+in-process. What survives intact is everything the section was actually about: a
 bounded default page, a hard ceiling, keyset pagination, an opaque cursor, an
 optional connection and status filter, and a deletion whose scope is explicit.
 
@@ -318,10 +315,10 @@ by it. The retention prune was reading the same broken order and now reads the n
 one.
 
 **The read does not resolve the connection's display information.** The guide asks
-for it because a browser SPA cannot join against a table it has no copy of. The
-panel here is handed the connection list the workspace already holds, so it reads the
-name, colour, and environment live — which is *more* current than a value copied into
-the response, and one less projection type in `:core`. The cascade still guarantees
+for it because a client in another process cannot join against a table it has no
+copy of. The panel here is handed the connection list the workspace already holds, so
+it reads the name, colour, and environment live — which is *more* current than a value
+copied into the response, and one less projection type in `:core`. The cascade still guarantees
 every history row has a connection to look up.
 
 **The cursor is opaque by visibility rather than by encoding.** `HistoryCursor`
@@ -426,12 +423,6 @@ them has already spoken for, and the user would get whichever won, differently
 depending on where the caret was. One rule instead: Meta on macOS, Control everywhere
 else, matched and drawn from the same table.
 
-**The `Cmd/Ctrl+T` and `Cmd/Ctrl+W` caveats do not apply and have not been carried
-forward.** The section marks both provisional because the milestone "still runs in a
-browser tab" and points at M5 to revisit them. The stack move removed the browser
-before M0 shipped, and there is no M5 to revisit anything — this is a Compose window,
-`⌘T` and `⌘W` reach it, and nothing else wants them. Both are ordinary shortcuts here.
-
 **`Cmd/Ctrl+Shift+F` focuses the key search only.** The schema tree has no search box
 to focus. Adding one is not in this milestone's included scope, and a chord that
 sometimes does nothing is worse than one that is honestly described, so the reference
@@ -486,10 +477,9 @@ does not pull the caret out of wherever the user has since put it.
 ### 4.6 — error presentation
 
 **The normalized model was already there, and it is `Failure`.** The section asks for
-a frontend error model matching the backend envelope; there is no envelope and no
-frontend, so `:core` throws and `Throwable.toFailure()` classifies. Every surface
-renders the same `Failure` — code, message, and the structured server report when
-there is one — through the same `ErrorBanner`. What M4 added is the one field the
+one error model shared by every surface: `:core` throws and `Throwable.toFailure()`
+classifies. Every surface renders the same `Failure` — code, message, and the
+structured server report when there is one — through the same `ErrorBanner`. What M4 added is the one field the
 banner had no way to carry: a note the *application* is making about the error, as
 opposed to something the server said, set in italic below the report.
 
@@ -503,11 +493,10 @@ reports success transiently, and the section's own rule is that a toast must nev
 an actionable error's only home.
 
 **There is no fatal boundary, because Compose Desktop has no equivalent to one.** A
-React error boundary catches a render failure in a subtree and swaps in a fallback;
-a composition that throws here takes the window with it, and there is no supported
-way to isolate a subtree. What exists instead is the one failure that can happen
-before there is a UI to fail in: `Startup.Failed` renders the vault-unavailable
-screen rather than a stack trace on a terminal nobody is watching.
+composition that throws takes the window with it, and there is no supported way to
+isolate a failing subtree behind a fallback. What exists instead is the one failure
+that can happen before there is a UI to fail in: `Startup.Failed` renders the
+vault-unavailable screen rather than a stack trace on a terminal nobody is watching.
 
 **A highlight is drawn only while the script still reads the way it was sent.**
 This is the section's hardest requirement and the reason it was left until last. The
@@ -822,14 +811,11 @@ closed one at a time, is a direct test of whether closing a tab releases what it
 owned. The same for locking with twenty running. Both would have leaked quietly;
 neither can now.
 
-**Two of the listed workloads were browser-era and are gone rather than translated.**
-"Cancel obsolete frontend requests with `AbortController`" is coroutine cancellation,
-which is how every call in this application has worked since M0 — a cancelled job
-cancels the JDBC statement from another thread. "Expired session token / process
-replacement" has no counterpart: there is no session and no token, and its nearest
-equivalent — the vault locking out from under open work — is tested from §4.3. A
-backend restart is a connection dropping while the window stays open, which §4.7 gave
-its own pane.
+**Cancellation and disconnection are covered elsewhere.** Cancelling obsolete work is
+coroutine cancellation, which is how every call in this application has worked since
+M0 — a cancelled job cancels the JDBC statement from another thread. The vault locking
+out from under open work is tested from §4.3, and a connection dropping while the
+window stays open is the pane §4.7 gave it.
 
 **Not measured against a real server at scale.** Everything above is asserted against
 the fake. A thousand rows of a hundred columns from a real PostgreSQL, and a keyspace

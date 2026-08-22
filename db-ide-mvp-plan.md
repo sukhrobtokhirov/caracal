@@ -6,8 +6,6 @@ The product category is DataGrip, DBeaver, and TablePlus: an application you lau
 
 Detailed implementation guides: [`docs/mvp-steps/`](docs/mvp-steps/README.md). Each M0–M5 milestone has its own feature specification, work packages, tests, and completion checklist.
 
-> **Stack history.** M0 and M1 were built in Go with a React SPA in a browser. The project moved to Kotlin/Compose on 2026-08-20 so it is written in the language its author is actually fluent in, and to reach JDBC's engine breadth. The Go implementation is preserved under the `go-implementation` tag. §10 records what carried over and what did not — the engine behavior in §5 is most of this document's value, and nearly all of it survived the move.
-
 ---
 
 ## 0. Scope contract
@@ -71,9 +69,7 @@ One process. One window. Two Gradle modules.
 
 **Why this shape:** you write Kotlin, which is the single largest factor in whether this ships. Compose gives a real native window with no browser chrome and no webview to feed. JDBC means the second, third, and fourth SQL engine are cheap when you want them. `jpackage` bundles a trimmed JVM, so nobody installs Java to run it.
 
-**The one hard rule: `:core` never depends on Compose.** Domain types, the vault, the store, the registry, and both engine adapters are plain JVM code, testable headlessly with JUnit and Testcontainers, with no window and no display server. This is what keeps the test suite fast and meaningful, and it is what the previous stack's HTTP boundary was buying — kept here as a module boundary that costs nothing at runtime.
-
-**What the move deleted.** The old design served the UI over loopback HTTP, so it needed a session token, an `Origin` check, a CSP, and a defense against DNS rebinding. None of that exists any more: the UI calls suspend functions in the same process. An entire attack surface and roughly a milestone of work disappeared with the browser. §2 is short now for a real reason, not because the bar dropped.
+**The one hard rule: `:core` never depends on Compose.** Domain types, the vault, the store, the registry, and both engine adapters are plain JVM code, testable headlessly with JUnit and Testcontainers, with no window and no display server. This is what keeps the test suite fast and meaningful, and it is a module boundary that costs nothing at runtime.
 
 ### Tech choices
 
@@ -88,7 +84,7 @@ One process. One window. Two Gradle modules.
 | Argon2id | BouncyCastle `Argon2BytesGenerator` | Pure Java — no JNI, so packaging stays simple |
 | AES-256-GCM | JCA (`AES/GCM/NoPadding`) | In the JDK; add no dependency for this |
 | SQL editor | RSyntaxTextArea inside `SwingPanel` | See §5.8 — this is a deliberate compromise |
-| Grid | Hand-built on `LazyColumn` | See §5.9 — this is the largest single frontend cost |
+| Grid | Hand-built on `LazyColumn` | See §5.9 — this is the largest single UI cost |
 | Async | kotlinx.coroutines + virtual threads | JDBC blocks; virtual threads make that cheap on JDK 21+ |
 | Build | Gradle (Kotlin DSL) + Compose plugin | `packageDistributionForCurrentOS` wraps `jpackage` |
 | Tests | JUnit 5 + Testcontainers | Real PostgreSQL and Redis in CI, not mocks |
@@ -101,7 +97,7 @@ One process. One window. Two Gradle modules.
 
 ## 2. Security
 
-The HTTP threat model is gone with the browser. What remains is the part that always mattered: this process holds live production database credentials on disk and in memory.
+There is no network surface to defend. What remains is the part that always mattered: this process holds live production database credentials on disk and in memory.
 
 1. **Credential encryption.** Master password → Argon2id → AES-256-GCM sealed secrets in SQLite. The derived key lives only in memory and is discarded on lock.
 2. **Never log credentials, connection strings, Redis command arguments, or parameterized query values** at default verbosity. `SQLException` messages and JDBC URLs both leak; scrub before logging.
@@ -155,7 +151,7 @@ Use plain JDBC and hand-written migrations. Do not reach for JPA/Hibernate here:
 
 ## 4. Internal API surface
 
-There is no network API any more. What was a list of HTTP endpoints is now a set of `:core` interfaces the UI calls directly. Keep them boring and small — and keep them `suspend`, so cancellation propagates from a closed tab down to `Statement.cancel()` without any plumbing of your own.
+There is no network API. `:core` exposes a set of interfaces the UI calls directly. Keep them boring and small — and keep them `suspend`, so cancellation propagates from a closed tab down to `Statement.cancel()` without any plumbing of your own.
 
 ```kotlin
 interface ConnectionService {
@@ -281,7 +277,7 @@ The console should block by default, with an explicit override toggle: `FLUSHALL
 
 ### 5.8 The SQL editor
 
-Compose has no code editor. This is the first thing the stack move cost you, and it is worth being clear-eyed about the options:
+Compose has no code editor, and it is worth being clear-eyed about the options:
 
 - **`BasicTextField` + `VisualTransformation`.** Pure Compose, no interop. Re-highlights the whole document on every keystroke, so it degrades on large scripts. Fine for a 20-line query, painful for a 2000-line migration file someone pastes in.
 - **RSyntaxTextArea inside `SwingPanel`.** A mature Swing editor — syntax highlighting for SQL, code folding, find/replace, bracket matching — embedded through Compose's Swing interop. This is the recommended path: it is a known pattern, and it buys you an editor that is already better than what you would build in three weekends.
@@ -312,7 +308,7 @@ Do not skip the copy path. A grid you cannot copy out of fails the definition of
 
 Sized for evenings and weekends alongside a full-time job. Each milestone ends in something you can actually use.
 
-The desktop shell is not a milestone any more. Compose gives you a window in the first hour, so M0 opens one and every milestone after it is a real application rather than a browser tab with a promise attached.
+There is no desktop-shell milestone. Compose gives you a window in the first hour, so M0 opens one and every milestone after it is a real application.
 
 ### M0 — Skeleton (week 1)
 Gradle build, Compose window, one hardcoded PG connection via JDBC, a button that runs `SELECT 1` and shows the result, `packageDistributionForCurrentOS` producing an installer.
@@ -369,39 +365,9 @@ If you switch back, note exactly why. That's your v0.2 backlog, written by the o
 |---|---|
 | The grid and editor are now your code, not dependencies | This is the defining risk of the stack choice. Spike both before M2 starts; M2 is budgeted three weeks for exactly this reason |
 | `SwingPanel` interop constrains the editor's UI | Prototype overlap behaviour early. Keep popups outside the editor rectangle or fall back to `BasicTextField` |
-| Motivation dies re-implementing what already worked in Go | M0 and M1 are a known problem in a new language — the fastest part of the rewrite. Get to M2 quickly, where the new work is |
 | JVM startup and memory make it feel like DBeaver | Measure cold start from M0 and treat it as a budget, not an outcome. `jlink` a minimal runtime; keep the vault derivation off the startup path until unlock |
 | pgjdbc buffers a huge result set into heap | §5.3 — autocommit off plus fetch size, and `setMaxRows` as a backstop. Test with a deliberately enormous table before M2 closes |
-| Frontend work is most of the effort and it's your weaker side | Unchanged by the stack move, and slightly worse. Budget accordingly |
+| UI work is most of the effort and it's your weaker side | Budget accordingly |
 | Jewel's API churn breaks your UI | Do not build on it. Evaluate it in M4 as theming over components you already own |
 | Two engines double the surface before either is good | Ship PG-only as v0.1 if week 6 arrives and M2 isn't done. Redis in v0.2 is fine |
 | A data-loss bug destroys trust permanently | MVP is read-only for a reason. Keep it that way until the foundations are solid |
-
----
-
-## 10. Stack move record — 2026-08-20
-
-**Carried over unchanged.** §0 scope contract, §3 local schema, §5.1 SQL splitting, §5.5–5.7 Redis behaviour, §7 definition of done, §8 open-source mechanics. This is the majority of the plan's value: it is product and engine reasoning, not language reasoning.
-
-**Simplified by the move.**
-
-| Was | Now |
-|---|---|
-| HTTP API, session token, `Origin` check, CORS, CSP, DNS-rebinding defense | Deleted. The UI calls suspend functions in-process |
-| JSON wire format with stringified `numeric`/`int8` | Deleted. `BigDecimal` and `Long` reach the cell renderer intact |
-| A separate M5 milestone to acquire a native window | Deleted. Compose opens one in M0 |
-| `context.Context` plumbed through every layer | Structured concurrency; a tab's scope cancels its query |
-| Two-language build (Go + Node), two test runners | One language, one build, one test runner |
-
-**Made harder by the move.**
-
-| Was | Now |
-|---|---|
-| CodeMirror 6 | RSyntaxTextArea via Swing interop, with the constraints in §5.8 |
-| TanStack Table + TanStack Virtual | A grid you build on `LazyColumn` — §5.9 |
-| ~20 MB pure-Go binary, trivially cross-compiled | ~60–100 MB installer with a bundled runtime, built per platform |
-| Instant cold start | JVM startup, which needs measuring and budgeting |
-
-**Unchanged in difficulty.** Everything in §5.2 through §5.7 that is really about databases rather than about languages.
-
-The Go implementation is tagged `go-implementation`. Do not delete the tag: the M1 vault design and its test cases are worth reading while rebuilding them in Kotlin.

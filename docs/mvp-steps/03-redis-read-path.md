@@ -23,7 +23,7 @@ The defining rule is that browsing must never block Redis the way `KEYS *` can. 
 
 - Bounded `SCAN` key browser with pattern and type filter
 - Pipelined `TYPE`, `TTL`, and `MEMORY USAGE` metadata
-- Prefix-tree grouping in the frontend
+- Prefix-tree grouping in the UI
 - Type-aware, paged value viewers
 - TTL and memory display
 - Selected `INFO` metrics
@@ -57,10 +57,10 @@ Every endpoint verifies that the saved connection exists, is Redis, is unlocked,
 Use base-10 cursor strings in JSON and URLs. Redis cursors are unsigned 64-bit values, which can exceed JavaScript's exact integer range. Never serialize them as JSON numbers.
 
 > **Note, 2026-08-21 — there are no endpoints, and the cursor rule survives anyway.**
-> The five routes above are the Go build's, and the stack move deleted the wire they
-> travelled on. They are now suspend functions: `RedisAdapter.info`, `.scan`,
-> `.metadata`, `.value`, and `.execute`, reached through `ConnectionService`, which is
-> where "exists, is Redis, is unlocked, has an open client" is checked — `redis(id)`
+> The five routes above name operations, not a wire protocol. They are suspend
+> functions: `RedisAdapter.info`, `.scan`, `.metadata`, `.value`, and `.execute`,
+> reached through `ConnectionService`, which is where "exists, is Redis, is unlocked,
+> has an open client" is checked — `redis(id)`
 > asks the registry, and the registry hands back a Redis client or throws
 > `WrongEngineException`. There is no routing, so "key names are data, not path
 > segments" is now stronger than it was: a key is a `RedisKey` carrying bytes, and
@@ -154,7 +154,7 @@ Do not pipeline an unbounded number of commands. Since three commands are issued
 
 The key list is the source of truth; the prefix tree is a presentation derived from keys already returned. It must not trigger hidden full-database scans.
 
-Frontend behavior:
+UI behavior:
 
 - Search input uses Redis glob syntax and explains common forms such as `user:*`.
 - Type filter supports string, hash, list, set, zset, and stream.
@@ -304,7 +304,7 @@ Server behavior:
 - Limit nesting depth, elements, and total bytes. Return truncation metadata rather than consuming unbounded memory.
 - Record duration and safe command name. Do not log full arguments.
 
-Console history in the frontend must avoid persistent storage for v0.1 because arguments can contain secrets. Keep it in memory for the current session only.
+Console history in the UI must avoid persistent storage for v0.1 because arguments can contain secrets. Keep it in memory for the current session only.
 
 ### 3.10 Enforce the dangerous-command guard
 
@@ -323,13 +323,13 @@ The check is server-side and cannot be bypassed by whitespace, casing, or splitt
 
 Override behavior:
 
-- The frontend exposes a temporary **Allow dangerous command** toggle only after a warning.
+- The UI exposes a temporary **Allow dangerous command** toggle only after a warning.
 - The toggle resets after one execution and is never saved.
 - The request includes explicit acknowledgement; the server still validates the command.
 - On `prod`, require typed confirmation containing the connection name plus command name.
 - On `read_only`, dangerous commands remain blocked regardless of override.
 
-For read-only connections, use a conservative allowlist for the raw console rather than attempting to enumerate every write command. Include common introspection/read operations needed by the tool and reject unknown commands with `command_not_allowed_read_only`. The dedicated browser endpoints remain the preferred safe path.
+For read-only connections, use a conservative allowlist for the raw console rather than attempting to enumerate every write command. Include common introspection/read operations needed by the tool and reject unknown commands with `command_not_allowed_read_only`. The dedicated key-browser operations remain the preferred safe path.
 
 Database ACLs are the final control. The UI guard reduces accidents but does not replace Redis ACL configuration.
 
@@ -380,9 +380,9 @@ Run against a disposable Redis server containing:
 - read-only ACL user;
 - large/nested command replies.
 
-Assert that key-browser code never issues `KEYS`, `HGETALL`, `SMEMBERS`, or unbounded range reads. Where practical, inspect a command log in the disposable server/test client.
+Assert that key-browser code never issues `KEYS`, `HGETALL`, `SMEMBERS`, or unbounded range reads. Where practical, inspect a command log in the disposable test client.
 
-### Frontend tests
+### UI tests
 
 - scan pagination through empty intermediate pages;
 - pattern/type reset behavior and deduplication;
