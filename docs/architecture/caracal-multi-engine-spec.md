@@ -526,6 +526,41 @@ Migration in `Vault.kt`:
 Do not touch `Kdf.kt` parameters during this work. Argon2id parameter changes are a
 separate, independently-tested change with its own migration path.
 
+> **Done in Phase 4, with four departures from what is written above.**
+>
+> - **The record is bytes, not a `JsonObject`.** kotlinx.serialization's JSON reads
+>   and writes through `String`, so a JSON payload would put every password into an
+>   immutable object that cannot be wiped and that only a garbage collector under no
+>   obligation to hurry will release. `Secret`, `Kdf.deriveKey` and
+>   `Connection.kt`'s `charsToUtf8` all exist to avoid exactly that, and the decrypt
+>   path is the last place it can afford to be undone. `VaultRecord.kt` encodes a
+>   version byte, a kind byte, and length-prefixed fields.
+> - **There is one version number, and it is the leading byte.** The `schemaVersion`
+>   field inside a serialized object can disagree with the byte that says how to
+>   parse the object, and the one that has to be trusted is the one read first. The
+>   `VaultRecord` type still carries `schemaVersion`; what it does not do is store it
+>   twice.
+> - **A v1 record becomes `kind = "password"`, not `"user_password"`.** The spec's
+>   legacy shape is `{user, password}`; this repo's is the password alone, because
+>   the user has never been in the vault. Since Phase 3 it is an engine-declared form
+>   field, edited on the connection dialog and stored in `connection_settings`.
+>   Copying it into the record as well would give one fact two homes that an ordinary
+>   edit could make disagree, and the disagreement would surface as an authentication
+>   failure against a value the user cannot see. `ConnectionConfig.resolveSecret`
+>   composes the pair at dial time instead, which is what the old `secretBundle` did.
+> - **The migration is per record, not one transaction.** "Idempotent, and a crash
+>   leaves every record readable by either version" is the property that matters, and
+>   a transaction is not what buys it — reading both versions is. One statement per
+>   credential means an interrupted run leaves a mix, every row still opens, and the
+>   next unlock finishes the rest. `Vault.migrateRecords` runs before the key is
+>   installed, so no concurrent `lock` can wipe the array it is reading.
+>
+> The fixture is `core/src/test/resources/vault/v1-legacy.db` — a `.db` and not a
+> `.bin` because in this repo the vault *is* the configuration database. It is a real
+> schema-3 file, which is what v0.1.0 shipped, so unlocking it exercises the store
+> migration to schema 4 and the record migration to v2 in the order a real upgrade
+> does. `Kdf.kt` was not touched.
+
 ---
 
 ## 6. Values and errors — the precision-critical parts
@@ -1210,6 +1245,37 @@ in tests.
 **Acceptance:** v1 fixture unlocks, migrates, and is readable after migration. Kill the
 process mid-migration in a test (inject a failure after N records) and assert the vault
 still unlocks.
+
+> **Done 2026-08-22.** `./gradlew check` is green, and so is `:core:test` with
+> `CARACAL_INTEGRATION=1` against real PostgreSQL and Redis containers.
+>
+> Both acceptance criteria hold. `LegacyVaultFixtureTest` opens the checked-in v0.1.0
+> file, unlocks it, asserts every record was rewritten, and reopens the file in a
+> second `ConfigStore` — a restart — to read them back at version 2.
+> `VaultMigrationTest` injects the failure: the store refuses the third write, which
+> is what a killed process leaves behind, and the assertions are that the vault
+> unlocked anyway, that two records moved and three did not, that all five still
+> open, and that the next unlock finishes the rest.
+>
+> Three things are worth carrying forward.
+>
+> - **The bounds check on a field length was wrong, and a test found it.**
+>   `offset + length > source.size` overflows to a negative for a length near
+>   `Int.MAX_VALUE`, so a nine-byte record could ask the allocator for two gigabytes.
+>   Written as a subtraction now. It is the argument for hostile-input tests on a
+>   format that is parsed *after* decryption, where it is easy to assume the
+>   authentication tag has already made the bytes trustworthy — it has not; it has
+>   only made them the user's own.
+> - **`SecretBundle` reaches the driver without a copy.** `resolveSecret` wraps the
+>   opened record's own `CharArray` rather than duplicating it, and
+>   `ConnectionService.withSecret` wipes that array once the dial returns. The old
+>   code copied, and the copy was pure loss: the engine copies again for its own use,
+>   so the extra one existed only to be forgotten about.
+> - **Phase 5 is now unblocked and Phase 6 is the cheaper next step.**
+>   `SecretBundle.ClientCertificate` and `.Token` are storable but not yet reachable
+>   from any form: no engine declares a field that produces one. SQLite (§Phase 6)
+>   needs `SecretBundle.None` and nothing else, and it is the engine that will show
+>   whether the declared-form machinery survives an engine with no credentials at all.
 
 ### Phase 5 — Driver provisioning
 

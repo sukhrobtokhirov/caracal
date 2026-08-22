@@ -85,6 +85,19 @@ Note the last two: the spec lists `RedisKeyTree.kt` among core engine files, but
 key-tree grouping is presentation and lives in `:app`. The engine-side Redis code is
 `RedisSession`/`RedisAdapter`/`RedisModel` in `:core`.
 
+> **Phase 4 added `VaultRecord.kt` beside them.** It is the plaintext format inside a
+> sealed envelope — a version byte, a kind byte, and length-prefixed fields — and it
+> is where the answer to "what shape is this credential" now lives. `Seal.kt` no
+> longer knows: it encrypts whatever `encodeRecord` produced and hands back whatever
+> `decodeRecord` read. `Kdf.kt` is untouched, deliberately: Argon2id parameter changes
+> are their own change with their own migration.
+>
+> The vault also gained a second store interface. `MetadataStore` is the salt, the
+> cost parameters and the verifier; `SealedSecretStore` is the saved credentials, and
+> it exists so that migration on unlock has a way to reach them without the vault
+> importing the connection store. `ConfigStore` implements both, and `Main.kt` passes
+> it twice.
+
 ## 4. How tightly the UI is bound to concrete engines
 
 **Tightly.** Fourteen files under `app/src/main` import `dev.caracal.core.redis.*` or

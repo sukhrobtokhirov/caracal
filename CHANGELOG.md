@@ -38,6 +38,13 @@ version is 0, a minor bump may change behaviour.
   the form now says so before saving rather than letting the server refuse it.
 - **The connection test dials through the engine** instead of through a second,
   parallel implementation per engine. Same timeout, same classified errors, one path.
+- **A saved credential now records what kind of credential it is.** The vault stored
+  a password and the application worked out the rest from the connection's fields;
+  it now stores the credential's shape as well, so an engine that authenticates with
+  a client certificate, a connection string or an expiring token can say so. Records
+  written by v0.1.0 are read as they are, rewritten to the new format the first time
+  the vault is unlocked, and readable throughout. Nothing about an existing
+  connection changes, and no re-entry of a password is needed.
 
 **Internal — the seam a second wave of engines will arrive through.** No behaviour
 changes; every one of these is a refactor covered by the existing tests, including
@@ -64,6 +71,22 @@ the ones that run against real PostgreSQL and Redis servers.
   gives rather than a list kept in the UI. A test enforces it.
 - Connections are dialled through the engine rather than through a `when`, and the
   connection registry hands out one kind of session instead of one per engine.
+- A sealed credential's plaintext is a versioned record rather than the password's
+  bytes: a version byte, a kind, and length-prefixed fields. It is bytes and not JSON
+  on purpose — a JSON decode puts every password into an immutable `String` that no
+  code can wipe, which is the one thing the vault exists to avoid.
+- Migration runs on unlock, one record at a time, and skips a record already in the
+  current format. A run that is interrupted leaves a file in which some records are
+  in the old format and some in the new, every one of them still openable, and the
+  next unlock finishes the rest. A credential that will not decrypt at all is stepped
+  over rather than deleted, and never keeps the user out of the other connections.
+- A configuration file written by v0.1.0 is checked in as a test fixture — a real
+  schema-3 database with real sealed records — and is never regenerated. Its digest
+  is asserted, so replacing it has to be a deliberate, visible change.
+- The vault takes its sealed credentials through an interface of its own, separate
+  from the metadata one, so nothing that only needs to verify a password can reach a
+  saved credential.
+
 - The stored `require` TLS mode is now translated per engine on the way to a driver,
   because it means two different things: PostgreSQL encrypts without checking the
   server's certificate, Redis checks it. Both connections behave exactly as before;
@@ -95,6 +118,11 @@ the ones that run against real PostgreSQL and Redis servers.
   the byte bound was not.
 - A `bytea` cell over about a gigabyte overflowed its buffer size and escaped the
   adapter's error handling as "something went wrong".
+- A corrupted sealed credential naming a field length near `Int.MAX_VALUE` could
+  reach the allocator: the bounds check overflowed to a negative and passed. A
+  nine-byte record could ask for two gigabytes, and the unlock path answered with an
+  `OutOfMemoryError` rather than a message about a damaged file. Found by the test
+  that was written for it.
 - Brackets inside a quoted identifier took part in bracket matching, and matching
   scanned past the highlighter's limit, costing a full-document pass per keystroke.
 - Two Redis keys sharing a clipped display path crashed the key browser.
