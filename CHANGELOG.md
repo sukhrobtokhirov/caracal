@@ -179,6 +179,7 @@ tests written for them are part of what 0.1.0 ships.
 - Installers are unsigned. macOS and Windows will warn on first launch; the README
   documents the exact steps.
 - Windows on ARM has no installer yet; the x86-64 build runs under emulation.
+- Intel Macs have no installer; an Apple Silicon build will not run on one.
 - The result grid is read-only.
 - A forgotten master password cannot be recovered.
 

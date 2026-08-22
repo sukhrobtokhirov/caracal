@@ -22,7 +22,7 @@ nothing else. Nothing is ever published from a local `dist` directory.
 ## 2. Rehearse
 
 - [ ] Run the release workflow manually (**Actions → Release → Run workflow**). On
-      anything other than a tag it builds and smoke-tests all five installers and
+      anything other than a tag it builds and smoke-tests all four installers and
       creates no release. This is where a retired runner label, a missing WiX, or a
       jlink module that stopped being enough shows up — not on tag day.
 - [ ] Download each rehearsal artifact and check its size is in the expected range.
@@ -61,7 +61,7 @@ git push origin v0.1.0
 ```
 
 The workflow then verifies the tag against `gradle.properties`, runs the full test
-gate against the tagged commit, builds five installers on five runners, launches
+gate against the tagged commit, builds four installers on four runners, launches
 each packaged application to prove it starts, checksums everything, and creates a
 **draft** release. It never publishes.
 
@@ -76,7 +76,7 @@ cd /tmp/caracal-v0.1.0 && sha256sum --check --ignore-missing checksums.txt
 
 Then, on each platform you have access to:
 
-**macOS** (Apple Silicon and Intel)
+**macOS** (Apple Silicon)
 
 - [ ] The `.dmg` mounts, the app drags to Applications, and it launches from
       Finder and the Dock.
@@ -112,7 +112,7 @@ On every platform:
 - [ ] Restart, unlock, and both connections are still there.
 
 Whatever you could not test, say so in the release notes. A tested subset stated
-honestly is worth more than an untested claim of five platforms.
+honestly is worth more than an untested claim of four platforms.
 
 ## 7. Publish
 

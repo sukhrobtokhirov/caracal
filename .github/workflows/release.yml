@@ -2,7 +2,7 @@ name: Release
 
 # A release is built from a tag and from nothing else. The manual trigger exists to
 # rehearse the whole thing — every installer, every smoke test — without creating a
-# release, because the first time these five runners are exercised together should
+# release, because the first time these four runners are exercised together should
 # not be the day of the tag.
 on:
   push:
@@ -14,7 +14,7 @@ permissions:
 
 jobs:
   # Cheap, and first: a tag that disagrees with the version in the build would
-  # produce five installers named after a version nothing inside them claims.
+  # produce four installers named after a version nothing inside them claims.
   version:
     name: version
     runs-on: ubuntu-latest
@@ -43,10 +43,11 @@ jobs:
     needs: version
     uses: ./.github/workflows/ci.yml
 
-  # jpackage cannot cross-compile: one runner per artifact, no exceptions. Windows
-  # on ARM is missing from this matrix deliberately — see the README; the x86-64
-  # installer runs there under emulation until a Temurin build makes it worth its
-  # own runner.
+  # jpackage cannot cross-compile: one runner per artifact, no exceptions. Two
+  # platforms are missing deliberately — see the README. Windows on ARM runs the
+  # x86-64 installer under emulation. Intel macOS has no installer at all: GitHub
+  # retired the macos-13 runner, and an Apple Silicon dmg cannot stand in, because
+  # Rosetta translates x86-64 to Apple Silicon and never the other way.
   package:
     name: ${{ matrix.platform }} ${{ matrix.arch }}
     needs: [version, check]
@@ -59,14 +60,6 @@ jobs:
           - os: macos-latest
             platform: macos
             arch: arm64
-            ext: dmg
-          # The only Intel Mac GitHub hosts. If this label is retired, an Intel
-          # dmg needs a self-hosted runner or an honest note in the README that
-          # Intel Macs run the ARM build under Rosetta — it cannot be
-          # cross-built from an Apple Silicon runner.
-          - os: macos-13
-            platform: macos
-            arch: x86_64
             ext: dmg
           - os: ubuntu-latest
             platform: linux
@@ -121,7 +114,7 @@ jobs:
       # createDistributable is asked for by name because only the dmg path needs an
       # app image: on Linux and Windows, jpackage builds the installer straight from
       # the jar and never populates main/app, leaving the launch check below with
-      # nothing to start. Asking for both makes all five runners alike.
+      # nothing to start. Asking for both makes all four runners alike.
       - name: Package installer
         shell: bash
         run: ./gradlew :app:createDistributable :app:packageDistributionForCurrentOS

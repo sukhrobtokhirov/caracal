@@ -46,14 +46,15 @@ Installers for the current release are on the
 | Platform | File | Size |
 |---|---|---|
 | macOS (Apple Silicon) | `caracal_0.1.0_macos_arm64.dmg` | ~105 MB |
-| macOS (Intel) | `caracal_0.1.0_macos_x86_64.dmg` | ~105 MB |
 | Linux (x86-64) | `caracal_0.1.0_linux_x86_64.deb` | ~100 MB |
 | Linux (ARM64) | `caracal_0.1.0_linux_arm64.deb` | ~100 MB |
 | Windows (x86-64) | `caracal_0.1.0_windows_x86_64.msi` | ~100 MB |
 
 They are that size because each one contains a trimmed Java runtime, which is the
 reason you do not have to install one. Windows on ARM has no build of its own yet;
-the x86-64 installer runs there under emulation.
+the x86-64 installer runs there under emulation. Intel Macs have no installer at
+all — an Apple Silicon dmg will not run on one, and Rosetta only translates in the
+other direction — so on an Intel Mac, [build from source](#build-from-source).
 
 Every release also publishes `checksums.txt`. Verify before installing:
 
@@ -268,6 +269,7 @@ app/src/main/kotlin/dev/caracal/app/
 - The result grid is read-only. Editing data is not in v0.1.
 - Installers are unsigned; see [Run it](#run-it).
 - Windows on ARM has no native build yet.
+- Intel Macs have no installer; build from source.
 - PostgreSQL and Redis only. Tested against PostgreSQL 16 and Redis 7; other
   versions are likely fine and untested — reports welcome.
 - A forgotten master password cannot be recovered.
