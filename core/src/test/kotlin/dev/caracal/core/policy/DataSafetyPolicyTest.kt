@@ -5,6 +5,7 @@ import dev.caracal.core.connections.ConnectionId
 import dev.caracal.core.connections.Engine
 import dev.caracal.core.connections.Environment
 import dev.caracal.core.connections.TlsMode
+import dev.caracal.core.sql.StatementClassifier
 import dev.caracal.core.sql.StatementKind
 import java.time.Instant
 import kotlin.test.assertEquals
@@ -14,6 +15,7 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.params.ParameterizedTest
+import org.junit.jupiter.params.provider.CsvSource
 import org.junit.jupiter.params.provider.ValueSource
 
 /**
@@ -174,6 +176,112 @@ class DataSafetyPolicyTest {
         assertFalse(confirm.satisfiedBy("PAYMENTS-PROD"))
         assertFalse(confirm.satisfiedBy("payments-prod2"))
     }
+
+    // --- The whole table, cell by cell ---------------------------------------
+
+    /**
+     * Every cell of §2.4's table, stated as data rather than as prose.
+     *
+     * The tests above each check one row of it and read better for it; this one
+     * exists so that the table cannot grow a hole. Four statement kinds, two
+     * connection modes, three environments — if a case is ever added to
+     * [StatementKind] or [Environment], the exhaustiveness check below fails until
+     * this list covers it, which is the point.
+     */
+    @ParameterizedTest(name = "a {0} statement on a {2} connection (readOnly={1}) is {3}")
+    @CsvSource(
+        // kind,   readOnly, environment, outcome
+        "READ,     false,    DEV,         granted",
+        "READ,     false,    STAGING,     granted",
+        "READ,     false,    PROD,        granted",
+        "READ,     true,     DEV,         granted",
+        "READ,     true,     STAGING,     granted",
+        "READ,     true,     PROD,        granted",
+
+        "SESSION,  false,    DEV,         granted",
+        "SESSION,  false,    STAGING,     granted",
+        "SESSION,  false,    PROD,        granted",
+        // Granted on a read-only connection on purpose: each statement runs in its
+        // own transaction, so a SET is rolled back before the next one starts.
+        "SESSION,  true,     DEV,         granted",
+        "SESSION,  true,     STAGING,     granted",
+        "SESSION,  true,     PROD,        granted",
+
+        "WRITE,    false,    DEV,         click",
+        "WRITE,    false,    STAGING,     click",
+        "WRITE,    false,    PROD,        typed",
+        "WRITE,    true,     DEV,         refused:read_only_connection",
+        "WRITE,    true,     STAGING,     refused:read_only_connection",
+        // Refused rather than asked for: a read-only production connection is the
+        // one case where there is no question worth putting to the user.
+        "WRITE,    true,     PROD,        refused:read_only_connection",
+
+        // §2.4's uncertainty rule: confirmed where a write would be confirmed, and
+        // refused where a write would be refused. Never granted.
+        "UNKNOWN,  false,    DEV,         click",
+        "UNKNOWN,  false,    STAGING,     click",
+        "UNKNOWN,  false,    PROD,        typed",
+        "UNKNOWN,  true,     DEV,         refused:unclassified_statement",
+        "UNKNOWN,  true,     STAGING,     refused:unclassified_statement",
+        "UNKNOWN,  true,     PROD,        refused:unclassified_statement",
+    )
+    fun `the decision table, cell by cell`(
+        kind: StatementKind,
+        readOnly: Boolean,
+        environment: Environment,
+        outcome: String,
+    ) {
+        val sql = SQL_BY_KIND.getValue(kind)
+        assertEquals(kind, StatementClassifier.classify(sql), "the fixture SQL no longer classifies as $kind")
+
+        val connection = connection(name = "payments-$environment", environment = environment, readOnly = readOnly)
+
+        when (val clearance = DataSafetyPolicy.clearanceFor(sql, connection)) {
+            is Clearance.Granted -> assertEquals("granted", outcome)
+
+            is Clearance.Confirm -> {
+                assertEquals(
+                    when (clearance.acknowledgement) {
+                        Acknowledgement.CLICK -> "click"
+                        Acknowledgement.TYPED -> "typed"
+                    },
+                    outcome,
+                )
+                assertEquals(kind, clearance.kind, "the confirmation must say what it is confirming")
+                assertEquals(connection.name, clearance.connectionName)
+                assertEquals(environment, clearance.environment)
+                // A click confirmation has no phrase to type; a typed one is the name.
+                assertEquals(
+                    if (clearance.acknowledgement == Acknowledgement.TYPED) connection.name else null,
+                    clearance.phrase,
+                )
+            }
+
+            is Clearance.Refused -> assertEquals("refused:${clearance.code}", outcome)
+        }
+    }
+
+    @Test
+    fun `the table above covers every combination there is`() {
+        // The guard that makes the table exhaustive rather than merely long: adding a
+        // StatementKind or an Environment fails here, in the one place that would
+        // otherwise silently keep passing while a new case went unjudged.
+        val combinations = StatementKind.entries.size * 2 * Environment.entries.size
+        assertEquals(24, combinations, "the decision table needs a row per combination, and there are now $combinations")
+        assertEquals(
+            StatementKind.entries.toSet(),
+            SQL_BY_KIND.keys,
+            "every statement kind needs a fixture statement",
+        )
+    }
+
+    /** One statement per kind, checked against the classifier by the test that uses it. */
+    private val SQL_BY_KIND = mapOf(
+        StatementKind.READ to "SELECT * FROM invoices",
+        StatementKind.SESSION to "SET search_path TO reporting",
+        StatementKind.WRITE to "DELETE FROM invoices WHERE id = 1",
+        StatementKind.UNKNOWN to "FROBNICATE invoices",
+    )
 
     // --- Fixtures -------------------------------------------------------------
 

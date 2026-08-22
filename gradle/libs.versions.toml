@@ -12,6 +12,7 @@ bouncycastle = "1.85.2"
 lettuce = "7.7.0.RELEASE"
 junit = "5.14.2"
 testcontainers = "1.21.4"
+kover = "0.9.2"
 
 [libraries]
 kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "coroutines" }
@@ -36,3 +37,4 @@ testcontainers-core = { module = "org.testcontainers:testcontainers", version.re
 kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
 kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
 compose = { id = "org.jetbrains.compose", version.ref = "compose" }
+kover = { id = "org.jetbrains.kotlinx.kover", version.ref = "kover" }
