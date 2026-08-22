@@ -22,9 +22,9 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.key
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -32,8 +32,8 @@ import dev.caracal.app.ConsoleEntry
 import dev.caracal.app.ParsedLine
 import dev.caracal.app.RedisConsoleViewModel
 import dev.caracal.app.RedisFormat
-import dev.caracal.engine.api.Elision
 import dev.caracal.engine.api.CommandReply
+import dev.caracal.engine.api.Elision
 
 /**
  * The raw command console.
@@ -314,7 +314,7 @@ private enum class LineKind { VALUE, ERROR, ELIDED }
  * A reply, flattened into lines the way `redis-cli` prints one.
  *
  * The depth is already bounded by `:core` — a reply deeper than
- * [dev.caracal.core.redis.KeyValueLimits.replyDepth] arrives with an [CommandReply.Elided]
+ * [dev.caracal.engine.api.KeyValueLimits.replyDepth] arrives with an [CommandReply.Elided]
  * where the rest of it was — so this walk cannot run away. [MAX_LINES] is the second
  * bound, on what one entry may occupy in a transcript that keeps two hundred of them.
  */

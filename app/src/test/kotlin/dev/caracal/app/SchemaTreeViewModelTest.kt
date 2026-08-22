@@ -1,11 +1,11 @@
 package dev.caracal.app
 
-import dev.caracal.core.catalog.ColumnInfo
-import dev.caracal.core.catalog.Listing
-import dev.caracal.core.catalog.ObjectKind
-import dev.caracal.core.catalog.SchemaInfo
 import dev.caracal.core.connections.ConnectionId
 import dev.caracal.core.vault.VaultState
+import dev.caracal.engine.api.ColumnInfo
+import dev.caracal.engine.api.Listing
+import dev.caracal.engine.api.ObjectKind
+import dev.caracal.engine.api.SchemaInfo
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertIs

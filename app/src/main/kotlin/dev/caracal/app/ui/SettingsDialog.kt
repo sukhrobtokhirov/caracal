@@ -24,16 +24,19 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import dev.caracal.app.BuildInfo
 import dev.caracal.app.ThemeViewModel
 import dev.caracal.core.appdata.AppPaths
 import dev.caracal.core.connections.Engine
+import dev.caracal.core.engines.capabilities
+import dev.caracal.core.engines.displayName
+import dev.caracal.engine.api.EngineFamily
 
 /** Which section of the settings window is showing. */
 private enum class SettingsSection(val label: String, val glyph: String, val detail: String) {
@@ -186,20 +189,14 @@ private fun Engines() {
                 EngineTile(engine, size = 38.dp)
                 Column(verticalArrangement = Arrangement.spacedBy(Space.xs)) {
                     Text(
-                        text = when (engine) {
-                            Engine.POSTGRES -> "PostgreSQL"
-                            Engine.REDIS -> "Redis"
-                        },
+                        // The engine's own name for itself. This window used to spell
+                        // both out, which meant a third engine appeared here as a
+                        // wire name until someone noticed.
+                        text = engine.displayName,
                         style = MaterialTheme.typography.bodyMedium,
                     )
                     Text(
-                        text = when (engine) {
-                            Engine.POSTGRES ->
-                                "Schema browser, SQL editor, CSV export. Default port 5432."
-
-                            Engine.REDIS ->
-                                "Keyspace browser, value viewer, command console. Default port 6379."
-                        },
+                        text = engine.summary(),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -209,6 +206,23 @@ private fun Engines() {
             }
         }
     }
+}
+
+/**
+ * What this engine gives you, from what it says it can do.
+ *
+ * The tools listed are the panes [WorkspaceScreen] opens for that family, so the two
+ * cannot drift: an engine that gets the SQL workspace is described as having a SQL
+ * workspace. The port comes off the capability rather than being written out again,
+ * because a number typed twice is a number that is wrong once.
+ */
+private fun Engine.summary(): String {
+    val tools = when (capabilities.family) {
+        EngineFamily.SQL -> "Schema browser, SQL editor, CSV export."
+        EngineFamily.KEY_VALUE -> "Keyspace browser, value viewer, command console."
+        EngineFamily.DOCUMENT -> "Connection management."
+    }
+    return capabilities.defaultPort?.let { "$tools Default port $it." } ?: tools
 }
 
 /**

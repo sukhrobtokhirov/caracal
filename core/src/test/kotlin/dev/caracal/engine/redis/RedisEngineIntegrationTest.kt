@@ -2,9 +2,9 @@ package dev.caracal.engine.redis
 
 import dev.caracal.core.policy.Acknowledgement
 import dev.caracal.core.policy.CommandConfirmationRequired
-import dev.caracal.engine.api.CommandLine
 import dev.caracal.core.redis.RedisFixture
 import dev.caracal.engine.api.CommandFacet
+import dev.caracal.engine.api.CommandLine
 import dev.caracal.engine.api.ConnectionDescriptor
 import dev.caracal.engine.api.ConnectionId
 import dev.caracal.engine.api.ConnectionTarget
@@ -14,8 +14,8 @@ import dev.caracal.engine.api.QueryFacet
 import dev.caracal.engine.api.SecretBundle
 import dev.caracal.engine.api.SessionPolicy
 import dev.caracal.engine.api.SessionState
-import dev.caracal.engine.api.requireFacet
 import dev.caracal.engine.api.facet
+import dev.caracal.engine.api.requireFacet
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertNotNull

@@ -1,15 +1,15 @@
 package dev.caracal.app
 
 import dev.caracal.core.connections.ConnectionId
+import dev.caracal.core.vault.VaultState
 import dev.caracal.engine.api.KeyMetadata
+import dev.caracal.engine.api.KeyRef
 import dev.caracal.engine.api.KeyType
 import dev.caracal.engine.api.MemoryEstimate
 import dev.caracal.engine.api.ScanCursor
-import dev.caracal.engine.api.KeyRef
 import dev.caracal.engine.api.ScanPage
 import dev.caracal.engine.api.ScanStop
 import dev.caracal.engine.api.Ttl
-import dev.caracal.core.vault.VaultState
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertIs

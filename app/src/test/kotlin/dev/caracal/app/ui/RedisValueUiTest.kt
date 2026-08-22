@@ -13,17 +13,17 @@ import androidx.compose.ui.test.v2.runDesktopComposeUiTest
 import dev.caracal.app.FakeConnectionService
 import dev.caracal.app.RedisValueViewModel
 import dev.caracal.core.connections.ConnectionId
+import dev.caracal.core.vault.VaultState
 import dev.caracal.engine.api.FieldEntry
 import dev.caracal.engine.api.KeyMetadata
+import dev.caracal.engine.api.KeyRef
 import dev.caracal.engine.api.KeyType
 import dev.caracal.engine.api.MemoryEstimate
 import dev.caracal.engine.api.ScanCursor
-import dev.caracal.engine.api.KeyRef
-import dev.caracal.engine.api.TextValue
 import dev.caracal.engine.api.ScoredMember
+import dev.caracal.engine.api.TextValue
 import dev.caracal.engine.api.Ttl
 import dev.caracal.engine.api.ValuePage
-import dev.caracal.core.vault.VaultState
 import kotlin.test.assertEquals
 import org.junit.jupiter.api.Test
 

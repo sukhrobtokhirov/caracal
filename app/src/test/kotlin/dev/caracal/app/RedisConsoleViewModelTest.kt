@@ -4,14 +4,14 @@ import dev.caracal.core.connections.ConnectionId
 import dev.caracal.core.connections.Environment
 import dev.caracal.core.policy.Acknowledgement
 import dev.caracal.core.policy.CommandClearance
-import dev.caracal.engine.api.CommandConsent
-import dev.caracal.engine.api.TextValue
 import dev.caracal.core.result.DbError
 import dev.caracal.core.result.DbException
 import dev.caracal.core.vault.VaultState
+import dev.caracal.engine.api.CommandConsent
+import dev.caracal.engine.api.TextValue
 import kotlin.test.assertEquals
-import kotlin.test.assertIs
 import kotlin.test.assertFalse
+import kotlin.test.assertIs
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.ExperimentalCoroutinesApi

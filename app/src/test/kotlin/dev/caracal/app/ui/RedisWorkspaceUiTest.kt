@@ -10,24 +10,24 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.v2.runDesktopComposeUiTest
 import dev.caracal.app.ConnectionsViewModel
 import dev.caracal.app.EditorTabs
-import dev.caracal.app.HistoryViewModel
 import dev.caracal.app.FakeConnectionService
+import dev.caracal.app.HistoryViewModel
 import dev.caracal.app.RedisWorkspace
 import dev.caracal.app.SchemaTreeViewModel
 import dev.caracal.app.ThemeViewModel
 import dev.caracal.core.connections.Engine
 import dev.caracal.core.connections.RuntimeStatus
+import dev.caracal.core.vault.VaultState
 import dev.caracal.engine.api.KeyMetadata
+import dev.caracal.engine.api.KeyRef
 import dev.caracal.engine.api.KeyType
 import dev.caracal.engine.api.MemoryEstimate
 import dev.caracal.engine.api.ScanCursor
-import dev.caracal.engine.api.KeyRef
-import dev.caracal.engine.api.TextValue
 import dev.caracal.engine.api.ScanPage
 import dev.caracal.engine.api.ScanStop
+import dev.caracal.engine.api.TextValue
 import dev.caracal.engine.api.Ttl
 import dev.caracal.engine.api.ValuePage
-import dev.caracal.core.vault.VaultState
 import org.junit.jupiter.api.Test
 
 /**

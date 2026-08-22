@@ -23,10 +23,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
@@ -49,7 +49,7 @@ import dev.caracal.core.policy.Acknowledgement
  * else, and it is the reason this dialog is worth reading rather than dismissing.
  *
  * The consent it collects is used once. There is no toggle, no "don't ask again", and
- * nowhere for either to be stored — [dev.caracal.core.redis.CommandConsent] is an
+ * nowhere for either to be stored — [dev.caracal.engine.api.CommandConsent] is an
  * argument to one call, so §3.10's single-use rule is not enforced here so much as it
  * is unrepresentable.
  */

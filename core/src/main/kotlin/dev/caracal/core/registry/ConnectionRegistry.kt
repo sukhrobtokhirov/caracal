@@ -12,16 +12,14 @@ import dev.caracal.core.connections.Engine
 import dev.caracal.core.connections.RuntimeState
 import dev.caracal.core.connections.RuntimeStatus
 import dev.caracal.core.connections.Secret
+import dev.caracal.core.engines.Engines
 import dev.caracal.core.postgres.PostgresAdapter
 import dev.caracal.core.result.DbError
 import dev.caracal.core.result.DbException
 import dev.caracal.core.result.asDbError
-import dev.caracal.engine.api.DatabaseEngine
 import dev.caracal.engine.api.DatabaseSession
 import dev.caracal.engine.api.SessionPolicy
-import dev.caracal.engine.postgres.PostgresEngine
 import dev.caracal.engine.postgres.PostgresEngineSession
-import dev.caracal.engine.redis.RedisEngine
 import java.security.MessageDigest
 import java.time.Instant
 import kotlin.time.Duration
@@ -97,7 +95,7 @@ class ConnectionRegistry(
             }
 
             val client = try {
-                engineFor(config.engine).connect(
+                Engines.of(config.engine).connect(
                     descriptor = config.toDescriptor(),
                     secrets = config.secretBundle(password),
                     policy = SessionPolicy(readOnly = config.readOnly, statementTimeout = statementTimeout),
@@ -207,11 +205,6 @@ class ConnectionRegistry(
     suspend fun closeAll() {
         val ids = stateLock.withLock { entries.keys.toList() }
         ids.forEach { close(it) }
-    }
-
-    private fun engineFor(engine: Engine): DatabaseEngine = when (engine) {
-        Engine.POSTGRES -> PostgresEngine
-        Engine.REDIS -> RedisEngine
     }
 
     private suspend fun openClient(id: ConnectionId): DatabaseSession = stateLock.withLock {

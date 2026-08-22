@@ -1,11 +1,11 @@
 package dev.caracal.core.postgres
 
 import com.zaxxer.hikari.HikariDataSource
-import dev.caracal.core.catalog.CatalogLimits
-import dev.caracal.core.catalog.ColumnInfo
-import dev.caracal.core.catalog.ObjectKind
 import dev.caracal.core.connections.Secret
 import dev.caracal.core.sql.Identifiers
+import dev.caracal.engine.api.CatalogLimits
+import dev.caracal.engine.api.ColumnInfo
+import dev.caracal.engine.api.ObjectKind
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
 import kotlin.test.assertTrue

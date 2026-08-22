@@ -1,14 +1,14 @@
 package dev.caracal.core.postgres
 
-import dev.caracal.core.catalog.CatalogLimits
-import dev.caracal.core.catalog.CatalogObject
-import dev.caracal.core.catalog.ColumnInfo
-import dev.caracal.core.catalog.Listing
-import dev.caracal.core.catalog.ObjectKind
-import dev.caracal.core.catalog.SchemaInfo
 import dev.caracal.core.result.DbError
 import dev.caracal.core.result.DbException
 import dev.caracal.core.text.Redaction
+import dev.caracal.engine.api.CatalogLimits
+import dev.caracal.engine.api.CatalogObject
+import dev.caracal.engine.api.ColumnInfo
+import dev.caracal.engine.api.Listing
+import dev.caracal.engine.api.ObjectKind
+import dev.caracal.engine.api.SchemaInfo
 import java.sql.PreparedStatement
 import java.sql.ResultSet
 import java.sql.SQLException

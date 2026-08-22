@@ -13,14 +13,14 @@ import androidx.compose.ui.test.performKeyInput
 import androidx.compose.ui.test.pressKey
 import androidx.compose.ui.test.requestFocus
 import androidx.compose.ui.test.v2.runDesktopComposeUiTest
-import dev.caracal.app.SchemaTreeViewModel
 import dev.caracal.app.FakeConnectionService
-import dev.caracal.core.catalog.ColumnInfo
-import dev.caracal.core.catalog.Listing
-import dev.caracal.core.catalog.ObjectKind
-import dev.caracal.core.catalog.SchemaInfo
+import dev.caracal.app.SchemaTreeViewModel
 import dev.caracal.core.connections.ConnectionId
 import dev.caracal.core.vault.VaultState
+import dev.caracal.engine.api.ColumnInfo
+import dev.caracal.engine.api.Listing
+import dev.caracal.engine.api.ObjectKind
+import dev.caracal.engine.api.SchemaInfo
 import org.junit.jupiter.api.Test
 
 /**

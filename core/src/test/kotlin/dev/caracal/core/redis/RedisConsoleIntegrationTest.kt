@@ -6,9 +6,9 @@ import dev.caracal.core.result.DbError
 import dev.caracal.core.result.DbException
 import dev.caracal.core.result.asDbError
 import dev.caracal.engine.api.CommandConsent
-import dev.caracal.engine.api.InvalidRequestException
 import dev.caracal.engine.api.CommandReply
 import dev.caracal.engine.api.Elision
+import dev.caracal.engine.api.InvalidRequestException
 import dev.caracal.engine.api.KeyValueLimits
 import dev.caracal.engine.api.RawCommand
 import dev.caracal.engine.api.TextValue

@@ -1,9 +1,9 @@
 package dev.caracal.core.postgres
 
-import dev.caracal.core.catalog.ObjectKind
 import dev.caracal.core.connections.Secret
 import dev.caracal.core.result.DbError
 import dev.caracal.core.result.DbException
+import dev.caracal.engine.api.ObjectKind
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.assertTrue

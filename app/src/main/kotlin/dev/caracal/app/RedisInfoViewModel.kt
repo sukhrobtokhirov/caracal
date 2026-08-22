@@ -5,9 +5,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import dev.caracal.core.connections.ConnectionId
 import dev.caracal.core.connections.ConnectionService
-import dev.caracal.engine.api.ServerInfo
 import dev.caracal.core.result.Failure
 import dev.caracal.core.result.toFailure
+import dev.caracal.engine.api.ServerInfo
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job

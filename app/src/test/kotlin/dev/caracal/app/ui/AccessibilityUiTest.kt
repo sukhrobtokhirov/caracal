@@ -18,8 +18,6 @@ import dev.caracal.app.ExportViewModel
 import dev.caracal.app.FakeConnectionService
 import dev.caracal.app.SchemaTreeViewModel
 import dev.caracal.app.Shortcuts
-import dev.caracal.core.catalog.Listing
-import dev.caracal.core.catalog.SchemaInfo
 import dev.caracal.core.connections.ConnectionConfig
 import dev.caracal.core.connections.ConnectionId
 import dev.caracal.core.connections.Engine
@@ -30,6 +28,8 @@ import dev.caracal.core.result.Column
 import dev.caracal.core.result.ColumnFormat
 import dev.caracal.core.result.QueryResult
 import dev.caracal.core.vault.VaultState
+import dev.caracal.engine.api.Listing
+import dev.caracal.engine.api.SchemaInfo
 import java.time.Instant
 import kotlin.time.Duration.Companion.milliseconds
 import org.junit.jupiter.api.Test

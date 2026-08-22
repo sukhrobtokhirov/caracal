@@ -24,10 +24,10 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTag
@@ -40,6 +40,9 @@ import dev.caracal.core.connections.Engine
 import dev.caracal.core.connections.Environment
 import dev.caracal.core.connections.TlsMode
 import dev.caracal.core.connections.ValidationError
+import dev.caracal.core.engines.capabilities
+import dev.caracal.core.engines.displayName
+import dev.caracal.engine.api.EngineFamily
 
 /**
  * Adding or editing a connection, as a window rather than a pane.
@@ -331,17 +334,26 @@ private fun EngineRail(form: ConnectionFormState, busy: Boolean) {
     }
 }
 
-/** What the rail calls an engine, and the one line under it that says why. */
-private val Engine.title: String
-    get() = when (this) {
-        Engine.POSTGRES -> "PostgreSQL"
-        Engine.REDIS -> "Redis"
-    }
+/**
+ * What the rail calls an engine, and the one line under it that says why.
+ *
+ * Both come off the engine's own declaration rather than out of a list here, so the
+ * rail is right about an engine this file has never heard of. What is still written
+ * out per engine in this dialog is the *form* — which fields it has, what they are
+ * called, which are optional — and that is Phase 3's work: `ConnectionForm` already
+ * declares all of it, and rendering it is the change that lets an engine appear in
+ * this dialog with no edit here at all.
+ */
+private val Engine.title: String get() = displayName
 
 private val Engine.blurb: String
-    get() = when (this) {
-        Engine.POSTGRES -> "Relational · SQL editor · port 5432"
-        Engine.REDIS -> "Key–value · console · port 6379"
+    get() {
+        val shape = when (capabilities.family) {
+            EngineFamily.SQL -> "Relational · SQL editor"
+            EngineFamily.KEY_VALUE -> "Key–value · console"
+            EngineFamily.DOCUMENT -> "Document"
+        }
+        return capabilities.defaultPort?.let { "$shape · port $it" } ?: shape
     }
 
 /**

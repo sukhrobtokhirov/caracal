@@ -19,13 +19,13 @@ import dev.caracal.core.connections.ConnectionId
 import dev.caracal.core.connections.Environment
 import dev.caracal.core.policy.Acknowledgement
 import dev.caracal.core.policy.CommandClearance
-import dev.caracal.engine.api.CommandConsent
-import dev.caracal.engine.api.CommandResult
-import dev.caracal.engine.api.TextValues
-import dev.caracal.engine.api.CommandReply
 import dev.caracal.core.result.DbError
 import dev.caracal.core.result.DbException
 import dev.caracal.core.vault.VaultState
+import dev.caracal.engine.api.CommandConsent
+import dev.caracal.engine.api.CommandReply
+import dev.caracal.engine.api.CommandResult
+import dev.caracal.engine.api.TextValues
 import kotlin.test.assertEquals
 import kotlin.time.Duration.Companion.milliseconds
 import org.junit.jupiter.api.Test

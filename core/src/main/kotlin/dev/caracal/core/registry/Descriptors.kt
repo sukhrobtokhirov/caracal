@@ -4,11 +4,11 @@ import dev.caracal.core.connections.ConnectionConfig
 import dev.caracal.core.connections.Engine
 import dev.caracal.core.connections.Secret
 import dev.caracal.core.connections.TlsMode
+import dev.caracal.core.engines.id
 import dev.caracal.core.result.DbError
 import dev.caracal.core.result.DbException
 import dev.caracal.engine.api.ConnectionDescriptor
 import dev.caracal.engine.api.ConnectionTarget
-import dev.caracal.engine.api.EngineId
 import dev.caracal.engine.api.SecretBundle
 import dev.caracal.engine.api.TlsConfig
 import dev.caracal.engine.postgres.PostgresEngine
@@ -31,12 +31,6 @@ import dev.caracal.engine.redis.RedisEngine
 /** Both engines spell the connecting user's option key the same way. */
 private val USER_OPTION: String = PostgresEngine.OPTION_USER.also { check(it == RedisEngine.OPTION_USER) }
 
-/** The engine this connection is for, by the wire name both sides already use. */
-internal fun Engine.asEngineId(): EngineId = when (this) {
-    Engine.POSTGRES -> PostgresEngine.ID
-    Engine.REDIS -> RedisEngine.ID
-}
-
 /**
  * This connection, as the engine that dials it needs to see it.
  *
@@ -46,7 +40,7 @@ internal fun Engine.asEngineId(): EngineId = when (this) {
  */
 internal fun ConnectionConfig.toDescriptor(): ConnectionDescriptor = ConnectionDescriptor(
     id = id,
-    engineId = engine.asEngineId(),
+    engineId = engine.id,
     displayName = name,
     target = ConnectionTarget.Network(host = host, port = port, database = database),
     environment = environment,

@@ -2,7 +2,6 @@ package dev.caracal.app
 
 import java.io.File
 import kotlin.test.assertTrue
-import org.junit.jupiter.api.Disabled
 import org.junit.jupiter.api.Test
 
 /**
@@ -15,15 +14,12 @@ import org.junit.jupiter.api.Test
  * type, adding the fourth engine means editing the UI, and the module boundary is
  * decoration.
  *
- * **This test fails today, and is disabled on purpose.** Thirteen files under
- * `app/src/main` import `dev.caracal.core.redis` or `dev.caracal.core.postgres`
- * directly, holding a `RedisSession` or a `PostgresSession` with no indirection at
- * all. Phase 1 built the seam; Phase 2 is where the UI moves onto it, and the last
- * act of Phase 2 is deleting the `@Disabled` below and watching this pass.
- *
- * TODO(Phase 2): remove `@Disabled` once the UI reads `DatabaseSession`, facets and
- * capabilities instead of concrete engine types, and delete the two
- * `dev.caracal.core.*` entries once nothing outside an engine module refers to them.
+ * **It passes as of Phase 2**, which is what Phase 2 was for. Thirteen files under
+ * `app/src/main` used to name `dev.caracal.core.redis` directly, holding a paged
+ * value, a key, or a reply tree with no indirection at all; the vocabulary they hold
+ * is in `:engine-api` now and reaches them through a facet. It was `@Disabled` for
+ * exactly one phase, and the last act of Phase 2 was deleting that line and watching
+ * this go green.
  *
  * Two things about the forbidden list are deliberate.
  *
@@ -46,7 +42,6 @@ import org.junit.jupiter.api.Test
 class ArchitectureTest {
 
     @Test
-    @Disabled("Phase 2 flips the UI onto the SPI; this is the test that says when it is done.")
     fun `the UI does not depend on engine implementations`() {
         val violations = sourceFiles().flatMap { file ->
             file.readLines().mapIndexedNotNull { index, line ->

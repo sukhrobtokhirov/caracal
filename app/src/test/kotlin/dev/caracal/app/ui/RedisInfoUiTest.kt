@@ -13,9 +13,9 @@ import androidx.compose.ui.test.v2.runDesktopComposeUiTest
 import dev.caracal.app.FakeConnectionService
 import dev.caracal.app.RedisInfoViewModel
 import dev.caracal.core.connections.ConnectionId
+import dev.caracal.core.vault.VaultState
 import dev.caracal.engine.api.DatabaseKeyspace
 import dev.caracal.engine.api.ServerInfo
-import dev.caracal.core.vault.VaultState
 import kotlin.test.assertEquals
 import kotlin.time.Duration.Companion.seconds
 import org.junit.jupiter.api.Test

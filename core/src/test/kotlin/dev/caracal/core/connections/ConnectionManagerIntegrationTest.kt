@@ -4,13 +4,13 @@ import dev.caracal.core.registry.ConnectionRegistry
 import dev.caracal.core.result.DbError
 import dev.caracal.core.result.DbException
 import dev.caracal.core.store.ConfigStore
+import dev.caracal.core.vault.KdfParams
+import dev.caracal.core.vault.Vault
 import dev.caracal.engine.api.CatalogFacet
 import dev.caracal.engine.api.KeyValueFacet
 import dev.caracal.engine.api.facet
 import dev.caracal.engine.postgres.PostgresEngine
 import dev.caracal.engine.redis.RedisEngine
-import dev.caracal.core.vault.KdfParams
-import dev.caracal.core.vault.Vault
 import java.nio.file.Path
 import kotlin.io.path.readBytes
 import kotlin.test.assertEquals

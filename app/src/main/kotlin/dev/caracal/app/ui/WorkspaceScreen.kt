@@ -2,7 +2,6 @@ package dev.caracal.app.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -15,6 +14,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -22,23 +22,23 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.LocalClipboard
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.caracal.app.ConnectionsViewModel
@@ -53,20 +53,22 @@ import dev.caracal.app.Shortcuts
 import dev.caracal.app.ThemeViewModel
 import dev.caracal.core.connections.ConnectionId
 import dev.caracal.core.connections.ConnectionView
-import dev.caracal.core.connections.Engine
 import dev.caracal.core.connections.Environment
 import dev.caracal.core.connections.RuntimeStatus
+import dev.caracal.core.engines.capabilities
+import dev.caracal.engine.api.EngineFamily
 import java.awt.datatransfer.StringSelection
 import kotlinx.coroutines.launch
 
 /**
  * Which view of an open connection the right-hand pane is showing.
  *
- * One enumeration across both engines rather than one each, because the tab strip and
+ * One enumeration across every engine rather than one each, because the tab strip and
  * the pane behind it are the same control either way. Which entries appear is
- * [tabsFor]'s decision, and it is made from the engine: a PostgreSQL connection has no
- * keyspace and a Redis one has no SQL editor, so offering either would be offering a
- * tab that can only say "not for this engine".
+ * [tabsFor]'s decision, and it is made from a capability rather than from a name: a
+ * connection with no keyspace has no key browser and one with no editor has no
+ * editor, so offering either would be offering a tab that can only say "not for this
+ * engine".
  */
 private enum class WorkspaceTab(val label: String, val glyph: String) {
     QUERY("Query", Glyphs.QUERY),
@@ -76,17 +78,28 @@ private enum class WorkspaceTab(val label: String, val glyph: String) {
     CONNECTION("Connection", Glyphs.CONNECTIONS),
 }
 
-/** The tabs an engine has, in the order they are shown. */
-private fun tabsFor(engine: Engine?): List<WorkspaceTab> = when (engine) {
-    Engine.POSTGRES -> listOf(WorkspaceTab.QUERY, WorkspaceTab.CONNECTION)
-    Engine.REDIS -> listOf(
+/**
+ * The tabs a connection has, in the order they are shown.
+ *
+ * Keyed on [EngineFamily] and not on which engine this is. That is the difference
+ * between a third engine being a module and a third engine being an afternoon in
+ * this file: a SQL engine gets the editor because it is a SQL engine, and the arm
+ * that gives it one was written before it existed.
+ *
+ * Null is a connection that is not open, which has nothing to browse and one tab.
+ */
+private fun tabsFor(family: EngineFamily?): List<WorkspaceTab> = when (family) {
+    EngineFamily.SQL -> listOf(WorkspaceTab.QUERY, WorkspaceTab.CONNECTION)
+    EngineFamily.KEY_VALUE -> listOf(
         WorkspaceTab.KEY,
         WorkspaceTab.CONSOLE,
         WorkspaceTab.SERVER,
         WorkspaceTab.CONNECTION,
     )
 
-    null -> listOf(WorkspaceTab.CONNECTION)
+    // A document engine has neither pane yet, and gets the one tab that is always
+    // true rather than a pane that would have to apologize for itself.
+    EngineFamily.DOCUMENT, null -> listOf(WorkspaceTab.CONNECTION)
 }
 
 /**
@@ -131,8 +144,8 @@ fun WorkspaceScreen(
     // Only an open connection has anything to browse. A closed one is not reopened to
     // fill a panel: the user closed it.
     val browsing = current?.takeIf { it.runtime.isOpen }
-    val postgres = browsing?.takeIf { it.config.engine == Engine.POSTGRES }
-    val redisView = browsing?.takeIf { it.config.engine == Engine.REDIS }
+    val postgres = browsing?.takeIf { it.config.engine.capabilities.family == EngineFamily.SQL }
+    val redisView = browsing?.takeIf { it.config.engine.capabilities.family == EngineFamily.KEY_VALUE }
     // Keyed on the configuration and not just the identifier: §2.4's policy asks the
     // connection whether it is read only and which environment it is, so an edit to
     // either has to reach the editor without the connection being reopened.
@@ -153,7 +166,7 @@ fun WorkspaceScreen(
     // Opening a connection lands on its editor; the connection's own details are one
     // click away and stay there per connection, so switching back and forth does not
     // keep resetting which half is on screen.
-    val panes = tabsFor(browsing?.config?.engine)
+    val panes = tabsFor(browsing?.config?.engine?.capabilities?.family)
     var tab: WorkspaceTab by remember(browsing?.id) { mutableStateOf(panes.first()) }
 
     // The sidebar is a pane, not a fixture. On a laptop beside a terminal the list of
@@ -284,7 +297,7 @@ fun WorkspaceScreen(
             if (!view.runtime.isOpen) {
                 viewModel.open(view.id)
             } else {
-                tab = tabsFor(view.config.engine).first()
+                tab = tabsFor(view.config.engine.capabilities.family).first()
             }
         },
         close = { view -> viewModel.close(view.id) },
@@ -465,10 +478,15 @@ fun WorkspaceScreen(
                                         // Only servers this process already has a
                                         // client for. Moving a tab must not be the
                                         // thing that dials one.
+                                        // The same engine, not merely another SQL
+                                        // one: a tab carries a dialect, and moving
+                                        // a PostgreSQL script onto a MySQL server
+                                        // would be moving it somewhere it does not
+                                        // parse.
                                         others = viewModel.connections
                                             .filter {
                                                 it.runtime.isOpen &&
-                                                    it.config.engine == Engine.POSTGRES &&
+                                                    it.config.engine == open.config.engine &&
                                                     it.id != open.id
                                             }
                                             .map { it.config },
@@ -522,13 +540,14 @@ fun WorkspaceScreen(
                 if (!view.runtime.isOpen) {
                     viewModel.open(view.id)
                 } else {
-                    tab = tabsFor(view.config.engine).first()
+                    tab = tabsFor(view.config.engine.capabilities.family).first()
                 }
                 // And the keyboard follows, into whichever pane the engine lands in.
                 // The request waits if the connection is still being dialled.
-                when (view.config.engine) {
-                    Engine.POSTGRES -> editorFocus.raise()
-                    Engine.REDIS -> keyFocus.raise()
+                when (view.config.engine.capabilities.family) {
+                    EngineFamily.SQL -> editorFocus.raise()
+                    EngineFamily.KEY_VALUE -> keyFocus.raise()
+                    EngineFamily.DOCUMENT -> Unit
                 }
             },
             onDismiss = { switcherOpen = false },

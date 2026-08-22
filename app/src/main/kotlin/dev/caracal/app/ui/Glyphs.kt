@@ -6,11 +6,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.unit.sp
-import dev.caracal.core.catalog.ObjectKind
+import dev.caracal.app.RowKind
 import dev.caracal.core.connections.Engine
 import dev.caracal.core.connections.Environment
-import dev.caracal.app.RowKind
 import dev.caracal.engine.api.KeyType
+import dev.caracal.engine.api.ObjectKind
 
 /**
  * The application's glyph vocabulary.

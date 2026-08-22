@@ -15,19 +15,19 @@ import androidx.compose.ui.test.rightClick
 import androidx.compose.ui.test.v2.runDesktopComposeUiTest
 import dev.caracal.app.ConnectionsViewModel
 import dev.caracal.app.EditorTabs
-import dev.caracal.app.HistoryViewModel
 import dev.caracal.app.FakeConnectionService
+import dev.caracal.app.HistoryViewModel
 import dev.caracal.app.RedisWorkspace
 import dev.caracal.app.SchemaTreeViewModel
 import dev.caracal.app.ThemeViewModel
-import dev.caracal.core.catalog.ColumnInfo
-import dev.caracal.core.catalog.Listing
-import dev.caracal.core.catalog.ObjectKind
-import dev.caracal.core.catalog.SchemaInfo
 import dev.caracal.core.connections.ConnectionId
 import dev.caracal.core.connections.Engine
 import dev.caracal.core.connections.RuntimeStatus
 import dev.caracal.core.vault.VaultState
+import dev.caracal.engine.api.ColumnInfo
+import dev.caracal.engine.api.Listing
+import dev.caracal.engine.api.ObjectKind
+import dev.caracal.engine.api.SchemaInfo
 import kotlin.test.assertEquals
 import org.junit.jupiter.api.Test
 

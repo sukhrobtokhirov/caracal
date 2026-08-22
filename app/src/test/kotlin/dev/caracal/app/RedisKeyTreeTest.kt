@@ -1,9 +1,9 @@
 package dev.caracal.app
 
 import dev.caracal.engine.api.KeyMetadata
+import dev.caracal.engine.api.KeyRef
 import dev.caracal.engine.api.KeyType
 import dev.caracal.engine.api.MemoryEstimate
-import dev.caracal.engine.api.KeyRef
 import dev.caracal.engine.api.Ttl
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals

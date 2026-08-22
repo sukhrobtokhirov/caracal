@@ -10,8 +10,8 @@ import dev.caracal.core.connections.TlsMode
 import dev.caracal.core.result.DbException
 import java.time.Instant
 import kotlin.test.assertEquals
-import kotlin.test.assertNotEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNotEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
