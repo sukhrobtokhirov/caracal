@@ -118,9 +118,13 @@ jobs:
             "$($bin.FullName)\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
           }
 
+      # createDistributable is asked for by name because only the dmg path needs an
+      # app image: on Linux and Windows, jpackage builds the installer straight from
+      # the jar and never populates main/app, leaving the launch check below with
+      # nothing to start. Asking for both makes all five runners alike.
       - name: Package installer
         shell: bash
-        run: ./gradlew :app:packageDistributionForCurrentOS
+        run: ./gradlew :app:createDistributable :app:packageDistributionForCurrentOS
 
       # The build's own answer, before anything is packaged around it: this proves
       # the generated build-information resource reached the jar.
@@ -141,13 +145,16 @@ jobs:
         shell: bash
         run: |
           image=app/build/compose/binaries/main/app
+          # The app image directory is named after the platform's packageName, which
+          # is Caracal everywhere except Linux, where it is lowercase. Located by
+          # shape rather than spelled out, for the same reason the installer is.
           case "${{ matrix.platform }}" in
-            macos)   launcher="$image/Caracal.app/Contents/MacOS/Caracal" ;;
-            linux)   launcher="$image/Caracal/bin/Caracal" ;;
-            windows) launcher="$image/Caracal/Caracal.exe" ;;
+            macos)   launcher=$(find "$image" -maxdepth 4 -type f -path "*/Contents/MacOS/*" | head -1) ;;
+            linux)   launcher=$(find "$image" -maxdepth 3 -type f -path "*/bin/*" | head -1) ;;
+            windows) launcher=$(find "$image" -maxdepth 2 -type f -name "*.exe" | head -1) ;;
           esac
-          if [ ! -x "$launcher" ]; then
-            echo "::error::no launcher at $launcher"; ls -R "$image" | head -50; exit 1
+          if [ -z "$launcher" ] || [ ! -f "$launcher" ]; then
+            echo "::error::no launcher under $image"; ls -R "$image" | head -50; exit 1
           fi
           if [ "${{ matrix.platform }}" = "windows" ]; then
             # A jpackage launcher on Windows is a GUI subsystem binary: it writes
