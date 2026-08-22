@@ -62,6 +62,12 @@ jobs:
         # instead of finding them up to date.
         env:
           CARACAL_INTEGRATION: ${{ matrix.integration }}
+          # One version per engine on a pull request; the whole matrix runs
+          # nightly in conformance.yml. These are the same versions a developer
+          # gets with nothing set, so a green run here means the same thing
+          # locally — see ServerImage in :core's test sources.
+          CARACAL_POSTGRES_IMAGE: postgres:16-alpine
+          CARACAL_REDIS_IMAGE: redis:7-alpine
         shell: bash
         run: |
           if [ "$RUNNER_OS" = "Linux" ]; then

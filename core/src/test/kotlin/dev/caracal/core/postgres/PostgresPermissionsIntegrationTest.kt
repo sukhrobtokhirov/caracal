@@ -3,6 +3,7 @@ package dev.caracal.core.postgres
 import dev.caracal.core.connections.Secret
 import dev.caracal.core.result.DbError
 import dev.caracal.core.result.DbException
+import dev.caracal.engine.ServerImage
 import dev.caracal.engine.api.ObjectKind
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
@@ -173,7 +174,7 @@ class PostgresPermissionsIntegrationTest {
         private const val READER_PASSWORD = "reader-secret"
 
         private val postgres: PostgreSQLContainer<*> =
-            PostgreSQLContainer("postgres:16-alpine").also { it.start() }
+            PostgreSQLContainer(ServerImage.postgres).also { it.start() }
 
         init {
             postgres.createConnection("").use { connection ->

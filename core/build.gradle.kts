@@ -22,6 +22,11 @@ dependencies {
     testImplementation(libs.testcontainers.junit)
     testImplementation(libs.testcontainers.postgresql)
     testImplementation(libs.testcontainers.core)
+    // The tests every engine runs. Section 10, as a dependency rather than a file.
+    testImplementation(project(":engine-conformance"))
+    // Runs the conformance suite against a deliberately broken engine from inside a
+    // test, and reads back which cases failed. See BrokenEngineIsCaughtTest.
+    testImplementation(libs.junit.platform.testkit)
     // An engine written by somebody else, as far as the tests are concerned.
     // See engine-test/build.gradle.kts for what it is proving.
     testRuntimeOnly(project(":engine-test"))
@@ -78,6 +83,21 @@ tasks.withType<Test>().configureEach {
     // :core must pass with no display server. Running headless makes that fail here
     // rather than on a CI runner that has no screen.
     systemProperty("java.awt.headless", "true")
+    // The image the container suites dial, so a matrix run reaches the test JVM and
+    // re-runs the tests rather than finding them up to date.
+    listOf("CARACAL_POSTGRES_IMAGE", "CARACAL_REDIS_IMAGE").forEach { variable ->
+        val image = providers.environmentVariable(variable).getOrElse("")
+        environment(variable, image)
+        inputs.property(variable, image)
+    }
+    // The conformance suite's redaction case greps every log line for the fixture
+    // password, and a line that is never emitted cannot be caught leaking. Debug is
+    // where a driver writes the connection URL, so the integration runs turn it on;
+    // the output goes to the test report rather than the console, which is where
+    // somebody would go looking for it anyway.
+    if (integration == "1") {
+        systemProperty("org.slf4j.simpleLogger.defaultLogLevel", "debug")
+    }
 }
 
 /**

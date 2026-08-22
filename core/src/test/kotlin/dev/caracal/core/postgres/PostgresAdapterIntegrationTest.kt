@@ -5,6 +5,7 @@ import dev.caracal.core.result.CellValue
 import dev.caracal.core.result.DbError
 import dev.caracal.core.result.DbException
 import dev.caracal.core.text.Redaction
+import dev.caracal.engine.ServerImage
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
@@ -214,7 +215,7 @@ class PostgresAdapterIntegrationTest {
         private const val SLEEP = "SELECT pg_sleep(30)"
 
         private val postgres: PostgreSQLContainer<*> =
-            PostgreSQLContainer("postgres:16-alpine").also { it.start() }
+            PostgreSQLContainer(ServerImage.postgres).also { it.start() }
 
         @JvmStatic
         @AfterAll

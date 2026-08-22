@@ -12,6 +12,7 @@ import dev.caracal.core.result.DbException
 import dev.caracal.core.store.ConfigStore
 import dev.caracal.core.vault.KdfParams
 import dev.caracal.core.vault.Vault
+import dev.caracal.engine.ServerImage
 import dev.caracal.engine.postgres.PostgresEngine
 import java.nio.file.Path
 import kotlin.test.assertEquals
@@ -228,7 +229,7 @@ class QueryHistoryIntegrationTest {
         // which occurs by chance in half the strings a database produces. Distinctive
         // values are what make the "nothing leaked" assertion mean anything.
         private val postgres: PostgreSQLContainer<*> =
-            PostgreSQLContainer("postgres:16-alpine")
+            PostgreSQLContainer(ServerImage.postgres)
                 .withDatabaseName("caracal_history")
                 .withUsername("caracal_reader")
                 .withPassword("pg-secret-password")

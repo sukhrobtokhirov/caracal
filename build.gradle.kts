@@ -11,7 +11,14 @@ subprojects {
             jvmToolchain(25)
         }
         tasks.withType<Test>().configureEach {
-            useJUnitPlatform()
+            useJUnitPlatform {
+                // The conformance suite is checked by being run against an engine that
+                // is supposed to fail it, and that run is driven by EngineTestKit from
+                // inside a test rather than by discovery. Excluding the tag is what
+                // stops Gradle finding the failing class on its own and reporting the
+                // deliberate failures as a broken build.
+                excludeTags("negative")
+            }
             // A @Test method that returns a value is not a test method, and JUnit's
             // default is to quietly not discover it. Three M1 acceptance tests were
             // dark that way — including the one asserting that locking closes live

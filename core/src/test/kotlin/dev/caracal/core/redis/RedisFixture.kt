@@ -6,6 +6,7 @@ import dev.caracal.core.connections.Environment
 import dev.caracal.core.connections.Secret
 import dev.caracal.core.connections.TlsMode
 import dev.caracal.core.connections.networkConfig
+import dev.caracal.engine.ServerImage
 import dev.caracal.engine.api.KeyValueLimits
 import dev.caracal.engine.redis.RedisEngine
 import io.lettuce.core.AclCategory
@@ -45,6 +46,7 @@ object RedisFixture {
     const val CONSOLE_DB = 3
     const val PERMISSIONS_DB = 4
     const val ENGINE_DB = 5
+    const val CONFORMANCE_DB = 6
 
     /** An ACL user that may read keys and nothing else — §3.10's read-only column. */
     const val READER = "reader"
@@ -54,7 +56,21 @@ object RedisFixture {
 
     const val ACL_PASSWORD = "acl-password"
 
-    private val server: GenericContainer<*> = GenericContainer("redis:7-alpine")
+    /**
+     * A user the conformance suite authenticates as, with a password nothing else
+     * uses.
+     *
+     * Its own user rather than [READER], because the two redaction cases grep every
+     * error message and every log line for this literal, and a password that appears
+     * in three other suites' fixtures would make a hit ambiguous. Unrestricted,
+     * because what those cases are testing is the engine's handling of a credential
+     * and not the server's opinion of it.
+     */
+    const val CONFORMANT = "conformance"
+
+    const val CONFORMANCE_PASSWORD = "wieldy-thistle-outfox-7412"
+
+    private val server: GenericContainer<*> = GenericContainer(ServerImage.redis)
         .withExposedPorts(6379)
         .apply { start() }
 
@@ -156,6 +172,10 @@ object RedisFixture {
                     .addCommand(CommandType.TYPE)
                     .addCommand(CommandType.TTL)
                     .addCommand(CommandType.MEMORY),
+            )
+            commands.aclSetuser(
+                CONFORMANT,
+                AclSetuserArgs().on().addPassword(CONFORMANCE_PASSWORD).allKeys().allCommands(),
             )
             // Allowed to browse, refused the two commands the dashboard and the memory
             // column are built from. Rules apply left to right, so the removals land

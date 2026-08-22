@@ -11,6 +11,7 @@ import dev.caracal.core.result.CellValue
 import dev.caracal.core.result.DbError
 import dev.caracal.core.result.DbException
 import dev.caracal.core.result.QueryResult
+import dev.caracal.engine.ServerImage
 import java.math.BigDecimal
 import java.nio.file.Files
 import java.nio.file.Path
@@ -303,7 +304,7 @@ class PostgresCsvExportIntegrationTest {
         private const val SLEEPING_ROWS = "SELECT i, pg_sleep(1) FROM generate_series(1, 60) i"
 
         private val postgres: PostgreSQLContainer<*> =
-            PostgreSQLContainer("postgres:16-alpine").also { it.start() }
+            PostgreSQLContainer(ServerImage.postgres).also { it.start() }
 
         @JvmStatic
         @BeforeAll

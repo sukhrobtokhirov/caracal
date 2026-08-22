@@ -157,6 +157,7 @@ private val UNKNOWN_ENGINE = EngineCapabilities(
     supportsMultipleResultSets = false,
     supportsExplain = false,
     supportsSchemaDiff = false,
+    surfacesNotices = false,
     maxIdentifierLength = 0,
     defaultPort = null,
 )

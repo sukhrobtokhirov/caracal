@@ -81,6 +81,8 @@ class RedisEngine : DatabaseEngine {
             supportsMultipleResultSets = false,
             supportsExplain = false,
             supportsSchemaDiff = false,
+            // A reply is the whole of what Redis says. There is no second channel.
+            surfacesNotices = false,
             maxIdentifierLength = 0,
             defaultPort = 6379,
         )

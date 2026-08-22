@@ -6,6 +6,7 @@ import dev.caracal.core.result.DbException
 import dev.caracal.core.store.ConfigStore
 import dev.caracal.core.vault.KdfParams
 import dev.caracal.core.vault.Vault
+import dev.caracal.engine.ServerImage
 import dev.caracal.engine.api.CatalogFacet
 import dev.caracal.engine.api.KeyValueFacet
 import dev.caracal.engine.api.facet
@@ -351,12 +352,12 @@ class ConnectionManagerIntegrationTest {
         private const val POSTGRES_PASSWORD = "pg-secret-password"
 
         private val postgres: PostgreSQLContainer<*> =
-            PostgreSQLContainer("postgres:16-alpine")
+            PostgreSQLContainer(ServerImage.postgres)
                 .withPassword(POSTGRES_PASSWORD)
                 .also { it.start() }
 
         private val redis: GenericContainer<*> =
-            GenericContainer("redis:7-alpine")
+            GenericContainer(ServerImage.redis)
                 .withExposedPorts(6379)
                 .withCommand("redis-server", "--requirepass", REDIS_PASSWORD)
                 .also { it.start() }

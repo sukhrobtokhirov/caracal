@@ -1,0 +1,87 @@
+name: Conformance matrix
+
+# One version per engine runs on every pull request, in ci.yml. This is the other
+# half of section 10's matrix: every version the product claims to support, against
+# the suite every engine has to pass, once a night.
+#
+# Nightly rather than per pull request because the cost is linear in the matrix and
+# the failures it catches are not the ones a change introduces — they are the ones a
+# server version introduces, which appear whether anybody pushed or not. A version
+# parse written against `postgres:16` and broken on `postgres:13` is exactly the
+# shape, and it is worth a stale night rather than ten minutes on every review.
+on:
+  schedule:
+    # 03:00 UTC, which is after the day's merges and before anybody reads the result.
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  conformance:
+    name: ${{ matrix.name }}
+    runs-on: ubuntu-latest
+    strategy:
+      # One version failing is a fact worth having about the other five.
+      fail-fast: false
+      matrix:
+        include:
+          # The engine under test varies; the other one stays on the version the
+          # pull-request job uses, so a failure names one server and not two.
+          - name: PostgreSQL 13
+            postgres: postgres:13-alpine
+            redis: redis:7-alpine
+          - name: PostgreSQL 15
+            postgres: postgres:15-alpine
+            redis: redis:7-alpine
+          - name: PostgreSQL 17
+            postgres: postgres:17-alpine
+            redis: redis:7-alpine
+          - name: Redis 6.2
+            postgres: postgres:16-alpine
+            redis: redis:6.2-alpine
+          - name: Redis 7.2
+            postgres: postgres:16-alpine
+            redis: redis:7.2-alpine
+          - name: Redis 8
+            postgres: postgres:16-alpine
+            redis: redis:8-alpine
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "25"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Conformance suite
+        # Both bundled engines against the shared suite, plus the check that the
+        # suite still fails an engine that leaks a password and ignores read-only.
+        # A run where the suite has quietly stopped being able to fail is a run
+        # that proves nothing about the servers it just talked to.
+        env:
+          CARACAL_INTEGRATION: "1"
+          CARACAL_POSTGRES_IMAGE: ${{ matrix.postgres }}
+          CARACAL_REDIS_IMAGE: ${{ matrix.redis }}
+        # Two invocations, because `--tests` is applied to every test task in one
+        # invocation and a filter that matches nothing in a task silently runs
+        # nothing there — which would leave the extension's own tests unrun.
+        run: |
+          ./gradlew :engine-conformance:test
+          ./gradlew :core:test --tests '*ConformanceTest' --tests '*BrokenEngineIsCaughtTest'
+
+      - name: Upload test reports
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: conformance-reports-${{ matrix.postgres }}-${{ matrix.redis }}
+          path: |
+            **/build/reports/tests/
+            **/build/test-results/
+          retention-days: 7
