@@ -33,9 +33,15 @@ object ServerImage {
      * and an image with no tag or an unparseable one is a mistake worth a sentence
      * rather than a silent zero — the assertion it feeds would otherwise fail with a
      * number nobody could explain.
+     *
+     * The repository is taken off the front before the tag is looked for, because a
+     * registry may carry a port: `mirror.internal:5000/postgres` has a colon and no
+     * tag, and reading backwards from the last one turns the port into a major version
+     * of 5000. That is the unexplainable number this was written to avoid, produced by
+     * the code avoiding it.
      */
     private fun majorOf(image: String): Int {
-        val tag = image.substringAfterLast(':', missingDelimiterValue = "")
+        val tag = image.substringAfterLast('/').substringAfterLast(':', missingDelimiterValue = "")
         return tag.takeWhile { it.isDigit() }.toIntOrNull()
             ?: error("'$image' does not carry a version tag this suite can assert against.")
     }

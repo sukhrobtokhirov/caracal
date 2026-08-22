@@ -128,9 +128,25 @@ class PostgresConformanceFixture : ConnectionFixture() {
         }
     }
 
+    /**
+     * How many backends are *running* the sleep, which is not the same question as how
+     * many have run one.
+     *
+     * `pg_stat_activity.query` keeps the last statement a backend executed long after
+     * it has finished, so a backend that ran the cancellation case a moment ago and is
+     * now idle still matches the text. Without `state = 'active'` this counts it, the
+     * wait ends before the new statement reaches the server, and the case cancels
+     * something that was never running — a pass for the wrong reason, on a suite whose
+     * point is not to have any. `:core:test` runs this case twice against one
+     * container, once for the real engine and once for the broken one, which is exactly
+     * where the stale row comes from.
+     */
     private suspend fun sleepingBackends(observer: PostgresSession): Long {
         val result = observer.adapter.execute(
-            "SELECT count(*) AS running FROM pg_stat_activity WHERE query LIKE 'SELECT pg_sleep%'",
+            """
+            SELECT count(*) AS running FROM pg_stat_activity
+            WHERE query LIKE 'SELECT pg_sleep%' AND state = 'active' AND pid <> pg_backend_pid()
+            """.trimIndent(),
         )
         return (result.rows.single().single() as CoreCellValue.Integer).value
     }

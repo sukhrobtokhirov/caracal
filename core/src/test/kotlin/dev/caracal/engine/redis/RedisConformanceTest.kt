@@ -15,11 +15,12 @@ import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable
 /**
  * Redis against the same list, and the skips are the interesting output.
  *
- * Six of the fourteen cases do not run here, and every one of them says why in the
- * language of a declaration: `family is KEY_VALUE`, `readOnlyEnforcement is
- * COMMAND_GUARD_ONLY`, `identifierQuote is NONE`, `surfacesNotices is false`. That
- * list is the honest shape of the second engine, and having it printed in a report is
- * worth more than having those cases quietly pass.
+ * Seven of the fifteen cases do not run here, and every one of them says why in the
+ * language of a declaration: `family is KEY_VALUE` sends away the five that need a
+ * statement, `readOnlyEnforcement is COMMAND_GUARD_ONLY` one more and
+ * `surfacesNotices is false` the last. That list is the honest shape of the second
+ * engine, and having it printed in a report is worth more than having those cases
+ * quietly pass.
  *
  * The one that matters most is `read-only connection refuses a write at the server`.
  * Redis skips it because nothing at the server refuses anything — read-only here is

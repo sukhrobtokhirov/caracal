@@ -52,16 +52,29 @@ internal const val SKIP_MARKER = "declared capability: "
  * discovered at all — and both of them look exactly like success from the outside.
  *
  * So the extension watches every case in the class and, when the class is done,
- * asserts four things that no individual case can assert about itself:
+ * asserts three things that no individual case can assert about itself:
  *
  * 1. Nothing was skipped except through [requireCapability]. A bare `assumeTrue` is
  *    a skip whose reason nobody wrote down.
  * 2. Nothing was skipped that is not marked [CapabilityGated]. A case that is
  *    supposed to hold for every engine may not opt out for one.
- * 3. Every case declared on the suite was actually seen. A method that was renamed,
- *    lost its `@Test`, or was `@Disabled` is a case that quietly stopped running.
- * 4. Something ran. An engine whose declarations skipped the entire suite has
- *    proved nothing, and the run should say so rather than print a green tick.
+ * 3. A case that is `@Disabled` is a guarantee that is switched off, and says so.
+ *
+ * ### Partial runs
+ *
+ * A fourth thing — that an engine did not skip the *entire* suite — is only true of
+ * a run that was offered the entire suite. `gradle --tests 'SomeConformanceTest.a
+ * single case'` and an IDE's run-this-method both hand the class a subset, and an
+ * extension that failed the class for the cases it was never given would be a check
+ * that fires on how somebody launched the run rather than on what the engine did.
+ * So the subset is detected — some declared case produced no event at all — and the
+ * whole-suite assertion stands down for that run.
+ *
+ * That leaves the fourth failure this was written for, a case that stopped being
+ * discovered, unwatched here. It is watched in `SuiteIsFullyDiscoveredTest` instead,
+ * which discovers the suite through the platform and compares it against the list of
+ * cases by name — a check that needs no server, no engine and no filter to be honest
+ * about.
  */
 class CapabilitySkips : TestWatcher, AfterAllCallback {
 
@@ -115,14 +128,14 @@ class CapabilitySkips : TestWatcher, AfterAllCallback {
                 "switched off is a guarantee that is switched off; delete it or fix it."
         }
 
+        // A case the class declares but that produced no event at all was filtered out
+        // before execution, which is somebody running a subset and not a defect. It is
+        // also the only signal available in the JVM that this was a partial run, so it
+        // is what the whole-suite assertion below keys off.
         val seen = record.executed + record.aborted.map { it.method } + record.disabled.map { it.method }
-        val missing = declaredCases(testClass).map { it.name }.filterNot { it in seen }
-        if (missing.isNotEmpty()) {
-            complaints += "These cases were never reached: ${missing.sorted()}. A conformance case " +
-                "that is not discovered is indistinguishable from one that passes."
-        }
+        val ranWholeSuite = declaredCases(testClass).all { it.name in seen }
 
-        if (record.executed.isEmpty()) {
+        if (ranWholeSuite && record.executed.isEmpty()) {
             complaints += "Every case skipped. This engine's declarations excused it from the whole " +
                 "suite, which is not a result — check that its EngineCapabilities are honest."
         }

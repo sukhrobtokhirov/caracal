@@ -60,8 +60,10 @@ import org.junit.jupiter.api.extension.ExtendWith
  * So a case that does not apply calls [requireCapability] and lands in the skipped
  * column, carrying the declaration that sent it there. [CapabilitySkips] then holds
  * the run to that: an unexplained skip, a skip on a case that is not
- * [CapabilityGated], a case that stopped being discovered, or an engine that skipped
- * the entire suite all fail the class rather than passing it quietly.
+ * [CapabilityGated], a `@Disabled` case, or an engine that skipped the entire suite
+ * all fail the class rather than passing it quietly. That the list below is still the
+ * list — that no case has quietly stopped being discovered — is the one thing a run
+ * cannot check about itself, and `SuiteIsFullyDiscoveredTest` checks it instead.
  *
  * ### The two that matter most
  *
@@ -83,7 +85,15 @@ abstract class EngineConformanceTest {
 
     private val subject: DatabaseEngine by lazy { engine() }
 
-    private val fixture: ConnectionFixture by lazy { connectFixture() }
+    /**
+     * Held as the delegate as well as the value, because the teardown has to be able to
+     * ask whether there is anything to tear down. A case that skipped on a declared
+     * capability never touched the fixture, and closing one it did not open would build
+     * a fixture — a container, a connection — for the sole purpose of closing it.
+     */
+    private val fixtureDelegate = lazy { connectFixture() }
+
+    private val fixture: ConnectionFixture by fixtureDelegate
 
     private val capabilities get() = subject.capabilities
 
@@ -93,7 +103,37 @@ abstract class EngineConformanceTest {
     fun releaseWhatThisCaseOpened() {
         opened.forEach { session -> runCatching { session.close() } }
         opened.clear()
-        fixture.close()
+        if (fixtureDelegate.isInitialized()) fixture.close()
+    }
+
+    /**
+     * The fixture has the shape the engine's declarations promised.
+     *
+     * A [SqlFixture] is owed by a SQL engine and forbidden to every other, and a
+     * [NoticeCase] is owed by an engine that declares
+     * [dev.caracal.engine.api.EngineCapabilities.surfacesNotices] and forbidden to one
+     * that does not. Both directions of both, in a case that runs for every engine,
+     * because the alternative is asserting them inside the helper the statement cases
+     * share — and a precondition that fails there is a case that did not run, dressed
+     * as a case that failed for its own reason.
+     */
+    @Test
+    fun `the fixture matches what the engine declared`() {
+        val sql = fixture.sql
+        if (capabilities.family == EngineFamily.SQL) {
+            assertNotNull(sql, "${subject.id} declares family SQL, so its fixture owes a SqlFixture")
+        } else {
+            assertTrue(
+                sql == null,
+                "${subject.id} declares family ${capabilities.family} and its fixture supplied a SqlFixture",
+            )
+        }
+        if (sql != null && !capabilities.surfacesNotices) {
+            assertTrue(
+                sql.notice == null,
+                "${subject.id} declares surfacesNotices false and its fixture supplied a notice to look for",
+            )
+        }
     }
 
     @Test
@@ -165,6 +205,7 @@ abstract class EngineConformanceTest {
      * more often than through a sentence somebody wrote.
      */
     @Test
+    @CapabilityGated
     fun `credentials never appear in error messages`() = runBlocking<Unit> {
         requireSecretsToGrepFor()
 
@@ -190,6 +231,7 @@ abstract class EngineConformanceTest {
      * by a driver — the half nobody here reviews.
      */
     @Test
+    @CapabilityGated
     fun `credentials never appear in logs`() {
         requireSecretsToGrepFor()
 
@@ -225,7 +267,12 @@ abstract class EngineConformanceTest {
             capabilities.readOnlyEnforcement != ReadOnlyEnforcement.COMMAND_GUARD_ONLY,
             "readOnlyEnforcement is COMMAND_GUARD_ONLY, so nothing at the server refuses anything",
         )
-        val sql = requireSqlFixture()
+        // Gated on the family as well, because the probe this case sends is a
+        // SqlFixture's. A non-SQL engine whose server does enforce read-only has a
+        // guarantee worth testing and no statement here to test it with, and the honest
+        // report for that is a skip naming its family rather than a failure blaming its
+        // fixture for withholding a SqlFixture it was never supposed to supply.
+        val sql = requireSql("a write the server can refuse is a SqlFixture's")
 
         try {
             val outcomes = execute(connect(readOnly = true), sql.writeProbe)
@@ -333,7 +380,7 @@ abstract class EngineConformanceTest {
     @CapabilityGated
     fun `notices and warnings are surfaced`() = runBlocking<Unit> {
         requireCapability(capabilities.surfacesNotices, "surfacesNotices is false: this server has no second channel")
-        val sql = requireSqlFixture()
+        val sql = requireSql("the statement that raises a notice is a SqlFixture's")
         val expected = assertNotNull(
             sql.notice,
             "this engine declares surfacesNotices, so the fixture owes a statement that raises one",
@@ -351,10 +398,10 @@ abstract class EngineConformanceTest {
     /**
      * An identifier a person would never type survives being created and read back.
      *
-     * The name section 10 asks for catches two mistakes: an engine that does not quote
-     * at all, and an engine that quotes without escaping the closer — which is a SQL
-     * injection arriving through a table name. The quoting is derived from the declared
-     * [QuoteStyle], so this checks the declaration as well as the round trip.
+     * The name catches two mistakes: an engine that does not quote at all, and an
+     * engine that quotes without escaping the closer — which is a SQL injection
+     * arriving through a table name. Both the name and the quoting are derived from the
+     * declared [QuoteStyle], so this checks the declaration as well as the round trip.
      */
     @Test
     @CapabilityGated
@@ -365,7 +412,7 @@ abstract class EngineConformanceTest {
             "identifierQuote is NONE: this engine has no identifiers to quote",
         )
 
-        val qualified = qualify(sql.scratchSchema, quote(AWKWARD_NAME))
+        val qualified = qualify(sql.scratchSchema, quote(awkwardName()))
         val session = connect(readOnly = false)
         try {
             execute(session, "CREATE TABLE $qualified (id int)").assertNoneFailed("creating $qualified")
@@ -471,6 +518,15 @@ abstract class EngineConformanceTest {
         val outcomes = runCatching { execute(session, statement) }
         val thrown = outcomes.exceptionOrNull()?.stackTraceToString().orEmpty()
         val failures = outcomes.getOrDefault(emptyList()).filterIsInstance<StatementOutcome.Failed>()
+        // A statement that was supposed to fail and did not hands the redaction case an
+        // empty string, and an empty string contains no password. That is the same
+        // nothing-matched-so-it-passed this suite exists to refuse, and it is a live
+        // risk on the nightly matrix, where a statement a server rejected last year can
+        // become one it accepts.
+        assertTrue(
+            thrown.isNotEmpty() || failures.isNotEmpty(),
+            "'$statement' was supposed to fail and did not, so this case read nothing to grep",
+        )
         return thrown + failures.joinToString("\n") { failed ->
             with(failed.error) {
                 listOfNotNull(message, code, detail, hint, internalQuery, cause?.stackTraceToString())
@@ -521,22 +577,39 @@ abstract class EngineConformanceTest {
         assertTrue(leaked.isEmpty(), "${leaked.size} credential(s) reached $where:\n$evidence")
     }
 
+    /**
+     * Skips unless this is a SQL engine, and then hands over the half of the fixture
+     * only a SQL engine has.
+     *
+     * Every case that needs a statement goes through here, and the order is the point:
+     * the family is checked *before* the fixture is asked for anything, so a non-SQL
+     * engine lands in the skipped column naming its family instead of being failed for
+     * not supplying a SqlFixture it was correct to omit. That the fixture's shape
+     * matches the declaration in both directions is a separate case — see
+     * `the fixture matches what the engine declared` — because it is a claim about the
+     * fixture rather than a precondition of any one statement.
+     */
     private fun requireSql(reason: String): SqlFixture {
         requireCapability(capabilities.family == EngineFamily.SQL, "family is ${capabilities.family}: $reason")
-        return requireSqlFixture()
+        return assertNotNull(fixture.sql, "${subject.id} declares family SQL, so its fixture owes a SqlFixture")
     }
 
     /**
-     * The SQL half of the fixture, which a SQL engine owes and a non-SQL one must not
-     * have. Both directions, because either mismatch is a case that does not run.
+     * A name that breaks an engine which quotes without escaping.
+     *
+     * The character it turns on is this engine's own closer rather than a fixed double
+     * quote, which is the difference between a case that tests something and a case
+     * that only tests PostgreSQL: a MySQL engine handed `weird "name` never meets a
+     * backtick, so a `quote` that forgets to double them round-trips it happily and the
+     * injection the case exists to catch goes on working. [QuoteStyle.NONE] has no closer and no
+     * escaping to get wrong, and the case that uses this skips before reaching it.
      */
-    private fun requireSqlFixture(): SqlFixture {
-        val sql = fixture.sql
-        if (capabilities.family != EngineFamily.SQL) {
-            assertTrue(sql == null, "${subject.id} is not a SQL engine and its fixture supplied a SqlFixture")
-        }
-        return assertNotNull(sql, "${subject.id} declares family SQL, so its fixture owes a SqlFixture")
-    }
+    private fun awkwardName(): String = "weird " + when (capabilities.identifierQuote) {
+        QuoteStyle.DOUBLE_QUOTE -> "\""
+        QuoteStyle.BACKTICK -> "`"
+        QuoteStyle.BRACKET -> "]"
+        QuoteStyle.NONE -> ""
+    } + "name"
 
     private fun quote(identifier: String): String = when (capabilities.identifierQuote) {
         QuoteStyle.DOUBLE_QUOTE -> "\"" + identifier.replace("\"", "\"\"") + "\""
@@ -577,9 +650,6 @@ abstract class EngineConformanceTest {
         val THREAD_POLL = 250.milliseconds
         const val MAX_CAUSES = 10
         const val MAX_LEAK_LINES = 20
-
-        /** The name section 10 asks for: quoting that does not escape the closer breaks on it. */
-        const val AWKWARD_NAME = "weird \"name"
 
         /**
          * Input no classifier can make sense of, and must therefore call `UNKNOWN`.

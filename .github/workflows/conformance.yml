@@ -29,22 +29,33 @@ jobs:
         include:
           # The engine under test varies; the other one stays on the version the
           # pull-request job uses, so a failure names one server and not two.
+          #
+          # `slug` is the same fact as `name` without the characters an artifact name
+          # may not contain. Naming the upload after the image tags would put a colon
+          # in it, which upload-artifact rejects — losing the reports on exactly the
+          # legs that produced any.
           - name: PostgreSQL 13
+            slug: postgres-13
             postgres: postgres:13-alpine
             redis: redis:7-alpine
           - name: PostgreSQL 15
+            slug: postgres-15
             postgres: postgres:15-alpine
             redis: redis:7-alpine
           - name: PostgreSQL 17
+            slug: postgres-17
             postgres: postgres:17-alpine
             redis: redis:7-alpine
           - name: Redis 6.2
+            slug: redis-6.2
             postgres: postgres:16-alpine
             redis: redis:6.2-alpine
           - name: Redis 7.2
+            slug: redis-7.2
             postgres: postgres:16-alpine
             redis: redis:7.2-alpine
           - name: Redis 8
+            slug: redis-8
             postgres: postgres:16-alpine
             redis: redis:8-alpine
 
@@ -80,7 +91,7 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: conformance-reports-${{ matrix.postgres }}-${{ matrix.redis }}
+          name: conformance-reports-${{ matrix.slug }}
           path: |
             **/build/reports/tests/
             **/build/test-results/
