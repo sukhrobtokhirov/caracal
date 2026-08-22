@@ -1,6 +1,6 @@
 name: Bug report
 description: Something in Caracal behaves incorrectly.
-labels: ["bug"]
+labels: ["bug", "status/needs-triage"]
 body:
   - type: markdown
     attributes:

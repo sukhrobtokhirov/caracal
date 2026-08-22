@@ -1,6 +1,6 @@
 name: Feature request
 description: Something Caracal should do that it does not.
-labels: ["enhancement"]
+labels: ["enhancement", "status/needs-triage"]
 body:
   - type: markdown
     attributes:

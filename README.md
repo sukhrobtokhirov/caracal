@@ -37,7 +37,7 @@ server, and no JDK to install: the installer carries its own trimmed runtime.
 ## Download
 
 Installers for the current release are on the
-[releases page](https://github.com/stohirov/caracal/releases/latest).
+[releases page](https://github.com/sukhrobtokhirov/caracal/releases/latest).
 
 | Platform | File | Size |
 |---|---|---|

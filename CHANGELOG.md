@@ -227,5 +227,5 @@ The first public release: one window holding PostgreSQL and Redis side by side.
 - The result grid is read-only.
 - A forgotten master password cannot be recovered.
 
-[Unreleased]: https://github.com/stohirov/caracal/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/stohirov/caracal/releases/tag/v0.1.0
+[Unreleased]: https://github.com/sukhrobtokhirov/caracal/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/sukhrobtokhirov/caracal/releases/tag/v0.1.0
