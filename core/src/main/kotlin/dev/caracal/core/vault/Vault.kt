@@ -1,6 +1,7 @@
 package dev.caracal.core.vault
 
 import dev.caracal.core.connections.Secret
+import dev.caracal.engine.api.SecretBundle
 import java.time.Instant
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.minutes
@@ -159,13 +160,19 @@ class Vault(
      */
     suspend fun lock() = mutex.withLock { replaceKey(null) }
 
-    /** Seals a connection password under the master key. */
-    suspend fun seal(identity: SecretIdentity, secret: Secret): ByteArray =
+    /** Seals a connection's credential under the master key, in the current record format. */
+    suspend fun seal(identity: SecretIdentity, secret: SecretBundle): ByteArray =
         withKey { key -> Seal.seal(key, identity, secret) }
 
-    /** Opens a sealed connection password. */
-    suspend fun open(identity: SecretIdentity, envelope: ByteArray): Secret =
-        withKey { key -> Seal.open(key, identity, envelope) }
+    /**
+     * Opens a sealed credential, whichever record version it was written in.
+     *
+     * The version is not returned, because no caller outside this class has any
+     * business branching on it: a record that is behind is one [unlock] rewrites,
+     * and one that is current is indistinguishable from it here.
+     */
+    suspend fun open(identity: SecretIdentity, envelope: ByteArray): SecretBundle =
+        withKey { key -> Seal.open(key, identity, envelope).secret }
 
     /**
      * Runs [body] with the live key, holding the lock for as long as it is in use.

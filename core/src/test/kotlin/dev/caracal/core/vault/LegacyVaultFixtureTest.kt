@@ -71,13 +71,13 @@ class LegacyVaultFixtureTest {
             assertEquals("db.internal", postgres.config.host)
             assertEquals(
                 "pg-legacy-secret",
-                vault.open(SecretIdentity.of(postgres.config), assertNotNull(postgres.sealedSecret)).expose(),
+                vault.open(SecretIdentity.of(postgres.config), assertNotNull(postgres.sealedSecret)).passwordText(),
             )
 
             val redis = records.getValue("shipped-redis")
             assertEquals(
                 "redis-legacy-secret",
-                vault.open(SecretIdentity.of(redis.config), assertNotNull(redis.sealedSecret)).expose(),
+                vault.open(SecretIdentity.of(redis.config), assertNotNull(redis.sealedSecret)).passwordText(),
             )
 
             // A connection that never had a stored password. It has to survive as one:

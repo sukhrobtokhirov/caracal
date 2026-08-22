@@ -5,10 +5,10 @@ import dev.caracal.core.connections.ConnectionId
 import dev.caracal.core.connections.EngineId
 import dev.caracal.core.connections.Environment
 import dev.caracal.core.connections.RuntimeStatus
-import dev.caracal.core.connections.Secret
 import dev.caracal.core.connections.TlsMode
 import dev.caracal.core.connections.networkConfig
 import dev.caracal.core.result.DbException
+import dev.caracal.core.vault.password
 import dev.caracal.engine.postgres.PostgresEngine
 import dev.caracal.engine.redis.RedisEngine
 import java.time.Instant
@@ -92,7 +92,7 @@ class ConnectionRegistryTest {
         // PostgreSQL specifically: its driver messages are the ones that name the
         // host, port, user, and database, so this is where redaction has to hold.
         val config = unreachable(engineId = PostgresEngine.ID)
-        assertThrows<DbException> { runBlocking { registry.open(config, Secret("")) } }
+        assertThrows<DbException> { runBlocking { registry.open(config, password("")) } }
 
         val state = registry.state(ConnectionId("id-1"))
         assertEquals(RuntimeStatus.ERROR, state.status)
@@ -107,7 +107,7 @@ class ConnectionRegistryTest {
     @Test
     fun `a failed PostgreSQL dial is classified too`() = runBlocking {
         assertThrows<DbException> {
-            runBlocking { registry.open(unreachable(engineId = PostgresEngine.ID), Secret("")) }
+            runBlocking { registry.open(unreachable(engineId = PostgresEngine.ID), password("")) }
         }
 
         assertEquals(RuntimeStatus.ERROR, registry.state(ConnectionId("id-1")).status)
@@ -115,7 +115,7 @@ class ConnectionRegistryTest {
 
     @Test
     fun `closing after a failed dial returns the entry to closed`() = runBlocking {
-        assertThrows<DbException> { runBlocking { registry.open(unreachable(), Secret("")) } }
+        assertThrows<DbException> { runBlocking { registry.open(unreachable(), password("")) } }
 
         registry.close(ConnectionId("id-1"))
 
@@ -126,7 +126,7 @@ class ConnectionRegistryTest {
 
     @Test
     fun `forgetting drops the entry so no phantom survives the record`() = runBlocking {
-        assertThrows<DbException> { runBlocking { registry.open(unreachable(), Secret("")) } }
+        assertThrows<DbException> { runBlocking { registry.open(unreachable(), password("")) } }
 
         registry.forget(ConnectionId("id-1"))
 
@@ -148,7 +148,7 @@ class ConnectionRegistryTest {
 
     @Test
     fun `nothing is invalidated when the connection was never opened`() = runTest {
-        assertFalse(registry.invalidateIfChanged(config(), Secret("hunter2")))
+        assertFalse(registry.invalidateIfChanged(config(), password("hunter2")))
     }
 
     @Test
@@ -156,7 +156,7 @@ class ConnectionRegistryTest {
         withContext(Dispatchers.IO) {
             (1..8).map {
                 async {
-                    runCatching { registry.open(unreachable(), Secret("")) }
+                    runCatching { registry.open(unreachable(), password("")) }
                 }
             }.awaitAll()
         }
@@ -174,7 +174,7 @@ class ConnectionRegistryTest {
             (1..6).map { index ->
                 async {
                     val id = "id-$index"
-                    runCatching { registry.open(unreachable(id = id), Secret("")) }
+                    runCatching { registry.open(unreachable(id = id), password("")) }
                     if (index % 2 == 0) registry.close(ConnectionId(id))
                 }
             }.awaitAll()
@@ -190,8 +190,8 @@ class ConnectionRegistryTest {
     @Test
     fun `the fingerprint changes when any dialing field changes`() {
         val base = config()
-        val password = Secret("hunter2")
-        val original = ConnectionRegistry.fingerprint(base, password)
+        val secret = password("hunter2")
+        val original = ConnectionRegistry.fingerprint(base, secret)
 
         listOf(
             "host" to config(host = "db.internal"),
@@ -206,7 +206,7 @@ class ConnectionRegistryTest {
             "an engine's own field" to base.copy(settings = base.settings + ("region" to "eu-west-1")),
         ).forEach { (changed, config) ->
             assertFalse(
-                original == ConnectionRegistry.fingerprint(config, password),
+                original == ConnectionRegistry.fingerprint(config, secret),
                 "a change to $changed went unnoticed",
             )
         }
@@ -215,8 +215,8 @@ class ConnectionRegistryTest {
     @Test
     fun `the fingerprint changes when only the secret changes`() {
         assertFalse(
-            ConnectionRegistry.fingerprint(config(), Secret("hunter2")) ==
-                ConnectionRegistry.fingerprint(config(), Secret("hunter3")),
+            ConnectionRegistry.fingerprint(config(), password("hunter2")) ==
+                ConnectionRegistry.fingerprint(config(), password("hunter3")),
         )
     }
 
@@ -225,8 +225,8 @@ class ConnectionRegistryTest {
         val cosmetic = config().copy(name = "Renamed", color = "#ff0000")
 
         assertEquals(
-            ConnectionRegistry.fingerprint(config(), Secret("hunter2")),
-            ConnectionRegistry.fingerprint(cosmetic, Secret("hunter2")),
+            ConnectionRegistry.fingerprint(config(), password("hunter2")),
+            ConnectionRegistry.fingerprint(cosmetic, password("hunter2")),
         )
     }
 
@@ -240,8 +240,8 @@ class ConnectionRegistryTest {
         val restricted = config().copy(readOnly = true)
 
         assertNotEquals(
-            ConnectionRegistry.fingerprint(config(), Secret("hunter2")),
-            ConnectionRegistry.fingerprint(restricted, Secret("hunter2")),
+            ConnectionRegistry.fingerprint(config(), password("hunter2")),
+            ConnectionRegistry.fingerprint(restricted, password("hunter2")),
         )
     }
 
@@ -250,14 +250,14 @@ class ConnectionRegistryTest {
         // Without a separator, host "a" + database "bc" and host "ab" + database "c"
         // would hash identically.
         assertFalse(
-            ConnectionRegistry.fingerprint(config(host = "a", database = "bc"), Secret("")) ==
-                ConnectionRegistry.fingerprint(config(host = "ab", database = "c"), Secret("")),
+            ConnectionRegistry.fingerprint(config(host = "a", database = "bc"), password("")) ==
+                ConnectionRegistry.fingerprint(config(host = "ab", database = "c"), password("")),
         )
     }
 
     @Test
     fun `the fingerprint does not contain the password`() {
-        val fingerprint = ConnectionRegistry.fingerprint(config(), Secret("hunter2"))
+        val fingerprint = ConnectionRegistry.fingerprint(config(), password("hunter2"))
 
         assertFalse(fingerprint.contains("hunter2"))
         assertEquals(64, fingerprint.length)

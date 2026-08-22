@@ -1,6 +1,5 @@
 package dev.caracal.core.vault
 
-import dev.caracal.core.connections.Secret
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -14,31 +13,31 @@ class SealTest {
 
     @Test
     fun `a sealed secret comes back exactly as it went in`() {
-        val envelope = Seal.seal(key, identity, Secret("hunter2"))
+        val envelope = Seal.seal(key, identity, password("hunter2"))
 
-        assertEquals("hunter2", Seal.open(key, identity, envelope).expose())
+        assertEquals("hunter2", Seal.open(key, identity, envelope).passwordText())
     }
 
     @Test
     fun `an empty secret round trips, because an empty password is a real password`() {
-        val envelope = Seal.seal(key, identity, Secret(""))
+        val envelope = Seal.seal(key, identity, password(""))
 
-        assertEquals("", Seal.open(key, identity, envelope).expose())
+        assertEquals("", Seal.open(key, identity, envelope).passwordText())
     }
 
     @Test
     fun `a non-ASCII secret survives the UTF-8 round trip`() {
-        val password = "sürprïse-密码-🔐"
+        val original = "sürprïse-密码-🔐"
 
-        val envelope = Seal.seal(key, identity, Secret(password))
+        val envelope = Seal.seal(key, identity, password(original))
 
-        assertEquals(password, Seal.open(key, identity, envelope).expose())
+        assertEquals(original, Seal.open(key, identity, envelope).passwordText())
     }
 
     @Test
     fun `sealing the same secret twice produces different bytes`() {
-        val first = Seal.seal(key, identity, Secret("hunter2"))
-        val second = Seal.seal(key, identity, Secret("hunter2"))
+        val first = Seal.seal(key, identity, password("hunter2"))
+        val second = Seal.seal(key, identity, password("hunter2"))
 
         assertFalse(first.contentEquals(second), "a repeated nonce would leak equality of secrets")
         // Only the nonce and ciphertext differ; the version prefix is the same.
@@ -47,14 +46,14 @@ class SealTest {
 
     @Test
     fun `the envelope never contains the plaintext`() {
-        val envelope = Seal.seal(key, identity, Secret("hunter2"))
+        val envelope = Seal.seal(key, identity, password("hunter2"))
 
         assertFalse(String(envelope, Charsets.ISO_8859_1).contains("hunter2"))
     }
 
     @Test
     fun `the envelope is version, nonce, then ciphertext`() {
-        val envelope = Seal.seal(key, identity, Secret("hunter2"))
+        val envelope = Seal.seal(key, identity, password("hunter2"))
 
         assertEquals(ENVELOPE_VERSION, envelope[0])
         assertTrue(envelope.size > 1 + NONCE_LENGTH)
@@ -62,7 +61,7 @@ class SealTest {
 
     @Test
     fun `another key cannot open it`() {
-        val envelope = Seal.seal(key, identity, Secret("hunter2"))
+        val envelope = Seal.seal(key, identity, password("hunter2"))
 
         assertThrows<SecretUnreadableException> {
             Seal.open(Kdf.randomBytes(KEY_LENGTH), identity, envelope)
@@ -71,7 +70,7 @@ class SealTest {
 
     @Test
     fun `a modified nonce is detected`() {
-        val envelope = Seal.seal(key, identity, Secret("hunter2"))
+        val envelope = Seal.seal(key, identity, password("hunter2"))
         envelope[3] = (envelope[3] + 1).toByte()
 
         assertThrows<SecretUnreadableException> { Seal.open(key, identity, envelope) }
@@ -79,7 +78,7 @@ class SealTest {
 
     @Test
     fun `a modified ciphertext is detected`() {
-        val envelope = Seal.seal(key, identity, Secret("hunter2"))
+        val envelope = Seal.seal(key, identity, password("hunter2"))
         envelope[envelope.size - 1] = (envelope.last() + 1).toByte()
 
         assertThrows<SecretUnreadableException> { Seal.open(key, identity, envelope) }
@@ -87,7 +86,7 @@ class SealTest {
 
     @Test
     fun `a ciphertext moved to another connection will not open`() {
-        val envelope = Seal.seal(key, identity, Secret("hunter2"))
+        val envelope = Seal.seal(key, identity, password("hunter2"))
 
         assertThrows<SecretUnreadableException> {
             Seal.open(key, SecretIdentity("id-2", "postgres"), envelope)
@@ -96,7 +95,7 @@ class SealTest {
 
     @Test
     fun `a ciphertext reinterpreted under another engine will not open`() {
-        val envelope = Seal.seal(key, identity, Secret("hunter2"))
+        val envelope = Seal.seal(key, identity, password("hunter2"))
 
         assertThrows<SecretUnreadableException> {
             Seal.open(key, SecretIdentity("id-1", "redis"), envelope)
@@ -113,7 +112,7 @@ class SealTest {
 
     @Test
     fun `a key of the wrong length is refused before any cipher runs`() {
-        assertThrows<UnsupportedKdfException> { Seal.seal(ByteArray(16), identity, Secret("hunter2")) }
+        assertThrows<UnsupportedKdfException> { Seal.seal(ByteArray(16), identity, password("hunter2")) }
     }
 
     @Test

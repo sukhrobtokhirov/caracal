@@ -11,13 +11,15 @@ import dev.caracal.core.connections.ConnectionId
 import dev.caracal.core.connections.EngineId
 import dev.caracal.core.connections.RuntimeState
 import dev.caracal.core.connections.RuntimeStatus
-import dev.caracal.core.connections.Secret
+import dev.caracal.core.connections.charsToUtf8
 import dev.caracal.core.engines.Engines
 import dev.caracal.core.postgres.PostgresAdapter
 import dev.caracal.core.result.DbError
 import dev.caracal.core.result.DbException
 import dev.caracal.core.result.asDbError
+import dev.caracal.core.vault.wipe
 import dev.caracal.engine.api.DatabaseSession
+import dev.caracal.engine.api.SecretBundle
 import dev.caracal.engine.api.SessionPolicy
 import dev.caracal.engine.postgres.PostgresEngineSession
 import java.security.MessageDigest
@@ -73,9 +75,9 @@ class ConnectionRegistry(
      * Establishes a client, or returns immediately if a healthy one already exists
      * for the same configuration and secret.
      */
-    suspend fun open(config: ConnectionConfig, password: Secret) {
+    suspend fun open(config: ConnectionConfig, secret: SecretBundle) {
         val entry = entryFor(config.id, config.engineId)
-        val fingerprint = fingerprint(config, password)
+        val fingerprint = fingerprint(config, secret)
 
         entry.operationLock.withLock {
             val alreadyOpen = stateLock.withLock {
@@ -98,7 +100,7 @@ class ConnectionRegistry(
             val client = try {
                 engine.connect(
                     descriptor = config.toDescriptor(engine),
-                    secrets = config.secretBundle(password),
+                    secrets = config.resolveSecret(secret),
                     policy = SessionPolicy(readOnly = config.readOnly, statementTimeout = statementTimeout),
                 )
             } catch (cancellation: CancellationException) {
@@ -159,10 +161,10 @@ class ConnectionRegistry(
      * Closes a connection whose dialing configuration or secret no longer matches its
      * open client. Returns whether anything was closed.
      */
-    suspend fun invalidateIfChanged(config: ConnectionConfig, password: Secret): Boolean {
+    suspend fun invalidateIfChanged(config: ConnectionConfig, secret: SecretBundle): Boolean {
         val stale = stateLock.withLock {
             val entry = entries[config.id] ?: return false
-            entry.status == RuntimeStatus.OPEN && entry.fingerprint != fingerprint(config, password)
+            entry.status == RuntimeStatus.OPEN && entry.fingerprint != fingerprint(config, secret)
         }
         if (stale) close(config.id)
         return stale
@@ -255,25 +257,70 @@ class ConnectionRegistry(
          * production left `FLUSHDB` behind a single click instead of the typed
          * confirmation, on the connection the user had just declared production.
          */
-        fun fingerprint(config: ConnectionConfig, password: Secret): String {
+        fun fingerprint(config: ConnectionConfig, secret: SecretBundle): String {
             val digest = MessageDigest.getInstance("SHA-256")
-            buildList {
-                add(config.engineId.value)
-                // The whole target and every declared setting, rather than the five
-                // fields a connection used to have. An engine is free to declare a
-                // field this file has never heard of, and a change to one of those is
-                // as much a reason to redial as a change to the host.
-                add(config.target.toString())
-                config.settings.toSortedMap().forEach { (key, value) ->
-                    add(key)
-                    add(value)
-                }
-                add(config.readOnly.toString())
-                add(config.environment.wire)
-                add(password.expose())
-            }.forEach { part ->
-                digest.update(part.toByteArray(Charsets.UTF_8))
+            // A zero after each part, so that two configurations differing only in
+            // where one field ends and the next begins cannot hash the same.
+            fun part(bytes: ByteArray) {
+                digest.update(bytes)
                 digest.update(0)
+            }
+
+            fun part(text: String) = part(text.toByteArray(Charsets.UTF_8))
+
+            /** The secret's characters, digested without ever becoming a `String`. */
+            fun secretPart(chars: CharArray) {
+                val bytes = charsToUtf8(chars)
+                try {
+                    part(bytes)
+                } finally {
+                    bytes.wipe()
+                }
+            }
+
+            part(config.engineId.value)
+            // The whole target and every declared setting, rather than the five
+            // fields a connection used to have. An engine is free to declare a
+            // field this file has never heard of, and a change to one of those is
+            // as much a reason to redial as a change to the host.
+            part(config.target.toString())
+            config.settings.toSortedMap().forEach { (key, value) ->
+                part(key)
+                part(value)
+            }
+            part(config.readOnly.toString())
+            part(config.environment.wire)
+            // The kind is hashed as well as the fields: swapping a password for a
+            // connection string that happens to read the same is still a redial.
+            when (secret) {
+                is SecretBundle.None -> part("none")
+                is SecretBundle.Password -> {
+                    part("password")
+                    secretPart(secret.password)
+                }
+
+                is SecretBundle.UserPassword -> {
+                    part("user_password")
+                    part(secret.user)
+                    secretPart(secret.password)
+                }
+
+                is SecretBundle.ClientCertificate -> {
+                    part("client_certificate")
+                    part(secret.keyStore)
+                    secretPart(secret.passphrase)
+                }
+
+                is SecretBundle.ConnectionString -> {
+                    part("connection_string")
+                    secretPart(secret.value)
+                }
+
+                is SecretBundle.Token -> {
+                    part("token")
+                    secretPart(secret.value)
+                    part(secret.expiresAt?.toString().orEmpty())
+                }
             }
             return digest.digest().joinToString("") { "%02x".format(it) }
         }

@@ -3,11 +3,12 @@ package dev.caracal.core.registry
 import dev.caracal.core.connections.ConnectionConfig
 import dev.caracal.core.connections.ConnectionId
 import dev.caracal.core.connections.EngineId
-import dev.caracal.core.connections.Secret
 import dev.caracal.core.connections.TlsMode
 import dev.caracal.core.connections.networkConfig
 import dev.caracal.core.result.DbException
 import dev.caracal.engine.api.ConnectionTarget
+import dev.caracal.core.vault.password
+import dev.caracal.core.vault.wipe
 import dev.caracal.engine.api.Environment
 import dev.caracal.engine.api.SecretBundle
 import dev.caracal.engine.api.TlsConfig
@@ -16,6 +17,7 @@ import dev.caracal.engine.redis.RedisEngine
 import java.time.Instant
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
+import kotlin.test.assertSame
 import kotlin.test.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
@@ -114,8 +116,8 @@ class DescriptorsTest {
     // --- Secrets --------------------------------------------------------------
 
     @Test
-    fun `a user and a password travel as a pair`() {
-        val bundle = config(PostgresEngine.ID, TlsMode.DISABLE).secretBundle(Secret("hunter2"))
+    fun `a stored password and the declared user travel as a pair`() {
+        val bundle = config(PostgresEngine.ID, TlsMode.DISABLE).resolveSecret(password("hunter2"))
 
         val pair = assertIs<SecretBundle.UserPassword>(bundle)
         assertEquals("reader", pair.user)
@@ -124,7 +126,7 @@ class DescriptorsTest {
 
     @Test
     fun `a password with no user travels alone`() {
-        val bundle = config(RedisEngine.ID, TlsMode.DISABLE, username = "").secretBundle(Secret("hunter2"))
+        val bundle = config(RedisEngine.ID, TlsMode.DISABLE, username = "").resolveSecret(password("hunter2"))
 
         assertEquals("hunter2", String(assertIs<SecretBundle.Password>(bundle).password))
     }
@@ -132,23 +134,45 @@ class DescriptorsTest {
     @Test
     fun `neither is a statement, not a missing lookup`() {
         // SecretBundle.None is what an unauthenticated Redis and a SQLite file get.
-        val bundle = config(RedisEngine.ID, TlsMode.DISABLE, username = "").secretBundle(Secret.EMPTY)
+        val bundle = config(RedisEngine.ID, TlsMode.DISABLE, username = "").resolveSecret(SecretBundle.None)
 
         assertEquals(SecretBundle.None, bundle)
     }
 
     @Test
-    fun `the bundle keeps its own copy, so clearing the caller's secret is safe`() {
-        // The registry clears the password the moment the dial returns, and the
-        // bundle outlives that call by exactly as long as the dial takes.
-        val password = Secret("hunter2")
-        val bundle = assertIs<SecretBundle.UserPassword>(
-            config(PostgresEngine.ID, TlsMode.DISABLE).secretBundle(password),
+    fun `a declared user with nothing sealed still authenticates as that user`() {
+        // Trust authentication: PostgreSQL is told who is connecting and asks for
+        // nothing else. Answering with None instead would dial as the OS user.
+        val bundle = config(PostgresEngine.ID, TlsMode.DISABLE).resolveSecret(SecretBundle.None)
+
+        val pair = assertIs<SecretBundle.UserPassword>(bundle)
+        assertEquals("reader", pair.user)
+        assertEquals("", String(pair.password))
+    }
+
+    @Test
+    fun `a record that names its own shape is not reinterpreted`() {
+        // The config declares a user, and before Phase 4 that alone decided the
+        // shape. A stored connection string carries its own credentials and must not
+        // be turned into the password half of a pair.
+        val stored = SecretBundle.ConnectionString("postgresql://someone@host/db".toCharArray())
+
+        assertSame(stored, config(PostgresEngine.ID, TlsMode.DISABLE).resolveSecret(stored))
+    }
+
+    @Test
+    fun `the resolved bundle holds no copy the vault cannot reach`() {
+        // It used to copy, and the copy was the problem: the service clears the
+        // record it opened the moment the dial returns, and a bundle holding its own
+        // characters would have left the password on the heap regardless.
+        val stored = password("hunter2")
+        val resolved = assertIs<SecretBundle.UserPassword>(
+            config(PostgresEngine.ID, TlsMode.DISABLE).resolveSecret(stored),
         )
 
-        password.clear()
+        stored.wipe()
 
-        assertEquals("hunter2", String(bundle.password))
+        assertEquals("       ", String(resolved.password))
     }
 
     private fun config(

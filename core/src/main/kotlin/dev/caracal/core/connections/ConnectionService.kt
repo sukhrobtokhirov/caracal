@@ -12,7 +12,7 @@ import dev.caracal.core.history.HistoryScope
 import dev.caracal.core.engines.Engines
 import dev.caracal.core.postgres.PostgresAdapter
 import dev.caracal.core.registry.ConnectionRegistry
-import dev.caracal.core.registry.secretBundle
+import dev.caracal.core.registry.resolveSecret
 import dev.caracal.core.registry.toDescriptor
 import dev.caracal.core.registry.WrongEngineException
 import dev.caracal.core.result.QueryResult
@@ -20,6 +20,7 @@ import dev.caracal.core.result.toFailure
 import dev.caracal.core.store.ConfigStore
 import dev.caracal.core.vault.SecretIdentity
 import dev.caracal.core.vault.Vault
+import dev.caracal.core.vault.wipe
 import dev.caracal.core.vault.VaultException
 import dev.caracal.core.vault.VaultLockedException
 import dev.caracal.core.vault.VaultState
@@ -41,6 +42,7 @@ import dev.caracal.engine.api.RawCommand
 import dev.caracal.engine.api.ScanCursor
 import dev.caracal.engine.api.ScanPage
 import dev.caracal.engine.api.SchemaInfo
+import dev.caracal.engine.api.SecretBundle
 import dev.caracal.engine.api.ServerInfo
 import dev.caracal.engine.api.SessionPolicy
 import dev.caracal.engine.api.ValuePage
@@ -345,7 +347,7 @@ class DefaultConnectionService(
 
         // An open client built from the old settings must not survive them.
         try {
-            withPassword(updated) { password -> registry.invalidateIfChanged(config, password) }
+            withSecret(updated) { secret -> registry.invalidateIfChanged(config, secret) }
         } catch (unreadable: VaultException) {
             // The stored secret cannot be read back, so no client built from it can be
             // trusted either.
@@ -385,11 +387,11 @@ class DefaultConnectionService(
     override suspend fun test(id: ConnectionId): TestResult {
         val record = record(id)
         val engine = Engines.require(record.config.engineId)
-        return withPassword(record) { password ->
+        return withSecret(record) { secret ->
             val started = TimeSource.Monotonic.markNow()
             val session = engine.connect(
                 descriptor = record.config.toDescriptor(engine),
-                secrets = record.config.secretBundle(password),
+                secrets = record.config.resolveSecret(secret),
                 policy = SessionPolicy(
                     readOnly = record.config.readOnly,
                     statementTimeout = PostgresAdapter.DEFAULT_STATEMENT_TIMEOUT,
@@ -416,7 +418,7 @@ class DefaultConnectionService(
      */
     override suspend fun open(id: ConnectionId): ConnectionView {
         val record = record(id)
-        withPassword(record) { password -> registry.open(record.config, password) }
+        withSecret(record) { secret -> registry.open(record.config, secret) }
         return view(record)
     }
 
@@ -648,18 +650,22 @@ class DefaultConnectionService(
         )
 
     /**
-     * Runs [body] with the connection's decrypted password, then clears it. A
-     * connection with no stored secret dials with an empty password, which is what
-     * Redis and trust-authenticated PostgreSQL expect.
+     * Runs [body] with the connection's decrypted credential, then clears it.
+     *
+     * A connection with no stored secret gets [SecretBundle.None], and what that
+     * means is the engine's to decide: trust-authenticated PostgreSQL and an
+     * unauthenticated Redis both dial happily without one. It is deliberately not an
+     * empty password — the two used to be the same value here, and they are not the
+     * same statement.
      */
-    private suspend fun <T> withPassword(record: ConnectionRecord, body: suspend (Secret) -> T): T {
+    private suspend fun <T> withSecret(record: ConnectionRecord, body: suspend (SecretBundle) -> T): T {
         val sealed = record.sealedSecret
-        if (sealed == null || sealed.isEmpty()) return body(Secret.EMPTY)
-        val password = vault.open(SecretIdentity.of(record.config), sealed)
+        if (sealed == null || sealed.isEmpty()) return body(SecretBundle.None)
+        val secret = vault.open(SecretIdentity.of(record.config), sealed)
         try {
-            return body(password)
+            return body(secret)
         } finally {
-            password.clear()
+            secret.wipe()
         }
     }
 
@@ -680,8 +686,22 @@ class DefaultConnectionService(
         existing: ConnectionRecord?,
     ): ByteArray? = when (update) {
         is SecretUpdate.Clear -> null
+        // The form collects one password field, so what it produces is a password.
+        // A record holding one of the richer shapes is not written from here — it
+        // comes back through the branch below, and is resealed as whatever it is.
         is SecretUpdate.Replace ->
-            if (update.secret.isEmpty()) null else vault.seal(SecretIdentity.of(config), update.secret)
+            if (update.secret.isEmpty()) {
+                null
+            } else {
+                // A copy, because the draft owns its own characters and clearing them
+                // here would empty a `Secret` the caller may still be holding.
+                val secret = SecretBundle.Password(update.secret.exposeChars().copyOf())
+                try {
+                    vault.seal(SecretIdentity.of(config), secret)
+                } finally {
+                    secret.wipe()
+                }
+            }
 
         is SecretUpdate.Unchanged -> {
             val stored = existing?.sealedSecret
@@ -689,11 +709,11 @@ class DefaultConnectionService(
                 stored == null || stored.isEmpty() -> null
                 SecretIdentity.of(existing.config) == SecretIdentity.of(config) -> stored
                 else -> {
-                    val password = vault.open(SecretIdentity.of(existing.config), stored)
+                    val secret = vault.open(SecretIdentity.of(existing.config), stored)
                     try {
-                        vault.seal(SecretIdentity.of(config), password)
+                        vault.seal(SecretIdentity.of(config), secret)
                     } finally {
-                        password.clear()
+                        secret.wipe()
                     }
                 }
             }

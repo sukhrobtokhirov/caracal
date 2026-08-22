@@ -87,18 +87,31 @@ private fun ConnectionConfig.tlsConfig(engine: DatabaseEngine): TlsConfig {
 }
 
 /**
- * The resolved secret, in whichever shape this connection authenticates with.
+ * The credential this connection dials with, given what the vault had for it.
  *
- * A copy of the characters, because the bundle outlives this call by exactly as long
- * as the dial takes and the caller clears its own [Secret] the moment that returns.
- * A connection with neither a user nor a password gets [SecretBundle.None], which is
- * a statement — SQLite and an unauthenticated Redis — and not "we could not find
- * one".
+ * The vault used to hold a password and this function invented the shape around it
+ * every time, from the settings. It now holds a [SecretBundle], so a record that
+ * knows its own shape — a client certificate, a connection string — is passed
+ * through untouched, and the composing is left to the one case that still needs it.
+ *
+ * That case is the user name, and it stays composed here deliberately. The user is
+ * an engine-declared form field: it is edited on the connection dialog, saved with
+ * the rest of the settings, and never sealed. Copying it into the vault record as
+ * well would give one fact two homes that an ordinary edit could make disagree, and
+ * the disagreement would surface as an authentication failure against the value the
+ * user could not see.
  */
-internal fun ConnectionConfig.secretBundle(password: Secret): SecretBundle = when {
-    settings[FormKeys.USER].orEmpty().isNotEmpty() ->
-        SecretBundle.UserPassword(username, password.expose().toCharArray())
+internal fun ConnectionConfig.resolveSecret(stored: SecretBundle): SecretBundle {
+    val user = settings[FormKeys.USER].orEmpty()
+    return when (stored) {
+        // Both arms below reproduce exactly what a stored password used to become.
+        is SecretBundle.None ->
+            if (user.isEmpty()) SecretBundle.None else SecretBundle.UserPassword(user, CharArray(0))
 
-    !password.isEmpty() -> SecretBundle.Password(password.expose().toCharArray())
-    else -> SecretBundle.None
+        is SecretBundle.Password ->
+            if (user.isEmpty()) stored else SecretBundle.UserPassword(user, stored.password)
+
+        // The record named its own shape. Nothing here knows better than it does.
+        else -> stored
+    }
 }

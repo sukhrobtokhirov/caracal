@@ -7,6 +7,7 @@ import dev.caracal.core.store.ConnectionNotFoundException
 import dev.caracal.core.store.DuplicateNameException
 import dev.caracal.core.vault.KdfParams
 import dev.caracal.core.vault.SecretIdentity
+import dev.caracal.core.vault.passwordText
 import dev.caracal.core.vault.Vault
 import dev.caracal.core.vault.VaultDamagedException
 import dev.caracal.core.vault.VaultLockedException
@@ -254,7 +255,7 @@ class ConnectionServiceTest {
             assertFalse(String(sealed, Charsets.ISO_8859_1).contains("hunter2"))
             assertEquals(
                 "hunter2",
-                session.vault.open(SecretIdentity.of(view.config), sealed).expose(),
+                session.vault.open(SecretIdentity.of(view.config), sealed).passwordText(),
             )
         }
     }
@@ -308,7 +309,7 @@ class ConnectionServiceTest {
             assertFalse(before.contentEquals(after))
             assertEquals(
                 "new-password",
-                session.vault.open(SecretIdentity.of(view.config), after).expose(),
+                session.vault.open(SecretIdentity.of(view.config), after).passwordText(),
             )
         }
     }
@@ -347,7 +348,7 @@ class ConnectionServiceTest {
             val sealed = assertNotNull(session.store.get(view.id).sealedSecret)
             assertEquals(
                 "hunter2",
-                session.vault.open(SecretIdentity.of(updated.config), sealed).expose(),
+                session.vault.open(SecretIdentity.of(updated.config), sealed).passwordText(),
             )
         }
     }
@@ -446,7 +447,7 @@ class ConnectionServiceTest {
             val record = restarted.store.get(id)
             assertEquals(
                 "hunter2",
-                restarted.vault.open(SecretIdentity.of(record.config), record.sealedSecret!!).expose(),
+                restarted.vault.open(SecretIdentity.of(record.config), record.sealedSecret!!).passwordText(),
             )
         }
     }

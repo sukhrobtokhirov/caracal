@@ -207,8 +207,17 @@ data class TestResult(
  * UTF-8 encodes a secret without an intermediate `String`, which the GC could hold
  * for hours. The caller owns the returned array and should clear it when done.
  */
-internal fun Secret.toBytes(): ByteArray {
-    val buffer = StandardCharsets.UTF_8.encode(CharBuffer.wrap(exposeChars()))
+internal fun Secret.toBytes(): ByteArray = charsToUtf8(exposeChars())
+
+/**
+ * Encodes characters as UTF-8 without an intermediate `String`.
+ *
+ * The vault's record format needs this on a bare [CharArray] — a `SecretBundle` arm
+ * carries one for each of its fields — so the conversion lives here rather than only
+ * on [Secret].
+ */
+internal fun charsToUtf8(chars: CharArray): ByteArray {
+    val buffer = StandardCharsets.UTF_8.encode(CharBuffer.wrap(chars))
     val bytes = ByteArray(buffer.remaining())
     buffer.get(bytes)
     // The encoder's buffer is a second copy of the plaintext; do not leave it behind.
@@ -218,11 +227,14 @@ internal fun Secret.toBytes(): ByteArray {
 }
 
 /** Decodes UTF-8 bytes into a secret without an intermediate `String`. */
-internal fun secretOfBytes(bytes: ByteArray): Secret {
+internal fun secretOfBytes(bytes: ByteArray): Secret = Secret(utf8ToChars(bytes))
+
+/** Decodes UTF-8 bytes into characters without an intermediate `String`. */
+internal fun utf8ToChars(bytes: ByteArray): CharArray {
     val chars = StandardCharsets.UTF_8.decode(ByteBuffer.wrap(bytes))
     val out = CharArray(chars.remaining())
     chars.get(out)
     chars.clear()
     chars.array().fill(' ')
-    return Secret(out)
+    return out
 }
