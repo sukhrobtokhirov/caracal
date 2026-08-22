@@ -36,6 +36,7 @@ import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
@@ -129,19 +130,41 @@ fun main(args: Array<String>) {
     window()
 }
 
-private fun window() = application {
-    // A supervisor, and a handler. The default `rememberCoroutineScope()` builds a
-    // plain Job parented to the recomposer, and this one scope is handed to every
-    // view model in the window: connections, the schema tree, every editor and
-    // export per tab, history, the theme, the vault. A single child completing
-    // exceptionally would cancel that shared job and propagate to the recomposer,
-    // after which every later `launch` returns a dead job — Run, Refresh, Connect
-    // and Unlock all become silent no-ops with nothing on screen to say why.
-    val scope = rememberCoroutineScope {
-        SupervisorJob() + CoroutineExceptionHandler { _, problem ->
-            LoggerFactory.getLogger("dev.caracal.app").debug("a view model coroutine failed", problem)
-        }
+/**
+ * The one scope every view model in the window is launched from: connections, the
+ * schema tree, every editor and export per tab, history, the theme, the vault.
+ *
+ * A supervisor, and a handler. The scope Compose hands out by default is a plain Job
+ * parented to the recomposer, and a single child completing exceptionally would
+ * cancel it and take the other eleven view models with it.
+ *
+ * The supervisor cannot be supplied as context to `rememberCoroutineScope`, which is
+ * the obvious way to write that and the way this shipped. That function rejects any
+ * context carrying a `Job` — and it rejects it not by throwing, but by handing back a
+ * scope whose job has *already completed exceptionally*. Every `launch` on it is then
+ * a silent no-op. Nothing is logged, because nothing ever runs to fail: the vault
+ * never reads its own state, so the screen stays on `VaultUiState.Loading`, which is
+ * one of the two states that draw nothing, and the window is a bare rectangle of the
+ * theme's background colour with no error anywhere to say why.
+ *
+ * So the supervisor is grafted on afterwards instead, parented to the composition's
+ * own job so that leaving the composition still cancels everything under it.
+ */
+@Composable
+internal fun rememberSupervisorScope(): CoroutineScope {
+    val composition = rememberCoroutineScope()
+    return remember(composition) {
+        val context = composition.coroutineContext
+        CoroutineScope(
+            context + SupervisorJob(context[Job]) + CoroutineExceptionHandler { _, problem ->
+                LoggerFactory.getLogger("dev.caracal.app").debug("a view model coroutine failed", problem)
+            },
+        )
     }
+}
+
+private fun window() = application {
+    val scope = rememberSupervisorScope()
     val startup = rememberStartup { Application.open() }
 
     // What the window asks before it closes. It is created out here because
