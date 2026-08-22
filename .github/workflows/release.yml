@@ -12,12 +12,6 @@ on:
 permissions:
   contents: read
 
-# Five runners a run. A second one waits rather than racing the first, and nothing
-# is ever cancelled: the run that would be cancelled may be the one building a tag.
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: false
-
 jobs:
   # Cheap, and first: a tag that disagrees with the version in the build would
   # produce five installers named after a version nothing inside them claims.
