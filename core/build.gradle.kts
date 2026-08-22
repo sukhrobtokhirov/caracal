@@ -22,6 +22,9 @@ dependencies {
     testImplementation(libs.testcontainers.junit)
     testImplementation(libs.testcontainers.postgresql)
     testImplementation(libs.testcontainers.core)
+    // An engine written by somebody else, as far as the tests are concerned.
+    // See engine-test/build.gradle.kts for what it is proving.
+    testRuntimeOnly(project(":engine-test"))
     testRuntimeOnly(libs.junit.platform.launcher)
     testRuntimeOnly(libs.slf4j.simple)
 }

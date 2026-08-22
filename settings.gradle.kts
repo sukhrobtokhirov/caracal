@@ -18,3 +18,7 @@ dependencyResolutionManagement {
 }
 
 include(":engine-api", ":core", ":app")
+
+// Not shipped. It is on the test runtime classpath of :core and :app, where it
+// stands in for an engine written by somebody else — see engine-test/build.gradle.kts.
+include(":engine-test")

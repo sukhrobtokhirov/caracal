@@ -49,6 +49,17 @@ class EnginesTest {
     }
 
     @Test
+    fun `an engine module on the test classpath is registered with no edit here`() {
+        // `:engine-test` is not on the application's classpath: it is a test-only
+        // module whose whole content is one engine and one line in META-INF/services.
+        // If that is enough to be found here, it is enough to be found in a build.
+        val ledger = Engines.byId(EngineId("ledger"))
+
+        assertNotNull(ledger, "the classpath's ledger engine was not registered: ${Engines.all.map { it.id }}")
+        assertEquals("Ledger", ledger.displayName)
+    }
+
+    @Test
     fun `an engine this build does not have is absent rather than a failure`() {
         assertNull(Engines.byId(EngineId("cassandra")))
     }
