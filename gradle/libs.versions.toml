@@ -29,6 +29,7 @@ compose-material3 = { module = "org.jetbrains.compose.material3:material3-deskto
 compose-ui-test = { module = "org.jetbrains.compose.ui:ui-test-junit4-desktop", version.ref = "compose" }
 junit-jupiter = { module = "org.junit.jupiter:junit-jupiter", version.ref = "junit" }
 junit-platform-launcher = { module = "org.junit.platform:junit-platform-launcher" }
+junit-platform-testkit = { module = "org.junit.platform:junit-platform-testkit" }
 testcontainers-junit = { module = "org.testcontainers:junit-jupiter", version.ref = "testcontainers" }
 testcontainers-postgresql = { module = "org.testcontainers:postgresql", version.ref = "testcontainers" }
 testcontainers-core = { module = "org.testcontainers:testcontainers", version.ref = "testcontainers" }

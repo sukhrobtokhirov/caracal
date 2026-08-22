@@ -3,6 +3,7 @@ package dev.caracal.engine.redis
 import dev.caracal.core.policy.Acknowledgement
 import dev.caracal.core.policy.CommandConfirmationRequired
 import dev.caracal.core.redis.RedisFixture
+import dev.caracal.engine.ServerImage
 import dev.caracal.engine.api.CommandFacet
 import dev.caracal.engine.api.CommandLine
 import dev.caracal.engine.api.ConnectionDescriptor
@@ -49,7 +50,7 @@ class RedisEngineIntegrationTest {
 
             val version = session.serverVersion
             assertNotNull(version.raw, "the server did not name itself")
-            assertEquals(7, version.major)
+            assertEquals(ServerImage.redisMajor, version.major)
         }
     }
 

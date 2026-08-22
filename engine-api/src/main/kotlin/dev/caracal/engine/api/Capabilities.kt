@@ -21,6 +21,19 @@ data class EngineCapabilities(
     val supportsMultipleResultSets: Boolean,
     val supportsExplain: Boolean,
     val supportsSchemaDiff: Boolean,
+    /**
+     * Whether this engine's server says things on the way to a result that did not
+     * fail — a `RAISE NOTICE`, a MySQL warning — and this engine surfaces them as
+     * [StatementOutcome.Notice].
+     *
+     * Declared rather than discovered because it is the difference between an engine
+     * that swallows its server's output and one whose server has none to swallow.
+     * SQLite is the second; a driver that drops PostgreSQL's `DO` block output is the
+     * first, and shows a blank grid for a statement whose entire result was a
+     * sentence. Without this line the conformance suite cannot tell them apart, and
+     * the case it would have to skip is one of the ones worth keeping.
+     */
+    val surfacesNotices: Boolean,
     /** How long an identifier may be, or 0 for an engine that has no identifiers. */
     val maxIdentifierLength: Int,
     val defaultPort: Int?,

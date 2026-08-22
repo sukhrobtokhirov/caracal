@@ -3,6 +3,7 @@ package dev.caracal.core.postgres
 import com.zaxxer.hikari.HikariDataSource
 import dev.caracal.core.connections.Secret
 import dev.caracal.core.sql.Identifiers
+import dev.caracal.engine.ServerImage
 import dev.caracal.engine.api.CatalogLimits
 import dev.caracal.engine.api.ColumnInfo
 import dev.caracal.engine.api.ObjectKind
@@ -192,7 +193,7 @@ class PostgresCatalogIntegrationTest {
 
     companion object {
         private val postgres: PostgreSQLContainer<*> =
-            PostgreSQLContainer("postgres:16-alpine").also { it.start() }
+            PostgreSQLContainer(ServerImage.postgres).also { it.start() }
 
         private lateinit var dataSource: HikariDataSource
 

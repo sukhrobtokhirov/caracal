@@ -7,6 +7,7 @@ import dev.caracal.core.result.ColumnFormat
 import dev.caracal.core.result.ResultLimits
 import dev.caracal.core.result.Truncation
 import dev.caracal.core.text.Redaction
+import dev.caracal.engine.ServerImage
 import java.math.BigDecimal
 import java.util.TimeZone
 import kotlin.test.assertEquals
@@ -271,7 +272,7 @@ class PostgresTypesIntegrationTest {
 
     companion object {
         private val postgres: PostgreSQLContainer<*> =
-            PostgreSQLContainer("postgres:16-alpine").also { it.start() }
+            PostgreSQLContainer(ServerImage.postgres).also { it.start() }
 
         @JvmStatic
         @BeforeAll

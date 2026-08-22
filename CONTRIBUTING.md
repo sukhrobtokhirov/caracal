@@ -39,12 +39,18 @@ be green on all three.
 
 ## How the code is arranged
 
-Two modules, and the boundary between them is enforced by the build rather than by
-convention:
+The boundaries between these are enforced by the build rather than by convention:
 
+- **`:engine-api`** — the SPI an engine is written against: capabilities, facets,
+  values, errors. It depends on Kotlin and coroutines and nothing else, and
+  `:engine-api:assertSpiHasNoDependencies` fails the build if that changes.
 - **`:core`** — domain types, the vault, the SQLite store, the connection registry,
   and both engine adapters. Plain JVM code. Every test in it runs headlessly.
 - **`:app`** — the Compose window, view models, and screens.
+- **`:engine-conformance`** — the tests every engine has to pass. Not shipped; it is
+  on the test classpath of whoever has an engine to prove.
+- **`:engine-test`** — an engine that dials nothing, on the test classpath, standing
+  in for one written by somebody else. Not shipped either.
 
 `:core` must never depend on Compose. `:core:assertNoComposeDependency` fails the
 build if an artifact from `org.jetbrains.compose`, `androidx.compose`, or
@@ -54,6 +60,34 @@ belongs in `:app`.
 
 A `Connection`, `ResultSet`, `Statement`, or Lettuce command object must not escape
 `:core`. The UI receives domain types.
+
+### Adding an engine
+
+An engine is a `DatabaseEngine` on the classpath with a line in
+`META-INF/services/dev.caracal.engine.api.DatabaseEngine`. Nothing needs to be
+edited to make it appear — not the connection dialog, not the settings window, not a
+`when` anywhere.
+
+What it does need is to pass the conformance suite, which is what stops five engines
+becoming five codebases with five different ideas of done. Subclass
+`EngineConformanceTest`, supply the engine and a `ConnectionFixture`, and run it:
+
+```
+CARACAL_INTEGRATION=1 ./gradlew :core:test --tests '*ConformanceTest'
+```
+
+Two rules about it are worth knowing before you start.
+
+**A case that does not apply is skipped by a declared capability, never by your
+engine's name.** If your engine cannot do something the suite asks for, the fix is a
+line in `EngineCapabilities` saying so — which then also tells the UI, which is the
+point. `CapabilitySkips` fails the class for a skip that did not name a declaration,
+for a skip on a case every engine must pass, and for an engine that skipped
+everything.
+
+**The fixture carries data, not assertions.** Addresses, credentials, and the
+handful of statements only your dialect spells its own way. The moment a fixture
+starts asserting things, your engine has its own definition of done again.
 
 ## The constraints that are not negotiable
 

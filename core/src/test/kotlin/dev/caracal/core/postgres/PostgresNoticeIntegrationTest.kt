@@ -1,6 +1,7 @@
 package dev.caracal.core.postgres
 
 import dev.caracal.core.connections.Secret
+import dev.caracal.engine.ServerImage
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 import kotlinx.coroutines.runBlocking
@@ -177,7 +178,7 @@ class PostgresNoticeIntegrationTest {
         private const val TAG = "\$\$"
 
         private val postgres: PostgreSQLContainer<*> =
-            PostgreSQLContainer("postgres:16-alpine").also { it.start() }
+            PostgreSQLContainer(ServerImage.postgres).also { it.start() }
 
         init {
             postgres.createConnection("").use { connection ->

@@ -4,6 +4,7 @@ import dev.caracal.core.connections.Secret
 import dev.caracal.core.postgres.PostgresConnectionConfig
 import dev.caracal.core.postgres.PostgresSession
 import dev.caracal.core.result.CellValue as CoreCellValue
+import dev.caracal.engine.ServerImage
 import dev.caracal.engine.api.CancelResult
 import dev.caracal.engine.api.CatalogFacet
 import dev.caracal.engine.api.CellValue
@@ -65,7 +66,7 @@ class PostgresEngineIntegrationTest {
 
             val version = session.serverVersion
             assertNotNull(version.raw, "the server did not name itself")
-            assertEquals(16, version.major)
+            assertEquals(ServerImage.postgresMajor, version.major)
         }
     }
 
@@ -296,7 +297,7 @@ class PostgresEngineIntegrationTest {
         private const val SLEEP = "SELECT pg_sleep(30)"
 
         private val postgres: PostgreSQLContainer<*> =
-            PostgreSQLContainer("postgres:16-alpine").also { it.start() }
+            PostgreSQLContainer(ServerImage.postgres).also { it.start() }
 
         @JvmStatic
         @AfterAll

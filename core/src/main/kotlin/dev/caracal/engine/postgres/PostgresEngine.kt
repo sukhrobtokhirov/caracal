@@ -92,6 +92,9 @@ class PostgresEngine : DatabaseEngine {
             supportsMultipleResultSets = false,
             supportsExplain = true,
             supportsSchemaDiff = false,
+            // `RAISE NOTICE` is the entire output of some statements, and pgjdbc
+            // hands them over as warnings rather than dropping them.
+            surfacesNotices = true,
             maxIdentifierLength = 63,
             defaultPort = 5432,
         )

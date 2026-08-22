@@ -7,7 +7,27 @@ version is 0, a minor bump may change behaviour.
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- **One conformance suite every engine runs.** `EngineConformanceTest` is fifteen
+  cases an engine has to pass — supplying a fixture that matches its own declarations,
+  connecting, pinging, naming the failure when it cannot connect, keeping credentials
+  out of error messages and out of logs, refusing a write on a read-only connection at
+  the server, round-tripping exact numerics and large integers, cancelling the way it
+  said it would, listing a catalog lazily, surfacing what the server said, quoting an
+  identifier nobody would type, giving back its threads, and never calling a write
+  read-only. PostgreSQL and Redis both pass it
+  as they are. It ships as `:engine-conformance`, so an engine written outside this
+  repository can be held to the same bar.
+- A nightly matrix runs the suite against PostgreSQL 13, 15 and 17 and Redis 6.2, 7.2
+  and 8. Pull requests run one version per engine.
+
+### Changed
+
+- A case that does not apply to an engine is now *skipped*, with the declaration that
+  excused it, rather than quietly passing. `EngineCapabilities` gained
+  `surfacesNotices` because that was a difference between engines nothing declared,
+  and the suite refuses to skip on anything it cannot name.
 
 ## [0.1.0] — 2026-08-22
 
