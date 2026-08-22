@@ -41,38 +41,49 @@ import dev.caracal.engine.api.ValidationIssue
  * switches: every one of those is a question the UI asks about an engine, and the
  * answer belongs in a record like this rather than in an arm of a `when` in a
  * composable.
+ *
+ * **A class rather than an object, and that is `ServiceLoader`'s doing.** A provider
+ * on the class path is instantiated through a public no-argument constructor; the
+ * static `provider()` method the loader also understands is honoured only for a
+ * provider in a named module, which a desktop application shipped as one jar is not.
+ * A Kotlin `object` has a private constructor and cannot be registered at all. So the
+ * instance everything uses is the one [dev.caracal.core.engines.Engines] loaded, and
+ * what stayed behind on the companion is what was never a member in the first place:
+ * the identifier, the option key, and the capability record the session reads.
  */
-object PostgresEngine : DatabaseEngine {
+class PostgresEngine : DatabaseEngine {
 
-    val ID = EngineId("postgres")
+    companion object {
+        val ID = EngineId("postgres")
 
-    /** The connection's username. Not a secret: it is stored and displayed in the clear. */
-    const val OPTION_USER = "user"
+        /** The connection's username. Not a secret: it is stored and displayed in the clear. */
+        const val OPTION_USER = "user"
 
-    val CAPABILITIES = EngineCapabilities(
-        family = EngineFamily.SQL,
-        // A connection is bound to one database and browses the schemas inside it.
-        // Reaching another database means another connection, which is PostgreSQL's
-        // own rule and not a limitation of this browser.
-        namespaceModel = NamespaceModel.SCHEMA,
-        // Not EXPLICIT, and this is a statement about the product rather than about
-        // the server. Every statement runs in a transaction the adapter opens and
-        // closes; there is no begin/commit the user drives. When there is, this line
-        // changes and a TransactionFacet appears alongside it.
-        transactions = TransactionSupport.IMPLICIT,
-        readOnlyEnforcement = ReadOnlyEnforcement.SESSION_SETTING,
-        cancellation = CancellationSupport.OUT_OF_BAND,
-        // `ctid` exists on every ordinary table, so a row without a primary key can
-        // still be named. Nothing uses this yet — there is no editable grid — but it
-        // is a fact about the engine and not about the feature.
-        rowIdentity = RowIdentitySupport.PRIMARY_KEY_OR_PSEUDO,
-        identifierQuote = QuoteStyle.DOUBLE_QUOTE,
-        supportsMultipleResultSets = false,
-        supportsExplain = true,
-        supportsSchemaDiff = false,
-        maxIdentifierLength = 63,
-        defaultPort = 5432,
-    )
+        val CAPABILITIES = EngineCapabilities(
+            family = EngineFamily.SQL,
+            // A connection is bound to one database and browses the schemas inside it.
+            // Reaching another database means another connection, which is PostgreSQL's
+            // own rule and not a limitation of this browser.
+            namespaceModel = NamespaceModel.SCHEMA,
+            // Not EXPLICIT, and this is a statement about the product rather than about
+            // the server. Every statement runs in a transaction the adapter opens and
+            // closes; there is no begin/commit the user drives. When there is, this line
+            // changes and a TransactionFacet appears alongside it.
+            transactions = TransactionSupport.IMPLICIT,
+            readOnlyEnforcement = ReadOnlyEnforcement.SESSION_SETTING,
+            cancellation = CancellationSupport.OUT_OF_BAND,
+            // `ctid` exists on every ordinary table, so a row without a primary key can
+            // still be named. Nothing uses this yet — there is no editable grid — but it
+            // is a fact about the engine and not about the feature.
+            rowIdentity = RowIdentitySupport.PRIMARY_KEY_OR_PSEUDO,
+            identifierQuote = QuoteStyle.DOUBLE_QUOTE,
+            supportsMultipleResultSets = false,
+            supportsExplain = true,
+            supportsSchemaDiff = false,
+            maxIdentifierLength = 63,
+            defaultPort = 5432,
+        )
+    }
 
     override val id: EngineId = ID
 

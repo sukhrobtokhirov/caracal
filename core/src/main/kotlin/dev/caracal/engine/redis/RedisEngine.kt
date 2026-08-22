@@ -44,31 +44,42 @@ import java.time.Instant
  * by the server. A read-only Redis connection is held to it by an allowlist in this
  * process. Presenting the two with the same affordances would be saying something
  * untrue, which is exactly what a capability model is for.
+ *
+ * **A class rather than an object, and that is `ServiceLoader`'s doing.** A provider
+ * on the class path is instantiated through a public no-argument constructor; the
+ * static `provider()` method the loader also understands is honoured only for a
+ * provider in a named module, which a desktop application shipped as one jar is not.
+ * A Kotlin `object` has a private constructor and cannot be registered at all. So the
+ * instance everything uses is the one [dev.caracal.core.engines.Engines] loaded, and
+ * what stayed behind on the companion is what was never a member in the first place:
+ * the identifier, the option key, and the capability record the session reads.
  */
-object RedisEngine : DatabaseEngine {
+class RedisEngine : DatabaseEngine {
 
-    val ID = EngineId("redis")
+    companion object {
+        val ID = EngineId("redis")
 
-    /** The ACL username, where the server has ACLs. Empty means legacy `AUTH`. */
-    const val OPTION_USER = "user"
+        /** The ACL username, where the server has ACLs. Empty means legacy `AUTH`. */
+        const val OPTION_USER = "user"
 
-    val CAPABILITIES = EngineCapabilities(
-        family = EngineFamily.KEY_VALUE,
-        // Numbered databases, selected at connect time. No schemas inside them.
-        namespaceModel = NamespaceModel.DATABASE,
-        // `MULTI`/`EXEC` exists and is not what this offers; nothing here opens one.
-        transactions = TransactionSupport.NONE,
-        readOnlyEnforcement = ReadOnlyEnforcement.COMMAND_GUARD_ONLY,
-        cancellation = CancellationSupport.CLIENT_ABANDON,
-        rowIdentity = RowIdentitySupport.NONE,
-        // Redis has no identifiers to quote — keys are opaque byte strings.
-        identifierQuote = QuoteStyle.NONE,
-        supportsMultipleResultSets = false,
-        supportsExplain = false,
-        supportsSchemaDiff = false,
-        maxIdentifierLength = 0,
-        defaultPort = 6379,
-    )
+        val CAPABILITIES = EngineCapabilities(
+            family = EngineFamily.KEY_VALUE,
+            // Numbered databases, selected at connect time. No schemas inside them.
+            namespaceModel = NamespaceModel.DATABASE,
+            // `MULTI`/`EXEC` exists and is not what this offers; nothing here opens one.
+            transactions = TransactionSupport.NONE,
+            readOnlyEnforcement = ReadOnlyEnforcement.COMMAND_GUARD_ONLY,
+            cancellation = CancellationSupport.CLIENT_ABANDON,
+            rowIdentity = RowIdentitySupport.NONE,
+            // Redis has no identifiers to quote — keys are opaque byte strings.
+            identifierQuote = QuoteStyle.NONE,
+            supportsMultipleResultSets = false,
+            supportsExplain = false,
+            supportsSchemaDiff = false,
+            maxIdentifierLength = 0,
+            defaultPort = 6379,
+        )
+    }
 
     override val id: EngineId = ID
 

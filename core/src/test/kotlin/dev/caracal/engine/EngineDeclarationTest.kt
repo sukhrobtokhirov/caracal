@@ -9,6 +9,7 @@ import dev.caracal.engine.api.EngineFamily
 import dev.caracal.engine.api.FormField
 import dev.caracal.engine.api.NamespaceModel
 import dev.caracal.engine.api.ReadOnlyEnforcement
+import dev.caracal.core.engines.Engines
 import dev.caracal.engine.api.TlsConfig
 import dev.caracal.engine.postgres.PostgresEngine
 import dev.caracal.engine.redis.RedisEngine
@@ -30,7 +31,19 @@ import org.junit.jupiter.api.Test
  */
 class EngineDeclarationTest {
 
-    private val engines: List<DatabaseEngine> = listOf(PostgresEngine, RedisEngine)
+    /**
+     * Every engine the classpath offers, not a list written here.
+     *
+     * Reading [Engines.all] is what makes this a fold over the engines that exist
+     * rather than over the two that existed when it was written: an engine added to
+     * the classpath is checked against every invariant below without this file being
+     * opened, which is the same property Phase 3 gives the connection dialog.
+     */
+    private val engines: List<DatabaseEngine> = Engines.all
+
+    private val postgres: DatabaseEngine = Engines.byId(PostgresEngine.ID)!!
+
+    private val redis: DatabaseEngine = Engines.byId(RedisEngine.ID)!!
 
     @Test
     fun `every engine has a distinct, non-empty identity`() {
@@ -94,8 +107,8 @@ class EngineDeclarationTest {
         // guarantees with one badge. PostgreSQL's read-only connections are held to it
         // by the server, where a write hidden in a function body is still a write.
         // Redis's are held to it by an allowlist in this process.
-        assertEquals(ReadOnlyEnforcement.SESSION_SETTING, PostgresEngine.capabilities.readOnlyEnforcement)
-        assertEquals(ReadOnlyEnforcement.COMMAND_GUARD_ONLY, RedisEngine.capabilities.readOnlyEnforcement)
+        assertEquals(ReadOnlyEnforcement.SESSION_SETTING, postgres.capabilities.readOnlyEnforcement)
+        assertEquals(ReadOnlyEnforcement.COMMAND_GUARD_ONLY, redis.capabilities.readOnlyEnforcement)
     }
 
     @Test
@@ -103,13 +116,13 @@ class EngineDeclarationTest {
         // "Cancel that actually cancels" is a claim in the README, and CLIENT_ABANDON
         // is what makes it possible to keep that claim true while adding an engine
         // that cannot do it.
-        assertEquals(CancellationSupport.OUT_OF_BAND, PostgresEngine.capabilities.cancellation)
-        assertEquals(CancellationSupport.CLIENT_ABANDON, RedisEngine.capabilities.cancellation)
+        assertEquals(CancellationSupport.OUT_OF_BAND, postgres.capabilities.cancellation)
+        assertEquals(CancellationSupport.CLIENT_ABANDON, redis.capabilities.cancellation)
     }
 
     @Test
     fun `an engine that dials a host refuses a file`() {
-        val file = descriptor(PostgresEngine).copy(
+        val file = descriptor(postgres).copy(
             target = ConnectionTarget.File(Path.of("/tmp/whatever.db")),
         )
 
@@ -146,22 +159,22 @@ class EngineDeclarationTest {
 
     @Test
     fun `PostgreSQL needs a database and a user, because a connection is opened against one`() {
-        val noDatabase = descriptor(PostgresEngine).copy(
+        val noDatabase = descriptor(postgres).copy(
             target = ConnectionTarget.Network("localhost", 5432, database = null),
         )
-        assertTrue(PostgresEngine.validate(noDatabase).any { it.field == "database" })
+        assertTrue(postgres.validate(noDatabase).any { it.field == "database" })
 
-        val noUser = descriptor(PostgresEngine).copy(engineOptions = emptyMap())
-        assertTrue(PostgresEngine.validate(noUser).any { it.field == PostgresEngine.OPTION_USER })
+        val noUser = descriptor(postgres).copy(engineOptions = emptyMap())
+        assertTrue(postgres.validate(noUser).any { it.field == PostgresEngine.OPTION_USER })
     }
 
     @Test
     fun `a Redis database is a number, not a name`() {
-        val named = descriptor(RedisEngine).copy(
+        val named = descriptor(redis).copy(
             target = ConnectionTarget.Network("localhost", 6379, database = "analytics"),
         )
 
-        assertTrue(RedisEngine.validate(named).any { it.field == "database" })
+        assertTrue(redis.validate(named).any { it.field == "database" })
     }
 
     @Test
@@ -170,9 +183,9 @@ class EngineDeclarationTest {
         // an attacker on the path cannot do anyway, and offering it means somebody
         // picks it. The form does not offer it; validation refuses it too, because a
         // descriptor can be built without going through the form.
-        val unverified = descriptor(RedisEngine).copy(tls = TlsConfig.Required(verifyHostname = false))
+        val unverified = descriptor(redis).copy(tls = TlsConfig.Required(verifyHostname = false))
 
-        assertTrue(RedisEngine.validate(unverified).any { it.field == "tls" })
+        assertTrue(redis.validate(unverified).any { it.field == "tls" })
     }
 
     /**

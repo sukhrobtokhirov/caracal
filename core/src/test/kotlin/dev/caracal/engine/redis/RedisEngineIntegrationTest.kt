@@ -103,7 +103,7 @@ class RedisEngineIntegrationTest {
     }
 
     private suspend fun connect(environment: Environment = Environment.DEV): DatabaseSession =
-        RedisEngine.connect(
+        RedisEngine().connect(
             descriptor = ConnectionDescriptor(
                 id = ConnectionId("spi-fixture"),
                 engineId = RedisEngine.ID,

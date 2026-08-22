@@ -266,7 +266,7 @@ class PostgresEngineIntegrationTest {
         return (result.rows.single().single() as CoreCellValue.Integer).value
     }
 
-    private suspend fun connect(readOnly: Boolean = true): DatabaseSession = PostgresEngine.connect(
+    private suspend fun connect(readOnly: Boolean = true): DatabaseSession = PostgresEngine().connect(
         descriptor = descriptor(),
         secrets = SecretBundle.UserPassword(postgres.username, postgres.password.toCharArray()),
         policy = SessionPolicy(readOnly = readOnly, statementTimeout = 30.seconds),

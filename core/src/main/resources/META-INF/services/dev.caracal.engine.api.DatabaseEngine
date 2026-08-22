@@ -1,0 +1,9 @@
+# The engines this build ships with.
+#
+# Registration lives beside the implementation rather than in one central list,
+# because that is the whole point: an engine module carries its own line here, and
+# adding one is adding a module. When :engine-postgres and :engine-redis are carved
+# out of :core, this file splits into two files that each name one engine, and
+# nothing that reads it changes.
+dev.caracal.engine.postgres.PostgresEngine
+dev.caracal.engine.redis.RedisEngine

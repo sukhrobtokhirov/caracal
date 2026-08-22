@@ -61,7 +61,7 @@ class DescriptorsTest {
         val tls = config(Engine.REDIS, TlsMode.REQUIRE).toDescriptor().tls
 
         assertEquals(TlsConfig.Required(verifyHostname = true), tls)
-        assertTrue(RedisEngine.validate(config(Engine.REDIS, TlsMode.REQUIRE).toDescriptor()).isEmpty())
+        assertTrue(RedisEngine().validate(config(Engine.REDIS, TlsMode.REQUIRE).toDescriptor()).isEmpty())
     }
 
     @Test
