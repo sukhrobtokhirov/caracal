@@ -7,6 +7,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.FrameWindowScope
 import androidx.compose.ui.window.Window
@@ -161,6 +162,10 @@ private fun window() = application {
         // and it is the one modal the workspace underneath cannot see.
         onKeyEvent = { !exit.pending && shortcuts.dispatch(it) },
         title = "Caracal",
+        // The packaged application takes its icon from the bundle, but a window
+        // running from source has none, and on Linux and Windows this is also the
+        // taskbar's. Rendered from `branding/caracal-source.png`; see `app/icons`.
+        icon = painterResource("caracal.png"),
         state = rememberWindowState(width = 1100.dp, height = 720.dp),
     ) {
         window.minimumSize = Dimension(760, 480)

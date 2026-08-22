@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="branding/caracal.png" alt="" width="128">
+</p>
+
 # Caracal
 
 **A free desktop IDE for Postgres and Redis.**

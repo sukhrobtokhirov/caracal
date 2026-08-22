@@ -107,6 +107,12 @@ compose.desktop {
                     .orElse(layout.buildDirectory.dir("compose/binaries")),
             )
             targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
+
+            // One mark, three formats, none of them hand-edited: `app/icons` is
+            // rendered from `branding/caracal-source.png` by `branding/render-icons.py`.
+            // Without these, jpackage ships the default Java icon and the
+            // application arrives in the dock, the Start menu, and the .desktop
+            // entry looking like nobody's.
             packageName = "Caracal"
             packageVersion = project.version.toString()
             vendor = "Caracal"
@@ -135,6 +141,7 @@ compose.desktop {
 
             macOS {
                 bundleID = "dev.caracal.app"
+                iconFile.set(project.file("icons/caracal.icns"))
                 dockName = "Caracal"
                 // macOS rejects an app version whose first number is zero, so a 0.x
                 // release shows 1.0.0 as its marketing version while the build
@@ -147,10 +154,12 @@ compose.desktop {
                 packageBuildVersion = project.version.toString()
             }
             windows {
+                iconFile.set(project.file("icons/caracal.ico"))
                 menu = true
                 upgradeUuid = "6f2e3a54-9d4f-4f3f-9d0b-0a1f3b6c8e21"
             }
             linux {
+                iconFile.set(project.file("icons/caracal.png"))
                 packageName = "caracal"
             }
         }

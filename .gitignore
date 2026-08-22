@@ -10,6 +10,9 @@ build/
 .env
 .env.local
 
+# The icon renderer is run by hand, not imported; this is its leftovers
+__pycache__/
+
 # Editors and OS
 .DS_Store
 .idea/
