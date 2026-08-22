@@ -4,13 +4,27 @@ Recorded per §1 of `caracal-multi-engine-spec.md`, from the source rather than 
 the spec's description. Where the two disagree, this file records what is actually
 in the repository; the spec is corrected to match.
 
-Established at commit `78fe44d`, version `0.1.0` (untagged).
+Established at commit `78fe44d`, version `0.1.0` (untagged). Sections marked
+**Phase 1** below record what changed when the SPI was extracted at `66ef6a2`; the
+rest still describes the repository as it stands.
 
 ---
 
 ## 1. Module and build layout
 
 **Two modules, not nine.** `settings.gradle.kts` includes exactly `:core` and `:app`.
+
+> **Phase 1.** Three now: `:engine-api`, `:core`, `:app`. `:engine-api` holds the SPI
+> and depends on nothing but Kotlin and coroutines —
+> `assertSpiHasNoDependencies` fails its `check` if anything else reaches its runtime
+> classpath, in the same shape as `:core`'s `assertNoComposeDependency`. Both `:core`
+> and `:app` depend on it; `:core` does so with `api`, since the SPI is in the
+> signatures it hands out rather than an implementation detail behind them.
+>
+> The PostgreSQL and Redis implementations of the SPI live in `:core`, under the
+> packages `dev.caracal.engine.postgres` and `dev.caracal.engine.redis` — the names
+> they will have once `:engine-postgres` and `:engine-redis` are carved out, so that
+> split is a file move rather than an import churn.
 
 | Module | Contains |
 |---|---|
@@ -33,7 +47,9 @@ returns a value is a build error here, not a silently skipped test.
 
 **No coverage tooling is configured.** Neither JaCoCo nor Kover is on the build.
 Phase 0's ">85% coverage" acceptance criterion cannot be measured as the repo
-stands; adding it is part of Phase 0.
+stands; adding it is part of Phase 0. *(Done: Kover is on `:core` and
+`:engine-api`, and `assertCharacterizationCoverage` holds the eight named classes to
+85% individually.)*
 
 ## 2. Package naming
 
@@ -42,6 +58,13 @@ The spec writes `caracal.engine.api`. The repository root package is
 ID is `dev.caracal.app`. New SPI packages must therefore be
 **`dev.caracal.engine.api`**, and the §2.2 forbidden-import list must read
 `dev.caracal.engine.postgres` and so on.
+
+> **Phase 1.** The forbidden list needs both spellings, not just that one. The engines
+> are still in `dev.caracal.core.postgres` and `dev.caracal.core.redis`, so a list
+> containing only the `engine` packages passes today by matching nothing — the same
+> vacuous pass the missing `dev.` prefix would have caused, one layer down.
+> `ArchitectureTest` forbids both, and a second, enabled test asserts the scan finds
+> sources at all.
 
 ## 3. Where the named files actually live
 
@@ -77,6 +100,13 @@ ui/RedisInfoDashboard  ui/RedisKeyBrowser  ui/RedisValueViewer
 There is **no existing indirection** — no session interface, no facet, no capability
 object. View models hold a `RedisSession`/`PostgresSession` directly.
 
+> **Phase 1.** Still true of `:app`, deliberately: the phase's acceptance criterion is
+> that `:ui` is untouched. What changed is that the indirection now exists and is
+> tested — `DatabaseSession`, `QueryFacet`, `CatalogFacet`, `EngineCapabilities` — so
+> Phase 2 has somewhere to move the view models *to*. Thirteen files still import the
+> concrete engines, and `ArchitectureTest` is the disabled test that will say when
+> none do.
+
 `when (engine)` switches, all on the `Engine` enum:
 
 | Site | Decides |
@@ -101,6 +131,11 @@ tabs) become engine-declared metadata; the two `:core` switches become
 `redis(id)` that throw `WrongEngineException` on a mismatch. That sealed hierarchy is
 what `DatabaseSession` + facets replaces.
 
+> **Phase 1 left it untouched.** `DatabaseEngine.connect` is a second, parallel way to
+> open a session; the registry still opens them the old way. Repointing it at
+> `DatabaseSession` is what makes the `:ui` flip possible, so it belongs with that
+> flip rather than a phase before it.
+
 ## 5. Engine model today
 
 `core/connections/Connection.kt:40`:
@@ -112,6 +147,14 @@ enum class Engine(val wire: String, val defaultPort: Int) { POSTGRES, REDIS }
 The connection descriptor is `ConnectionConfig`, host/port/database/user shaped, with
 `environment`, `readOnly`, and a TLS mode. It has no target sum type, so §5.1's
 `ConnectionTarget` (needed for SQLite's file path) is a real change, not a rename.
+
+> **Phase 1.** `ConnectionDescriptor` with its `ConnectionTarget` sum type now exists
+> in `:engine-api`, and both engines map from it. `ConnectionConfig` is unchanged and
+> is still what the store, the registry and the UI use; the engines convert at their
+> own edge. `ConnectionId` and `Environment` moved into `:engine-api` — a descriptor
+> names both — with typealiases left in `dev.caracal.core.connections` so nothing else
+> had to move. The `Engine` enum survives untouched and is replaced by `EngineId` plus
+> a registry in Phase 3.
 
 ## 6. Dependency surface
 

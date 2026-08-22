@@ -66,10 +66,27 @@ note: is this a single Gradle module or already multi-module, and does the UI la
 
 ### 2.1 Modules
 
-> **Repo check.** None of this exists yet: the build has `:core` and `:app` only, and
-> `:app` holds both the Compose UI and the wiring the table below splits between `:ui`
-> and `:app`. Read the table as the destination, and expect Phase 1 to create nine
-> modules where there are two.
+> **Repo check.** None of this existed when the spec was written: the build had
+> `:core` and `:app` only, and `:app` holds both the Compose UI and the wiring the
+> table below splits between `:ui` and `:app`. Read the table as the destination.
+>
+> **Phase 1 created one module, not nine.** `:engine-api` exists; the PostgreSQL and
+> Redis implementations of it live in `:core` for now, under the packages
+> `dev.caracal.engine.postgres` and `dev.caracal.engine.redis` — the package names
+> they will have after the split, so that carving out `:engine-postgres` is a file
+> move and not an import churn across every call site. Splitting eight modules in the
+> phase whose own instruction is *do not move logic yet, wrap it* would have been the
+> largest possible way to break that rule.
+>
+> **The arrow between `:core` and `:engine-api` points the other way.** The table
+> says `:engine-api` depends on `:core`. It cannot, and the spec contradicts itself
+> about it two sections later: §7 puts `WriteIntent` in `:engine-api` and has core's
+> `DataSafetyPolicy.gate` take one, and this same table keeps the connection registry
+> in `:core`, where it will hold `DatabaseSession`s. Both need `:core` to see the SPI.
+> Pointing the arrow as drawn also makes a cycle unavoidable while PostgreSQL and
+> Redis still live in `:core`. So `:engine-api` depends on **nothing** — the build
+> fails its `check` if anything but Kotlin and coroutines reaches its runtime
+> classpath — and every other module depends on it.
 
 ```
 :core            vault, secrets, redaction, safety policy, connection registry,
@@ -94,10 +111,25 @@ note: is this a single Gradle module or already multi-module, and does the UI la
 The single most important structural invariant: **`:ui` must not compile against a
 concrete engine.** Enforce it mechanically, not by discipline:
 
-> **Repo check.** Until the module split lands there is no `:ui` to test, so this belongs
-> in `app/src/test/` and reads `app/src/main/kotlin`. The forbidden imports are
-> `dev.caracal.engine.postgres` and so on — mind the `dev.` prefix, without which the test
-> passes by matching nothing.
+> **Repo check.** Until the module split lands there is no `:ui` to test, so this lives
+> in `app/src/test/kotlin/dev/caracal/app/ArchitectureTest.kt` and reads
+> `app/src/main/kotlin`. Mind the `dev.` prefix, without which the test passes by
+> matching nothing — and mind the deeper version of the same trap: a list containing
+> only `dev.caracal.engine.postgres` *also* matches nothing today, because the engines
+> are still in `dev.caracal.core.postgres`. The test as written forbids both the
+> current and the eventual names, and it scans for the package anywhere in a line of
+> code rather than only in an `import`, since a fully-qualified reference is exactly
+> as much of a dependency. Comment lines are excused: one file mentions
+> `dev.caracal.core.redis` only in a KDoc link.
+>
+> It is `@Disabled` as Phase 1 requires, and it is joined by a second test that is
+> *not* disabled, asserting that the scan finds sources at all. A disabled check that
+> would also have passed against an empty file list is worth nothing.
+>
+> `:engine-api`'s equivalent is a build rule rather than a test —
+> `assertSpiHasNoDependencies` in `engine-api/build.gradle.kts`, modelled on `:core`'s
+> `assertNoComposeDependency`. It is strictly stronger than scanning imports: a type
+> the SPI cannot compile against cannot be imported at all.
 
 ```kotlin
 // ui/src/test/kotlin/ArchitectureTest.kt
@@ -152,6 +184,19 @@ interface DatabaseEngine {
 enforcement at connection time (§7). It receives `DriverProvider` so it can obtain a
 classloaded JDBC driver without knowing how it got there.
 
+> **Repo check.** Two changes, both made in Phase 1.
+>
+> `policy` is a `SessionPolicy`, not core's `DataSafetyPolicy`. `DataSafetyPolicy` is
+> a decision table answering "what must the user agree to before this is sent", and an
+> engine has nothing to ask it — what an engine needs is the *answer*. `SessionPolicy`
+> is that answer plus the statement timeout, which is already configured at exactly
+> this seam. It also keeps the SPI able to depend on nothing, which §2.1 above turns
+> out to require.
+>
+> `DatabaseEngine` gained `val intentClassifier: IntentClassifier`. §7 declares the
+> type and never says where it hangs; the engine is the only sensible place, since
+> classification is precisely the half of §7 that is per-engine.
+
 ### 3.2 Session and facets
 
 Do **not** build one god interface with twenty capability booleans. Use facets: an engine
@@ -175,6 +220,26 @@ inline fun <reified F : Any> DatabaseSession.requireFacet(): F =
 ```
 
 Facet catalogue:
+
+> **Repo check — Phase 1 declared two of these, not eight.** `QueryFacet` and
+> `CatalogFacet` are in `:engine-api` and PostgreSQL implements both. The rest are
+> not there, and the reason splits in two.
+>
+> `TransactionFacet`, `MutationFacet` and `ExplainFacet` describe features the
+> product does not have: there is no user-driven begin/commit (every statement runs
+> in its own transaction), no editable grid, and no plan viewer. An interface with no
+> implementation and no caller is a guess, and §12 is about exactly this.
+>
+> `KeyValueFacet`, `CommandFacet` and `MetricsFacet` describe features that *do*
+> ship — the Redis key browser, console and dashboard — but whose shape is decided
+> entirely by the one consumer they have, which is the UI. Declaring them one phase
+> before the flip that would tell us what they need means guessing at a paged value
+> model, a RESP reply tree and a metrics record, in the module nobody may change
+> without touching every engine. They arrive in Phase 2, with a caller to answer to.
+>
+> `RedisEngineSession` therefore provides no facets and says so in its `facet()`,
+> which the integration suite asserts: asking a key-value engine for a `QueryFacet`
+> returns null rather than a surprise. That is the facet model working, not failing.
 
 | Facet | Provided by | Purpose |
 |---|---|---|
@@ -218,8 +283,18 @@ sealed interface StatementOutcome {
 ```
 
 `Notice` exists so `RAISE NOTICE`, MySQL warnings, and SQLite `PRAGMA` output stop being
-swallowed. The current Postgres implementation almost certainly discards
-`SQLWarning`/`PSQLWarning`; wire it here.
+swallowed.
+
+> **Repo check.** `PostgresAdapter` does *not* discard them — it already reads both
+> the statement's and the connection's warning chains, deduplicates across the two,
+> and bounds the result. So this was wiring, not building.
+>
+> Two shape changes. `Notice.severity` is a `String?` and not a `Severity` enum:
+> PostgreSQL localizes it through `lc_messages`, so it is a value to show and not one
+> to branch on, and `sqlState` is the field to test against if anything ever needs to.
+> And `StatementOutcome` gained a `Truncated(reason)` arm, emitted after `Rows`,
+> because a result cut at a row or byte limit has to say so and the descriptor is sent
+> before anyone knows.
 
 ### 3.3 Cancellation
 
@@ -265,6 +340,15 @@ data class EngineCapabilities(
     val defaultPort: Int?,
 )
 ```
+
+> **Repo check.** Two small widenings in Phase 1. `QuoteStyle` gained a `NONE` arm,
+> because Redis has no identifiers to quote — keys are opaque byte strings — and
+> `maxIdentifierLength` reads 0 for the same engine, meaning "not applicable" rather
+> than "zero characters". `EngineDeclarationTest` asserts the pairs that are actually
+> disclosures rather than trivia: PostgreSQL declares `SESSION_SETTING` and
+> `OUT_OF_BAND`, Redis declares `COMMAND_GUARD_ONLY` and `CLIENT_ABANDON`, and it
+> checks that the port the connection form suggests is the port the capabilities
+> declare — two places that have to agree and that nothing else makes agree.
 
 **Usage rule.** The UI reads capabilities to decide what to *show*. It never switches on
 `EngineId`. If you find yourself writing `when (session.engineId)` in `:ui`, the missing
@@ -322,6 +406,26 @@ sealed interface Transport {
     ) : Transport
 }
 ```
+
+> **Repo check.** Built in Phase 1 as written, with one consequence worth recording.
+>
+> `ConnectionId` and `Environment` moved out of `dev.caracal.core.connections` and
+> into `:engine-api`, because a descriptor names them and the SPI depends on nothing.
+> `dev.caracal.core.connections` keeps a `typealias` for each, so not one call site
+> moved with them; the aliases come out in Phase 2.
+>
+> Keeping `environment` on the descriptor was not obvious and is not decoration.
+> `RedisCommandGuard` reads the environment off the connection the adapter captured
+> at open — that is how `FLUSHDB` against production asks for a typed phrase instead
+> of a click. A descriptor that dropped the tag would downgrade that silently, on the
+> connection where it matters most, so `RedisEngineIntegrationTest` opens a session
+> from a `PROD` descriptor and asserts the guard still demands a typed phrase. §7 is
+> where that decision moves back into core; until then the tag has to reach the
+> engine.
+>
+> `writable` and `SessionPolicy.readOnly` are both kept and are not the same fact:
+> one is the label on the saved connection, the other is what core resolved for this
+> session and what the engine enforces at connect time.
 
 ### 5.2 Declarative connection form
 
@@ -411,6 +515,27 @@ sealed interface CellValue {
 }
 ```
 
+> **Repo check.** Three changes, made in Phase 1 and each one a case where the
+> repository already knew better.
+>
+> **PostgreSQL never constructs `Floating` at all** — not for `numeric`, and not for
+> `float4`/`float8` either. `PostgresValues` reads all three as the text the server
+> sent, because `getBigDecimal` throws on the `NaN` that `numeric` is allowed to hold
+> and a `Double` would round a `numeric(38,10)` before anyone saw it. A value no
+> `BigDecimal` can hold keeps the server's spelling as `Text`. `PostgresCellsTest`
+> asserts that no representative value crosses as `Floating`.
+>
+> **`Bytes` carries a preview and a byte count, not a `ByteArray`.** `bytea` is
+> rendered in PostgreSQL's own `\x` hexadecimal with the true length beside it, so
+> the grid can say how much of a forty-megabyte value it is not showing. The spec's
+> shape drops that count and retains the whole value to display a kilobyte of it.
+>
+> **`Text` carries a `truncated` flag**, which the spec's version has only on `Bytes`.
+> Without it a clipped cell is indistinguishable from a complete one. It also decides
+> something: a clipped `jsonb` value crosses as `Text`, not as `Json`, because half a
+> document is not JSON and labelling it so hands a pretty-printer something it cannot
+> parse — on the one value the user was looking at closely.
+
 **Rule:** no engine may construct `Floating` for an exact numeric type, and no code path
 may route a value through `Double` or `toString()` of a JDBC object. Read `numeric` with
 `getBigDecimal`, `int8` with `getLong`/`getBigDecimal`, MySQL `DECIMAL` and `BIGINT
@@ -432,6 +557,16 @@ data class EngineError(
 
 data class SourcePosition(val offset: Int, val length: Int = 1)
 ```
+
+> **Repo check.** `code` carries two namespaces and cannot say which, and that is a
+> wart Phase 1 recorded rather than fixed. A raw server error that stayed a
+> `DbError.QueryFailed` brings its SQLSTATE. A failure `PostgresErrors` recognized and
+> named — a read-only violation, a timeout, an unreachable host — brings the stable
+> classified code instead (`read_only_violation`), because that is what the UI
+> branches on and the SQLSTATE it came from is not kept anywhere. Attempting a write
+> on a read-only connection therefore reports `read_only_violation`, not `25006`.
+> Phase 2 is where the two should stop sharing one field; changing `PostgresErrors`
+> to keep the SQLSTATE is a behaviour change and belongs in its own commit.
 
 `position` is the feature that makes this tool feel precise, and it is the easiest thing to
 lose in a refactor. Two hazards:
@@ -820,6 +955,43 @@ implement them by delegating to existing code. Do not move logic yet — wrap it
 
 **Acceptance:** Phase 0 tests unchanged and green. `:ui` untouched. Architecture test from
 §2.2 added but allowed to fail (mark `@Disabled` with a TODO naming Phase 2).
+
+> **Done 2026-08-22.** `./gradlew check` is green, including the Phase 0
+> characterization floor, and `CARACAL_INTEGRATION=1` adds nineteen new tests against
+> real PostgreSQL and Redis containers, all passing. `:app` was not touched except to
+> gain the architecture test.
+>
+> Four commits, structure and behaviour kept apart as §0's second rule asks:
+>
+> 1. **the module** — `:engine-api`, its no-dependencies build rule, and the catalog
+>    vocabulary moved into it behind typealiases.
+> 2. **the SPI** — §3 to §8's interfaces, and `ServerVersionTest` for the only logic
+>    among them.
+> 3. **the engines** — `PostgresEngine`/`RedisEngine` and their sessions, wrapping the
+>    existing code and moving none of it, with the mapping tests that matter:
+>    `PostgresCellsTest` on precision, `PostgresEngineErrorsTest` on the position
+>    mapping, `PostgresIntentTest`/`RedisIntentTest` on §7's classification half, and
+>    `EngineDeclarationTest` over both engines at once as the seed of §10.
+> 4. **the rule** — the §2.2 architecture test, disabled, with the guard that proves
+>    it is reading something.
+>
+> Three things are worth carrying into Phase 2 rather than discovering there.
+>
+> - **`PostgresSession` and `RedisSession` are wrapped, not made to implement
+>   `DatabaseSession`.** `serverVersion` is a value and not a call, so a session that
+>   has one must read it while connecting — and adding a step to the path the registry
+>   already uses is precisely the change this phase must not make. `PostgresEngine` is
+>   a second, parallel way in; the registry still opens sessions the old way and will
+>   until Phase 2 or 3 moves it.
+> - **`ConnectionRegistry` was left alone**, for the same reason. It still returns
+>   `PostgresSession`/`RedisSession` through its typed accessors. Repointing it at
+>   `DatabaseSession` is the change that makes the `:ui` flip possible and it belongs
+>   with that flip, not before it.
+> - **The v0.1.0 tag still does not exist**, and `current-state.md` §9 recommended
+>   waiting for it. Phase 1 went ahead because it adds no migration and no stored
+>   format: nothing here is written against a released baseline. Phase 4 is the one
+>   that genuinely cannot start without the tag, since the v1 vault fixture has to be
+>   a file a shipped build wrote.
 
 ### Phase 2 — Flip the UI onto the SPI
 
