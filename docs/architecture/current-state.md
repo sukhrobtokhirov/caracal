@@ -163,6 +163,15 @@ tabs) become engine-declared metadata; the two `:core` switches become
 > to make and are not what the rule is about. `Engines` in
 > `dev.caracal.core.engines` is now the one place that knows which engines exist, and
 > Phase 3 replaces its body with a `ServiceLoader` without anything above it changing.
+>
+> **Phase 3. None of the nine are left, and neither are the three.** `Engines` reads
+> `ServiceLoader<DatabaseEngine>`; the connection dialog draws the engine's declared
+> sections and fields; `TlsMode.supportedBy` is gone, replaced by reading the options
+> off the engine's own `tls` choice; `ConnectionDraft`'s database validation is the
+> generic declared-rule half plus whatever `engine.validate` says; and the test button
+> dials through `DatabaseEngine.connect`, which deleted `PostgresProbe` and
+> `RedisSession.test` outright. What is still keyed on an engine's name is the
+> artwork, with a generic mark behind it for the engines this build has never seen.
 
 `ConnectionRegistry` already has the shape the SPI wants: a private sealed
 `RuntimeClient` with `Postgres`/`Redis` arms, and typed accessors `postgres(id)` /
@@ -211,6 +220,18 @@ The connection descriptor is `ConnectionConfig`, host/port/database/user shaped,
 > names both — with typealiases left in `dev.caracal.core.connections` so nothing else
 > had to move. The `Engine` enum survives untouched and is replaced by `EngineId` plus
 > a registry in Phase 3.
+>
+> **Phase 3 did exactly that, and took the shape with it.** The enum is gone.
+> `ConnectionConfig` holds an `EngineId`, a `ConnectionTarget` — so a file is
+> expressible and not only a host and a port — and a `Map<String, String>` of whatever
+> the engine's form declared, stored in a `connection_settings` table that schema 4
+> adds. `host`, `port`, `database`, `username` and `tlsMode` survive as accessors over
+> those two, because they are what the well-known keys in `FormKeys` mean, and because
+> forty call sites reading `config.host` are forty call sites that do not care.
+>
+> Reading a stored engine name can no longer fail. A connection naming an engine this
+> build does not have lists, shows what it points at, and refuses to open with a
+> sentence — where `Engine.from` used to fail the entire store read.
 
 ## 6. Dependency surface
 

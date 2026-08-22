@@ -64,6 +64,10 @@ note: is this a single Gradle module or already multi-module, and does the UI la
 > vocabulary and `EngineCapabilities`, and `ArchitectureTest` is enabled and green.
 > The `when (engine)` switches that remain are the connection form's, which Phase 3
 > replaces with `ConnectionForm` rendering, and the artwork's, which stays.
+>
+> **Phase 3 took the form's.** The dialog renders the engine's declared sections and
+> fields, so the only thing left keyed on an engine's name anywhere above `:core` is
+> the artwork, and that now falls back to a generic mark.
 
 ---
 
@@ -466,6 +470,22 @@ Each engine declares its form; the dialog renders it generically and hands back 
 `Map<String, String>` that `engine.validate()` checks. Validation messages come from the
 engine, so "port must be between 1 and 65535" and "database file is not readable" are both
 first-class.
+
+> **Done in Phase 3, with two additions the spec does not name.**
+>
+> `FormKeys` is the small set of keys core also understands: `host`, `port`, `database`
+> and `path` become the `ConnectionTarget`, `tls` becomes `TlsConfig`, `user` is what a
+> redaction list has to know about, and `password` never reaches the stored form at all
+> because a `FormField.Secret` is sealed in the vault. Everything else an engine declares
+> is stored and handed back unread. The keys are a convention with somewhere to write it
+> down, not a schema: an engine that spells its host differently gets a network target
+> with an empty host, and its own `validate` objects.
+>
+> The generic half of validation is larger than "the dialog renders it": required,
+> numeric, in range, one of these options, a readable file, and a length backstop are all
+> derivable from the declaration and are applied for every engine at once, in
+> `ConnectionDraft`. What is left for `engine.validate` is what needs to know what the
+> engine is.
 
 ### 5.3 Secrets and vault migration
 
@@ -1084,6 +1104,104 @@ dialog; declarative `ConnectionForm` rendering.
 **Acceptance:** adding a `DatabaseEngine` implementation to the classpath makes it appear
 in the UI with zero UI code changes. Prove it with a fake `:engine-test` module used only
 in tests.
+
+> **Done 2026-08-22.** `./gradlew check` is green, and `CARACAL_INTEGRATION=1` runs 197
+> tests against real PostgreSQL and Redis containers with none failing. The acceptance
+> criterion is a test: `:engine-test` holds one engine and one line of
+> `META-INF/services`, it is on the test runtime classpath of `:core` and `:app` and on
+> neither's compile classpath, and `EngineInstallUiTest` drives the real dialog to
+> assert that it is offered, that its declared fields are drawn, that its own validation
+> message reaches the field it is about, and that a connection to it saves with a **file**
+> target. A seventh test greps `app/src/main` for the word `ledger` and fails if the
+> application has learned it.
+>
+> Three commits.
+>
+> 1. **the registry** — `Engines` reads `ServiceLoader<DatabaseEngine>`.
+> 2. **the stored form** — a connection names an engine by id, points at a target, and
+>    carries whatever fields that engine declared; the dialog draws them.
+> 3. **the proof** — `:engine-test`, and the tests that would fail if any of it were a
+>    list somewhere.
+>
+> **`PostgresEngine` and `RedisEngine` are classes now.** A `ServiceLoader` provider on
+> the *class path* is constructed through a public no-argument constructor; the static
+> `provider()` method the loader also understands is honoured only for a provider in a
+> named module, which a desktop application shipped as one jar is not. A Kotlin `object`
+> has a private constructor and cannot be registered at all. What was a constant stayed
+> on the companion — `ID`, `OPTION_USER`, `CAPABILITIES` — and every caller reaches the
+> one instance the loader made.
+>
+> **The stored connection widened to the descriptor's shape**, which is what
+> `registry/Descriptors.kt` said Phase 3 would do. `ConnectionConfig` was
+> host-port-database-user shaped; it now holds an `EngineId`, a `ConnectionTarget`, and
+> a `Map<String, String>` of whatever the engine's form declared. Schema 4 is that
+> change: `connection_settings` is a table of key-value rows, `username` and `tls_mode`
+> are copied into it **before** the table rebuild rather than after — after is too late,
+> the rebuild drops the table they are in — and `connections` gains `target_kind` and
+> `file_path` while `host` and `port` lose their `NOT NULL`, because a file has neither.
+>
+> **Reading a connection no longer has to succeed at naming its engine.** `Engine.from`
+> used to fail the whole store read for one unrecognised word. A connection whose engine
+> module is not installed now lists, shows what it points at, shows its settings under
+> their stored keys, and refuses to *open* with a sentence. One absent engine taking the
+> connection list with it is the failure mode `EngineId` exists to prevent.
+>
+> **Validation is split, and neither half knows the other's engines.** The rules that
+> follow from the declaration — required, numeric, in range, one of these options, a
+> file that exists — are applied in `ConnectionDraft` for every engine at once. The rest
+> comes back from `DatabaseEngine.validate`. At most one message per field reaches the
+> form, the declared rule winning, because "Database is required" is more use than the
+> engine's paragraph about why it needs one. Two length caps moved out of core and into
+> the engines that own them, and Redis's `0..15` moved into the `range` on its own form
+> field — where the form can now refuse 16 before anything is saved.
+>
+> **A text field's default is a suggestion; a number's is a value.** The form opens with
+> `localhost` in the host box because the engine declared it, and `normalized()` does
+> *not* put it back when the user clears it: an empty host is an empty host, and quietly
+> reading it as `localhost` would save a connection to a server whose name was deleted.
+> An empty port box still means the engine's port, and an unticked box still means false.
+>
+> **What `require` means is read off the declaration rather than off the engine's name.**
+> An engine whose form offers both `require` and `verify-full` is drawing PostgreSQL's
+> distinction, so its `require` is the weaker of its two; an engine offering `require`
+> alone is saying that word *is* its secure mode, which is what Redis says. The rule is
+> right about an engine `Descriptors.kt` has never heard of, which the `when` it replaced
+> could not be. A mode the engine does not offer is still refused rather than downgraded.
+>
+> **The test button goes through the engine.** `PostgresProbe` and `RedisSession.test`
+> are deleted: both were a second implementation of dial-authenticate-round-trip, and
+> `DatabaseEngine.connect` already does all three before it returns a session. What
+> changes for PostgreSQL is that the probe opens the pool the engine builds rather than
+> a pool of one; the connect timeout is the same five seconds, because it is configured
+> in `PostgresDataSources` and not at the call site.
+>
+> **Artwork is the one thing still keyed on the engine's name**, as Phase 2 said it
+> always would be, and it now has a fallback: an engine this build has no mark for gets
+> a drawn database cylinder in a neutral grey and `💾` where a glyph is wanted, rather
+> than a blank square.
+>
+> Three behaviour changes worth knowing about, all of them the declaration being taken
+> seriously:
+>
+> - **A PostgreSQL connection now requires a user name.** Core's own rule allowed it to
+>   be absent — "some servers authenticate by certificate or peer identity" — while
+>   `PostgresEngine.validate` has said `Enter the user to connect as.` since Phase 1.
+>   The engine wins, and it is right: pgjdbc sends a user on every connection.
+> - **The new-connection dialog opens on the first engine offered**, which is the first
+>   by display name. With an engine installed that sorts before PostgreSQL, that engine
+>   is what the dialog opens on.
+> - **The Redis database field is labelled `Database index`** by Redis, where the dialog
+>   used to special-case the label. Which is the whole point.
+>
+> Two things are deliberately not done, and both were named in Phase 2.
+>
+> - **The PostgreSQL execute path still goes through `ConnectionRegistry.postgresAdapter`.**
+>   Reconciling `QueryFacet`'s streamed outcomes with core's whole `QueryResult` changes
+>   the result model, the error position mapping that rides on it, and every grid that
+>   reads one. It is a phase of its own.
+> - **The engines still live in `:core`.** The module split is a file move that this
+>   phase does not need; `ArchitectureTest` forbids both the current and the eventual
+>   package names, so it is ready for the move whenever the move happens.
 
 ### Phase 4 — Vault v2
 

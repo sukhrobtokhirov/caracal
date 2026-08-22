@@ -7,12 +7,52 @@ version is 0, a minor bump may change behaviour.
 
 ## [Unreleased]
 
+### Added
+
+- **A database engine can be installed rather than built in.** An engine is a module
+  with one line in `META-INF/services/dev.caracal.engine.api.DatabaseEngine`; it is
+  found at startup, offered in the connection dialog, listed in the settings window,
+  and given a generic mark where the application has no artwork for it. Nothing in the
+  application names it. A test-only engine proves that: it opens a file rather than
+  dialing a host, declares no password, and appears in the dialog with its own fields,
+  its own labels and its own validation messages, with no change to any of the code
+  that draws them.
+
 ### Changed
+
+- **The connection dialog is drawn from the engine's declaration.** Which fields a
+  connection has, what they are called, which are optional, which numbers are in
+  range, and which transport modes exist are all answers the engine gives. Two
+  consequences are visible: a new PostgreSQL connection now opens with `localhost`
+  already in the host field, and a Redis connection's database field is labelled
+  `Database index` rather than `Database`.
+- **A saved connection now records what it points at**, which is a host and a port
+  today and can be a file. It also records whatever fields its engine declared, under
+  that engine's own names — so an engine can ask for something this application has
+  never heard of and have it stored, edited and dialled with. Existing connections
+  migrate on first open; nothing about them changes.
+- **A connection whose engine is missing no longer breaks the list.** It appears with
+  what it points at, says which engine it wants, and refuses to open. Before, one
+  unrecognised engine name made the whole configuration file unreadable.
+- **A PostgreSQL connection requires a user name.** The driver has always sent one;
+  the form now says so before saving rather than letting the server refuse it.
+- **The connection test dials through the engine** instead of through a second,
+  parallel implementation per engine. Same timeout, same classified errors, one path.
 
 **Internal — the seam a second wave of engines will arrive through.** No behaviour
 changes; every one of these is a refactor covered by the existing tests, including
 the ones that run against real PostgreSQL and Redis servers.
 
+- Engines are discovered with `ServiceLoader` rather than listed in a `when`. The two
+  bundled ones became classes to be constructible by it, and everything that used to
+  ask "which engine is this" now asks the engine.
+- The stored connection widened to the shape the SPI dials from: an engine identifier,
+  a target, and the engine's declared settings. Schema 4 adds a `connection_settings`
+  table and moves the user name and TLS mode into it, keeping both readable by the
+  connection they belong to.
+- What the stored `require` TLS mode means is read off the engine's own declaration —
+  an engine that also offers `verify-full` is drawing PostgreSQL's distinction — rather
+  than off its name. Both connections behave exactly as before.
 - A new `:engine-api` module holds the service-provider interface: `DatabaseEngine`,
   `DatabaseSession`, `EngineCapabilities`, and the facets a session provides —
   `QueryFacet` and `CatalogFacet` for SQL engines, `KeyValueFacet`, `CommandFacet`
