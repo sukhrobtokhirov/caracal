@@ -148,16 +148,24 @@ class SqliteErrorsTest {
         // it was working on into most of its I/O errors, and a path names the user's
         // disk, their projects and often their customers. `DbError`'s contract forbids
         // an address in a message; for this engine the path is the address.
-        val config = SqliteConnectionConfig(path = Path.of("/private/acme-payroll.db"))
+        val config = SqliteConnectionConfig(path = Path.of("private", "acme-payroll.db"))
+        // Built from the config's own spelling of the path rather than from a literal.
+        // A path is written with backslashes on Windows and a drive letter in front of
+        // it, and the property under test is redaction rather than separators — a test
+        // that hard-codes one platform's spelling passes there and asserts nothing
+        // anywhere else.
         val failure = SQLiteException(
-            "unable to open database file: /private/acme-payroll.db",
+            "unable to open database file: ${config.absolutePath}",
             SQLiteErrorCode.SQLITE_ERROR,
         )
 
         val error = SqliteErrors.classify(failure, config.redaction())
 
         assertTrue(!error.message.contains("acme-payroll"), "the file name reached the message: ${error.message}")
-        assertTrue(!error.message.contains("/private/"), "the directory reached the message: ${error.message}")
+        assertTrue(
+            !error.message.contains(config.absolutePath.toString()),
+            "the path reached the message: ${error.message}",
+        )
     }
 
     @Test

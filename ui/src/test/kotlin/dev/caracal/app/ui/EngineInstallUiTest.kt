@@ -160,16 +160,20 @@ class EngineInstallUiTest {
             // modal window parented to the application's, and a test that had to open
             // one would be a test nobody could run.
             var asked: String? = null
+            val chosen = java.nio.file.Path.of("/tmp/chosen.ledger")
             newLedgerConnection(FakeConnectionService(VaultState.UNLOCKED)) { field ->
                 asked = field.key
-                java.nio.file.Path.of("/tmp/chosen.ledger")
+                chosen
             }
 
             onNodeWithTag("browse-path").performClick()
             waitForIdle()
 
             assertEquals("path", asked, "the button asked for the wrong field, or for none")
-            onNodeWithTag("field-path").assertTextContains("/tmp/chosen.ledger")
+            // Compared against the path's own rendering rather than the literal above:
+            // what a picker returns is a `Path`, and Windows spells one with
+            // backslashes and a drive letter.
+            onNodeWithTag("field-path").assertTextContains(chosen.toString())
         }
 
     @Test
