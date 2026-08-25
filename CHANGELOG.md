@@ -28,6 +28,21 @@ version is 0, a minor bump may change behaviour.
   excused it, rather than quietly passing. `EngineCapabilities` gained
   `surfacesNotices` because that was a difference between engines nothing declared,
   and the suite refuses to skip on anything it cannot name.
+- **PostgreSQL results now stream.** A statement hands back an open cursor and its
+  rows are read as they arrive, where the engine used to read the whole result into a
+  list before returning it. What that buys is the export: a CSV of a few hundred
+  megabytes is written row by row instead of being assembled in memory on its way to
+  disk, and an export past the thousand rows the grid retains now costs nothing extra
+  to write.
+- Running a statement and exporting one go through `QueryFacet` like everything else.
+  `ConnectionRegistry.postgresAdapter` — the one accessor that still reached past the
+  engine SPI to a named engine — and the `LegacySqlAdapter` behind it are gone, so an
+  engine added next inherits neither. The CSV writing loop moved into the shared SQL
+  module with them; what stayed in each engine is reading a value out of its own
+  driver.
+- `StatementRequest` gained `values` and `timeout`. An export asks for whole values
+  rather than the previews a grid clips, and for the longer deadline a file written
+  over minutes needs, and it can now say both through the SPI instead of around it.
 
 ## [0.1.0] — 2026-08-22
 

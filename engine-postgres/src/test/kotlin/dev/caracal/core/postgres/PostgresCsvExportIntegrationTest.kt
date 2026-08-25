@@ -3,6 +3,7 @@ package dev.caracal.core.postgres
 import dev.caracal.core.connections.Secret
 import dev.caracal.core.export.CsvExport
 import dev.caracal.core.export.CsvExportReport
+import dev.caracal.core.export.CsvStream
 import dev.caracal.core.export.CsvOptions
 import dev.caracal.core.export.ExportLimits
 import dev.caracal.core.export.ExportRefusal
@@ -12,6 +13,7 @@ import dev.caracal.core.result.DbError
 import dev.caracal.core.result.DbException
 import dev.caracal.core.result.QueryResult
 import dev.caracal.engine.ServerImage
+import dev.caracal.engine.postgres.PostgresQueryFacet
 import java.math.BigDecimal
 import java.nio.file.Files
 import java.nio.file.Path
@@ -197,7 +199,7 @@ class PostgresCsvExportIntegrationTest {
         val path = directory.resolve(CsvExport.fileName("invoices"))
 
         val report = PostgresSession.open(config()).use { session ->
-            CsvExport.writeToFile(path) { out -> session.adapter.exportCsv("SELECT * FROM invoices ORDER BY id", out) }
+            CsvExport.writeToFile(path) { out -> session.exportCsv("SELECT * FROM invoices ORDER BY id", out) }
         }
 
         assertEquals(3, report.rows)
@@ -238,7 +240,7 @@ class PostgresCsvExportIntegrationTest {
                 val writing = CompletableDeferred<Unit>()
                 val export = launch(Dispatchers.IO) {
                     writing.complete(Unit)
-                    CsvExport.writeToFile(path) { out -> session.adapter.exportCsv(SLEEPING_ROWS, out) }
+                    CsvExport.writeToFile(path) { out -> session.exportCsv(SLEEPING_ROWS, out) }
                 }
                 writing.await()
                 awaitBackend(observer)
@@ -258,6 +260,21 @@ class PostgresCsvExportIntegrationTest {
 
     private data class Export(val csv: String, val report: CsvExportReport)
 
+    /**
+     * An export of this session, through the SPI like every other row in the product.
+     *
+     * It used to be `adapter.exportCsv`, reachable from `:core` only through
+     * `LegacySqlAdapter`. Issue #4 moved the writing loop into `:engine-sql` and left
+     * the engine with the half that is genuinely its own — reading a value out of
+     * pgjdbc — so what this exercises is unchanged and how it is reached is not.
+     */
+    private suspend fun PostgresSession.exportCsv(
+        sql: String,
+        out: Appendable,
+        options: CsvOptions = CsvOptions(),
+        limits: ExportLimits = ExportLimits(),
+    ): CsvExportReport = CsvStream.write(PostgresQueryFacet(adapter), sql, out, options, limits)
+
     private fun export(
         sql: String,
         options: CsvOptions = CsvOptions(),
@@ -265,7 +282,7 @@ class PostgresCsvExportIntegrationTest {
     ): Export = runBlocking {
         PostgresSession.open(config()).use { session ->
             val out = StringBuilder()
-            val report = session.adapter.exportCsv(sql, out, options, limits)
+            val report = session.exportCsv(sql, out, options, limits)
             Export(out.toString(), report)
         }
     }

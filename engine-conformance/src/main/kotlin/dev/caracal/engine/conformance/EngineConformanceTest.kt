@@ -31,6 +31,7 @@ import kotlin.time.Duration.Companion.seconds
 import kotlin.time.TimeSource
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.asFlow
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
@@ -495,8 +496,27 @@ abstract class EngineConformanceTest {
     private fun queryFacet(session: DatabaseSession): QueryFacet =
         session.facet(QueryFacet::class) ?: fail("a SQL engine must provide a QueryFacet; ${subject.id} does not")
 
-    private suspend fun execute(session: DatabaseSession, sql: String): List<StatementOutcome> =
-        queryFacet(session).execute(StatementRequest(sql = sql, sourceOffset = 0)).outcomes.toList()
+    /**
+     * Everything one statement produced, with its rows already read off the cursor.
+     *
+     * [StatementOutcome.Rows] carries a flow that is live only while the outcome is
+     * being delivered — an engine that streams is holding a cursor, a transaction and
+     * a connection open behind it — so the rows are read here, inside the emission,
+     * and handed on as a flow over a list. Every case below can then look at the whole
+     * result at once, which is what a test wants, without the suite quietly requiring
+     * every engine to materialize, which is what a test must not ask for.
+     */
+    private suspend fun execute(session: DatabaseSession, sql: String): List<StatementOutcome> {
+        val collected = mutableListOf<StatementOutcome>()
+        queryFacet(session).execute(StatementRequest(sql = sql, sourceOffset = 0)).outcomes.collect { outcome ->
+            collected += if (outcome is StatementOutcome.Rows) {
+                outcome.copy(rows = outcome.rows.toList().asFlow())
+            } else {
+                outcome
+            }
+        }
+        return collected
+    }
 
     private fun List<StatementOutcome>.assertNoneFailed(what: String) {
         filterIsInstance<StatementOutcome.Failed>().firstOrNull()?.let { fail("$what failed: ${it.error.message}") }

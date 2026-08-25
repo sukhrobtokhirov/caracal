@@ -3,6 +3,7 @@ package dev.caracal.core.connections
 import dev.caracal.core.export.CsvExport
 import dev.caracal.core.export.CsvExportReport
 import dev.caracal.core.export.CsvOptions
+import dev.caracal.core.export.CsvStream
 import dev.caracal.core.export.ExportLimits
 import dev.caracal.core.history.ExecutionOutcome
 import dev.caracal.core.history.ExecutionRecord
@@ -15,6 +16,7 @@ import dev.caracal.core.registry.resolveSecret
 import dev.caracal.core.registry.toDescriptor
 import dev.caracal.core.registry.WrongEngineException
 import dev.caracal.core.result.QueryResult
+import dev.caracal.core.result.materialize
 import dev.caracal.core.result.toFailure
 import dev.caracal.core.store.ConfigStore
 import dev.caracal.core.vault.SecretIdentity
@@ -37,7 +39,9 @@ import dev.caracal.engine.api.KeyValueFacet
 import dev.caracal.engine.api.Listing
 import dev.caracal.engine.api.MetricsFacet
 import dev.caracal.engine.api.ObjectKind
+import dev.caracal.engine.api.QueryFacet
 import dev.caracal.engine.api.RawCommand
+import dev.caracal.engine.api.StatementRequest
 import dev.caracal.engine.api.ScanCursor
 import dev.caracal.engine.api.ScanPage
 import dev.caracal.engine.api.SchemaInfo
@@ -463,12 +467,14 @@ class DefaultConnectionService(
      * on the server, where a write hidden in a function body is still a write.
      */
     override suspend fun execute(id: ConnectionId, sql: String): QueryResult {
-        requireUnlocked()
-        val adapter = registry.postgresAdapter(id)
+        val facet = facet<QueryFacet>(id)
         val executedAt = clock()
         val started = TimeSource.Monotonic.markNow()
         try {
-            val result = adapter.execute(sql)
+            // Collecting is what runs it, and assembling the outcomes into one result
+            // is what `:core` returns because a grid draws a finished page. The engine
+            // streams; this is the one place the stream stops being one.
+            val result = facet.execute(StatementRequest(sql)).materialize()
             // Rows returned, or rows affected for a statement that produced no result
             // set. `rowsAffected` is null for a result-producing statement, so the two
             // never both apply.
@@ -501,9 +507,8 @@ class DefaultConnectionService(
         options: CsvOptions,
         limits: ExportLimits,
     ): CsvExportReport {
-        requireUnlocked()
-        val adapter = registry.postgresAdapter(id)
-        return CsvExport.writeToFile(destination) { out -> adapter.exportCsv(sql, out, options, limits) }
+        val facet = facet<QueryFacet>(id)
+        return CsvExport.writeToFile(destination) { out -> CsvStream.write(facet, sql, out, options, limits) }
     }
 
     // --- Query history, M4 ---------------------------------------------------

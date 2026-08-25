@@ -1,6 +1,7 @@
 package dev.caracal.core.connections
 
 import dev.caracal.core.registry.ConnectionRegistry
+import dev.caracal.core.registry.WrongEngineException
 import dev.caracal.core.result.DbError
 import dev.caracal.core.result.DbException
 import dev.caracal.core.store.ConfigStore
@@ -9,6 +10,7 @@ import dev.caracal.core.vault.Vault
 import dev.caracal.engine.ServerImage
 import dev.caracal.engine.api.CatalogFacet
 import dev.caracal.engine.api.KeyValueFacet
+import dev.caracal.engine.api.QueryFacet
 import dev.caracal.engine.api.facet
 import dev.caracal.engine.api.FormKeys
 import dev.caracal.engine.postgres.PostgresEngine
@@ -155,7 +157,12 @@ class ConnectionManagerIntegrationTest {
             assertNull(session.registry.session(pg.id).facet<KeyValueFacet>())
             assertNotNull(session.registry.session(rd.id).facet<KeyValueFacet>())
             assertNull(session.registry.session(rd.id).facet<CatalogFacet>())
-            assertThrows<DbException> { runBlocking { session.registry.postgresAdapter(rd.id) } }
+            assertNull(session.registry.session(rd.id).facet<QueryFacet>())
+            // And the service refuses rather than answering, which is the shape the UI
+            // sees. Running a statement was the last thing that reached past the SPI to
+            // a typed adapter; it goes through the facet like everything else now, so a
+            // key-value connection is turned away by the same lookup.
+            assertThrows<WrongEngineException> { runBlocking { session.service.execute(rd.id, "SELECT 1") } }
         }
     }
 

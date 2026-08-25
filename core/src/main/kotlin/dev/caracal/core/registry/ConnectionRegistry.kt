@@ -20,8 +20,6 @@ import dev.caracal.core.vault.wipe
 import dev.caracal.engine.api.DatabaseSession
 import dev.caracal.engine.api.SecretBundle
 import dev.caracal.engine.api.SessionPolicy
-import dev.caracal.engine.sql.LegacySqlAdapter
-import dev.caracal.engine.sql.LegacySqlSession
 import java.security.MessageDigest
 import java.time.Instant
 import kotlin.time.Duration
@@ -188,22 +186,6 @@ class ConnectionRegistry(
      * that had to know which engine it was talking to before it could ask anything.
      */
     suspend fun session(id: ConnectionId): DatabaseSession = openClient(id)
-
-    /**
-     * The open PostgreSQL adapter, for the two calls no facet covers yet.
-     *
-     * `execute` and `exportCsv` still go through it, because [dev.caracal.engine.api.QueryFacet]
-     * streams outcomes and `:core` returns a whole `QueryResult` — reconciling those
-     * is a change to the result model, the error position mapping that rides on it,
-     * and every grid that reads one, which is not a change to make in the same phase
-     * as a module boundary. Phase 2 stops here on purpose and says so.
-     *
-     * It is not a hole in the boundary: `:core` may see engines, and this is `:core`.
-     * What must not compile against an engine is the UI, and the UI cannot reach
-     * this.
-     */
-    suspend fun postgresAdapter(id: ConnectionId): LegacySqlAdapter =
-        (openClient(id) as? LegacySqlSession)?.legacySqlAdapter ?: throw WrongEngineException()
 
     /** Releases every client. Called when the vault locks and at shutdown. */
     suspend fun closeAll() {

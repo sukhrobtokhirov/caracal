@@ -136,7 +136,6 @@ class ConnectionRegistryTest {
     @Test
     fun `a client that is not open cannot be borrowed`() = runTest {
         assertThrows<NotOpenException> { registry.session(ConnectionId("id-1")) }
-        assertThrows<NotOpenException> { registry.postgresAdapter(ConnectionId("id-1")) }
     }
 
     @Test

@@ -208,6 +208,20 @@ what `DatabaseSession` + facets replaces.
 > that rides on it, and to every grid that reads one; it is not a change to make in
 > the same phase as a module boundary, and Phase 2 stops there and says so.
 >
+> **Issue #4 reconciled them, in the direction the issue called the honest one:**
+> `:core` consumes the stream and assembles the result. `session(id)` is now the only
+> accessor, `LegacySqlAdapter` is deleted, and the two calls that used the escape
+> hatch go through `QueryFacet` like everything else.
+>
+> Three things came with it, and none was optional. `PostgresAdapter` genuinely
+> streams — `LiveStatement` hands back an open cursor, blocking steps hop to
+> `Dispatchers.IO` on their own and emissions stay on the collector's context — because
+> an export routed through a facet that assembled a list first is an export built in
+> heap on its way to disk. `StatementRequest` gained `values` and `timeout`, which §3.2
+> does not have, because a grid and a file disagree about an oversized value and about
+> how long a statement may run. And the CSV loop moved to `:engine-sql`, where §12 says
+> export belongs; what stayed in the engine is reading a value out of pgjdbc.
+>
 > The translation between `ConnectionConfig` and `ConnectionDescriptor` lives in
 > `core/registry/Descriptors.kt`. One thing in it is not mechanical: **`require`
 > means two different things**. PostgreSQL's `require` encrypts and accepts any
@@ -282,6 +296,27 @@ It already handles the code-point conversion the spec warns about
 (`offsetByCodePoints`, so a non-BMP character before the error does not shift the
 underline) and the end-of-input position (`characters + 1` maps to `end`). It is
 called from `app/EditorViewModel.kt:416`.
+
+> **Issue #4 kept it exactly there, and that decided how the error crosses the SPI.**
+> `EngineError.position` is an offset into the editor buffer, already mapped;
+> `DbError.QueryFailed.position` is the server's own 1-based count into the statement
+> it received. They are different numbers in different units, so `:core` cannot build
+> one from the other without inverting a mapping that had just been applied — and an
+> inversion whose only purpose is to undo a conversion nobody asked for is precisely
+> how an underline ends up one character out.
+>
+> So it does not. The engine's classified `DbException` travels as `EngineError.cause`,
+> which is the field the SPI declares for it, and `EngineError.asDbException()` prefers
+> it. Nothing downstream can tell that the throw site moved: the position, the
+> severity, and the object the server named all arrive as they always did. The
+> fallback — building a `DbError` from the `EngineError` alone — is for an engine that
+> classifies nothing, and it reports no position rather than the wrong one.
+>
+> `StatementStreamIntegrationTest` in `:core` is what holds this, and it is the
+> "verified by test rather than by eye" §11 asks for: a script through the splitter,
+> the service, and `documentIndex`, asserting the index of a named character — with a
+> case carrying an emoji before the error, which is the failure the code-point
+> conversion exists for.
 
 `isIntactIn` is a second guarantee the spec does not mention and Phase 2 must not
 lose: the underline is only drawn if the statement's text still sits at the same

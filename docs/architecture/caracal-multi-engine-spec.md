@@ -322,6 +322,26 @@ swallowed.
 > And `StatementOutcome` gained a `Truncated(reason)` arm, emitted after `Rows`,
 > because a result cut at a row or byte limit has to say so and the descriptor is sent
 > before anyone knows.
+>
+> **Issue #4 added two fields to `StatementRequest` and one rule to `Rows`.** The
+> fields are `values: ValueDetail` and `timeout: Duration?`, and both exist because
+> the two callers of a statement disagree. A grid clips an oversized value, because a
+> person is looking at one cell; a file does not, because a CSV whose cells are
+> silently prefixes is worse than no CSV. A grid runs under a limit chosen for someone
+> waiting at a keyboard; an export is a file written for minutes on purpose. Without
+> the two, the export had to reach past the SPI to say so — which is exactly what
+> `LegacySqlAdapter` was.
+>
+> The rule is that **`Rows.rows` is live only while that outcome is being delivered.**
+> An engine that streams holds a cursor, a transaction and a pooled connection open
+> behind that flow, and the only safe moment to let all three go is when the collector
+> has finished with them. A caller must therefore consume the flow inside the block
+> that received the outcome; not consuming it at all is allowed and means the rest of
+> the result is abandoned, which is what closing a tab mid-query does. That is a real
+> constraint and it is the price of not materializing — and the conformance suite pays
+> it explicitly, reading rows inside the emission and handing them on as a list, so
+> that a case can look at a whole result without the suite quietly requiring every
+> engine to build one.
 
 ### 3.3 Cancellation
 
@@ -668,6 +688,23 @@ lose in a refactor. Two hazards:
 2. MySQL does **not** give a position. `EngineError.position` will be null and the UI must
    degrade to underlining the whole statement — implement that fallback in the UI once,
    not per engine.
+
+> **Repo check — issue #4, and it is about `cause` rather than about `position`.**
+> `EngineError.position` is an offset into the editor buffer, already mapped;
+> `DbError.QueryFailed.position` is the server's own 1-based count into the statement
+> it received. Different numbers, different units. When `:core` started reading the
+> stream it needed the second, and building it from the first would mean inverting a
+> mapping that had just been applied — an inversion whose only purpose is to undo a
+> conversion nobody asked for, and the shortest route to an underline one character
+> out.
+>
+> So the engine's classified `DbException` travels as `EngineError.cause`, which is
+> the field this record already declares for it, and `:core` prefers it. That also
+> settles two fields the SPI's error shape does not have and the error banner does
+> render: `severity`, and the object the server named (`ErrorSubject` — the constraint
+> a duplicate key violated is frequently the whole answer). The fallback, for an engine
+> that classifies nothing, reports the message, the code and the hint it did send and
+> **no position at all** rather than the wrong one.
 
 ---
 
@@ -1132,6 +1169,10 @@ confirm the underline is still on the exact character.
 >   reads one. That is a phase of its own, not a rider on a module boundary — and it
 >   is not what §2.2 is about, since the UI cannot reach the accessor.
 >
+>   **Done by issue #4, after the module split.** `:core` consumes the stream and
+>   assembles the result; `LegacySqlAdapter` and `postgresAdapter` are gone and
+>   `session(id)` is the only accessor.
+>
 > One thing will never move: **artwork**. `Glyphs` and `EngineLogo` key on the engine
 > because a logo cannot be declared in `:engine-api` without dragging a UI toolkit
 > into the module everything depends on. Phase 3 rekeys them on `EngineId` with a
@@ -1240,6 +1281,11 @@ in tests.
 >   Reconciling `QueryFacet`'s streamed outcomes with core's whole `QueryResult` changes
 >   the result model, the error position mapping that rides on it, and every grid that
 >   reads one. It is a phase of its own.
+>
+>   **Issue #4 is that phase, and it landed after the module split.** The direction
+>   chosen was the second of the two the issue offered — `:core` consumes the stream —
+>   because a materializing call on `QueryFacet` would have left the export assembling
+>   its file in heap, which is the one thing the issue said must not happen.
 > - **The engines still live in `:core`.** The module split is a file move that this
 >   phase does not need; `ArchitectureTest` forbids both the current and the eventual
 >   package names, so it is ready for the move whenever the move happens.
@@ -1366,7 +1412,10 @@ SQLite in-process. Run the full matrix nightly and a single version per engine o
 - [x] `:ui` compiles without any engine implementation on its classpath
 - [ ] Conformance suite green for postgres, redis, sqlite, mysql
 - [ ] v1 vault fixture migrates
-- [ ] Error position underlining verified unchanged for Postgres by Phase 0 tests
+- [x] Error position underlining verified unchanged for Postgres by Phase 0 tests
+      (`ErrorPositionTest` and `PostgresEngineErrorsTest` pin the mapping;
+      `StatementStreamIntegrationTest` runs the whole editor chain against a real
+      server and asserts the character, which is what issue #4's route change needed)
 - [ ] Driver download tested offline against a local repo; checksum mismatch refuses
 - [ ] Air-gap path documented and tested (`--driver-dir`, import from disk)
 - [ ] README network claim updated; `docs/architecture/drivers.md` written
