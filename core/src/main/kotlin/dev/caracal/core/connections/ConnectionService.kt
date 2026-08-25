@@ -10,7 +10,6 @@ import dev.caracal.core.history.HistoryPage
 import dev.caracal.core.history.HistoryQuery
 import dev.caracal.core.history.HistoryScope
 import dev.caracal.core.engines.Engines
-import dev.caracal.core.postgres.PostgresAdapter
 import dev.caracal.core.registry.ConnectionRegistry
 import dev.caracal.core.registry.resolveSecret
 import dev.caracal.core.registry.toDescriptor
@@ -196,7 +195,7 @@ interface ConnectionService {
     /**
      * One page of an open Redis connection's keyspace, with each key's metadata.
      *
-     * Bounded on every axis by [dev.caracal.core.redis.KeyValueLimits], and never `KEYS`.
+     * Bounded on every axis by [dev.caracal.engine.api.KeyValueLimits], and never `KEYS`.
      * An empty page is a successful result: `MATCH` filters on the server, so a
      * selective pattern produces empty batches while the cursor advances, and only
      * [ScanPage.complete] means the traversal is over.
@@ -223,14 +222,13 @@ interface ConnectionService {
     suspend fun readValue(id: ConnectionId, request: ValueRequest): ValuePage
 
     /**
-     * Runs a raw Redis command, once [dev.caracal.core.redis.RedisCommandGuard] is
-     * satisfied.
+     * Runs a raw Redis command once the engine's command-safety policy is satisfied.
      *
      * [consent] is what the user has agreed to for *this* command and is never
      * remembered past it. A command that needs an acknowledgement it has not been
-     * given throws [dev.caracal.core.redis.CommandConfirmationRequired] carrying the
-     * question to put on screen; the guard is consulted inside `:core`, so a caller
-     * cannot reach the server by declining to ask.
+     * given throws [dev.caracal.core.policy.CommandConfirmationRequired] carrying the
+     * question to put on screen; the guard is consulted inside the engine, so a
+     * caller cannot reach the server by declining to ask.
      */
     suspend fun runCommand(
         id: ConnectionId,
@@ -394,7 +392,7 @@ class DefaultConnectionService(
                 secrets = record.config.resolveSecret(secret),
                 policy = SessionPolicy(
                     readOnly = record.config.readOnly,
-                    statementTimeout = PostgresAdapter.DEFAULT_STATEMENT_TIMEOUT,
+                    statementTimeout = ConnectionRegistry.DEFAULT_STATEMENT_TIMEOUT,
                 ),
             )
             val latency = started.elapsedNow().inWholeMilliseconds

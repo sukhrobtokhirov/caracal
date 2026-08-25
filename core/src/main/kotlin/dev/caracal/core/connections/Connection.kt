@@ -27,6 +27,12 @@ class Secret(private val chars: CharArray) {
     /** The backing array itself. `:core` internals use it to avoid making a `String`. */
     internal fun exposeChars(): CharArray = chars
 
+    /**
+     * Hands the backing characters to a driver boundary without making a `String`.
+     * The callback must not retain the array; ownership stays with this secret.
+     */
+    fun <T> useChars(block: (CharArray) -> T): T = block(chars)
+
     fun isEmpty(): Boolean = chars.isEmpty()
 
     /** Wipes the backing array. After this the secret cannot be used again. */

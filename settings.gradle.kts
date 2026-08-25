@@ -17,9 +17,17 @@ dependencyResolutionManagement {
     }
 }
 
-include(":engine-api", ":core", ":app")
+include(
+    ":engine-api",
+    ":engine-sql",
+    ":engine-postgres",
+    ":engine-redis",
+    ":core",
+    ":ui",
+    ":app",
+)
 
-// Not shipped. It is on the test runtime classpath of :core and :app, where it
+// Not shipped. It is on the test runtime classpath of :core and :ui, where it
 // stands in for an engine written by somebody else — see engine-test/build.gradle.kts.
 include(":engine-test")
 

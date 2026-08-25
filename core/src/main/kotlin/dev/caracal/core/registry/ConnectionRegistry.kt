@@ -13,7 +13,6 @@ import dev.caracal.core.connections.RuntimeState
 import dev.caracal.core.connections.RuntimeStatus
 import dev.caracal.core.connections.charsToUtf8
 import dev.caracal.core.engines.Engines
-import dev.caracal.core.postgres.PostgresAdapter
 import dev.caracal.core.result.DbError
 import dev.caracal.core.result.DbException
 import dev.caracal.core.result.asDbError
@@ -21,10 +20,12 @@ import dev.caracal.core.vault.wipe
 import dev.caracal.engine.api.DatabaseSession
 import dev.caracal.engine.api.SecretBundle
 import dev.caracal.engine.api.SessionPolicy
-import dev.caracal.engine.postgres.PostgresEngineSession
+import dev.caracal.engine.sql.LegacySqlAdapter
+import dev.caracal.engine.sql.LegacySqlSession
 import java.security.MessageDigest
 import java.time.Instant
 import kotlin.time.Duration
+import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
@@ -54,7 +55,7 @@ class WrongEngineException :
  * statement — and a test that needs a query to time out can inject a short one.
  */
 class ConnectionRegistry(
-    private val statementTimeout: Duration = PostgresAdapter.DEFAULT_STATEMENT_TIMEOUT,
+    private val statementTimeout: Duration = DEFAULT_STATEMENT_TIMEOUT,
 ) {
     private val stateLock = Mutex()
     private val entries = LinkedHashMap<ConnectionId, Entry>()
@@ -201,8 +202,8 @@ class ConnectionRegistry(
      * What must not compile against an engine is the UI, and the UI cannot reach
      * this.
      */
-    suspend fun postgresAdapter(id: ConnectionId): PostgresAdapter =
-        (openClient(id) as? PostgresEngineSession)?.adapter ?: throw WrongEngineException()
+    suspend fun postgresAdapter(id: ConnectionId): LegacySqlAdapter =
+        (openClient(id) as? LegacySqlSession)?.legacySqlAdapter ?: throw WrongEngineException()
 
     /** Releases every client. Called when the vault locks and at shutdown. */
     suspend fun closeAll() {
@@ -238,6 +239,9 @@ class ConnectionRegistry(
     }
 
     companion object {
+        /** The product default applied to every session unless settings override it. */
+        val DEFAULT_STATEMENT_TIMEOUT: Duration = 30.seconds
+
         private val log = LoggerFactory.getLogger(ConnectionRegistry::class.java)
 
         /**

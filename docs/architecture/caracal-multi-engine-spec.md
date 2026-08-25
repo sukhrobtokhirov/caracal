@@ -144,6 +144,12 @@ concrete engine.** Enforce it mechanically, not by discipline:
 > `assertSpiHasNoDependencies` in `engine-api/build.gradle.kts`, modelled on `:core`'s
 > `assertNoComposeDependency`. It is strictly stronger than scanning imports: a type
 > the SPI cannot compile against cannot be imported at all.
+>
+> **Module split.** The check now lives in `:ui`, scans `ui/src/main/kotlin`, and is
+> backed by `:ui:assertUiHasNoEngineDependencies`, which rejects a concrete engine
+> project on the UI runtime classpath. PostgreSQL and Redis each own their driver and
+> ServiceLoader entry; only `:app` brings those implementations onto the shipped
+> runtime classpath.
 
 ```kotlin
 // ui/src/test/kotlin/ArchitectureTest.kt
@@ -1237,6 +1243,12 @@ in tests.
 > - **The engines still live in `:core`.** The module split is a file move that this
 >   phase does not need; `ArchitectureTest` forbids both the current and the eventual
 >   package names, so it is ready for the move whenever the move happens.
+>
+> **Module split complete 2026-08-25.** Shared SQL code is in `:engine-sql`, the two
+> bundled implementations are in `:engine-postgres` and `:engine-redis`, Compose code
+> is in `:ui`, and `:app` contains only startup/wiring plus packaging. Existing tests
+> moved with their production owners and the packaged runtime still includes both
+> ServiceLoader providers and their drivers.
 
 ### Phase 4 — Vault v2
 
@@ -1351,7 +1363,7 @@ SQLite in-process. Run the full matrix nightly and a single version per engine o
 
 ## 11. Definition of done for v0.2.0
 
-- [ ] `:ui` compiles without any engine implementation on its classpath
+- [x] `:ui` compiles without any engine implementation on its classpath
 - [ ] Conformance suite green for postgres, redis, sqlite, mysql
 - [ ] v1 vault fixture migrates
 - [ ] Error position underlining verified unchanged for Postgres by Phase 0 tests
