@@ -14,7 +14,7 @@ You need **JDK 25** (21+ works; the Gradle toolchain resolves it) and, only for 
 integration tests, **Docker**.
 
 ```sh
-./gradlew :core:test     # headless — no display server, no window
+./gradlew :core:test     # headless core tests — no display server, no window
 ./gradlew check          # everything: unit, Compose UI, and the module-boundary check
 ./gradlew :app:run       # launch from source
 ```
@@ -30,7 +30,7 @@ Integration tests use Testcontainers and are opt-in, because they need a Docker
 daemon:
 
 ```sh
-CARACAL_INTEGRATION=1 ./gradlew :core:test
+CARACAL_INTEGRATION=1 ./gradlew check
 ```
 
 CI runs `check` on Linux, macOS, and Windows, with the integration suites enabled
@@ -44,9 +44,16 @@ The boundaries between these are enforced by the build rather than by convention
 - **`:engine-api`** — the SPI an engine is written against: capabilities, facets,
   values, errors. It depends on Kotlin and coroutines and nothing else, and
   `:engine-api:assertSpiHasNoDependencies` fails the build if that changes.
-- **`:core`** — domain types, the vault, the SQLite store, the connection registry,
-  and both engine adapters. Plain JVM code. Every test in it runs headlessly.
-- **`:app`** — the Compose window, view models, and screens.
+- **`:engine-sql`** — shared SQL execution, result, history, and export machinery.
+- **`:engine-postgres`** and **`:engine-redis`** — the bundled engine implementations
+  and their driver libraries. Each registers its `DatabaseEngine` with
+  `ServiceLoader` and runs the conformance suite.
+- **`:core`** — domain types, the vault, the SQLite store, policy, and the connection
+  registry. Plain JVM code with no concrete engine or Compose dependencies.
+- **`:ui`** — the Compose view models and screens. It depends on the SPI, shared SQL,
+  and core, never a concrete engine implementation.
+- **`:app`** — the thin application entry point, wiring, and native packaging. It
+  bundles both engine implementations at runtime.
 - **`:engine-conformance`** — the tests every engine has to pass. Not shipped; it is
   on the test classpath of whoever has an engine to prove.
 - **`:engine-test`** — an engine that dials nothing, on the test classpath, standing
@@ -56,10 +63,11 @@ The boundaries between these are enforced by the build rather than by convention
 build if an artifact from `org.jetbrains.compose`, `androidx.compose`, or
 `org.jetbrains.skiko` appears on its classpath, and its tests run with AWT headless
 so a window can never quietly become a requirement. If a test needs a window, it
-belongs in `:app`.
+belongs in `:ui`. `:ui:assertUiHasNoEngineDependencies` similarly fails if a bundled
+engine implementation reaches the UI runtime classpath.
 
 A `Connection`, `ResultSet`, `Statement`, or Lettuce command object must not escape
-`:core`. The UI receives domain types.
+its engine module. The UI receives SPI and domain types.
 
 ### Adding an engine
 
@@ -73,7 +81,7 @@ becoming five codebases with five different ideas of done. Subclass
 `EngineConformanceTest`, supply the engine and a `ConnectionFixture`, and run it:
 
 ```
-CARACAL_INTEGRATION=1 ./gradlew :core:test --tests '*ConformanceTest'
+CARACAL_INTEGRATION=1 ./gradlew :your-engine:test --tests '*ConformanceTest'
 ```
 
 Two rules about it are worth knowing before you start.

@@ -8,20 +8,20 @@ plugins {
 }
 
 dependencies {
+    implementation(project(":ui"))
     implementation(project(":core"))
     implementation(compose.desktop.currentOs)
     implementation(libs.compose.material3)
     implementation(libs.kotlinx.coroutines.swing)
     implementation(libs.slf4j.api)
     runtimeOnly(libs.slf4j.simple)
+    runtimeOnly(project(":engine-postgres"))
+    runtimeOnly(project(":engine-redis"))
 
     testImplementation(libs.compose.ui.test)
     testImplementation(libs.junit.jupiter)
     testImplementation(kotlin("test"))
     testImplementation(libs.kotlinx.coroutines.test)
-    // An engine written by somebody else, as far as the tests are concerned.
-    // See engine-test/build.gradle.kts for what it is proving.
-    testRuntimeOnly(project(":engine-test"))
     testRuntimeOnly(libs.junit.platform.launcher)
 }
 

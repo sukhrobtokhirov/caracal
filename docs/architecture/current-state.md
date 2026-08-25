@@ -1,39 +1,36 @@
-# Current state — ground truth before the multi-engine refactor
+# Current state — multi-engine refactor ground truth
 
 Recorded per §1 of `caracal-multi-engine-spec.md`, from the source rather than from
 the spec's description. Where the two disagree, this file records what is actually
 in the repository; the spec is corrected to match.
 
-Established at commit `78fe44d`, version `0.1.0` (untagged). Sections marked
-**Phase 1** below record what changed when the SPI was extracted at `66ef6a2`; the
-rest still describes the repository as it stands.
+Established at commit `78fe44d`, version `0.1.0` (untagged), and updated as the
+refactor lands. Phase notes below preserve the decisions made at each transition;
+the latest note in a section is the current state.
 
 ---
 
 ## 1. Module and build layout
 
-**Two modules, not nine.** `settings.gradle.kts` includes exactly `:core` and `:app`.
-
-> **Phase 1.** Three now: `:engine-api`, `:core`, `:app`. `:engine-api` holds the SPI
-> and depends on nothing but Kotlin and coroutines —
-> `assertSpiHasNoDependencies` fails its `check` if anything else reaches its runtime
-> classpath, in the same shape as `:core`'s `assertNoComposeDependency`. Both `:core`
-> and `:app` depend on it; `:core` does so with `api`, since the SPI is in the
-> signatures it hands out rather than an implementation detail behind them.
->
-> The PostgreSQL and Redis implementations of the SPI live in `:core`, under the
-> packages `dev.caracal.engine.postgres` and `dev.caracal.engine.redis` — the names
-> they will have once `:engine-postgres` and `:engine-redis` are carved out, so that
-> split is a file move rather than an import churn.
+The shipped application is split across seven modules. Two additional modules hold
+shared engine tests and a fake test engine and are not shipped.
 
 | Module | Contains |
 |---|---|
-| `:core` | vault, config store, connections, registry, policy, SQL machinery, postgres, redis, export, history. Kotlin/JVM only — no Compose. |
-| `:app` | Compose Desktop UI, view models, packaging, `BuildInfo`. Depends on `:core`. |
+| `:engine-api` | SPI, capabilities, facets, values, and errors. Kotlin and coroutines only. |
+| `:engine-sql` | Shared SQL execution, result, history, and export machinery. |
+| `:engine-postgres` | PostgreSQL implementation, pgjdbc, HikariCP, and ServiceLoader entry. |
+| `:engine-redis` | Redis implementation, Lettuce, and ServiceLoader entry. |
+| `:core` | Vault, config store, policy, connections, and registry. No Compose or concrete engine dependency. |
+| `:ui` | Compose view models and screens. Depends on the SPI, shared SQL, and core only. |
+| `:app` | Entry point, startup wiring, packaging, and runtime inclusion of bundled engines. |
+| `:engine-conformance` | Shared engine contract and integration-test support. Not shipped. |
+| `:engine-test` | Fake third-party engine used by tests. Not shipped. |
 
-There is **no `:ui` module**. The UI lives in `:app` under `dev.caracal.app` and
-`dev.caracal.app.ui`. The spec's §2.2 architecture test therefore has to be written
-against `:app`, not `:ui`, until the module split actually happens.
+The UI keeps its existing `dev.caracal.app` and `dev.caracal.app.ui` packages; the
+module boundary, rather than a package rename, enforces ownership. `ArchitectureTest`
+now lives in `:ui` and scans that module's production sources. A Gradle dependency
+check also rejects concrete engine projects on `:ui`'s runtime classpath.
 
 `:core` already enforces one structural invariant mechanically, and it is the model
 to copy for §2.2: `assertNoComposeDependency` resolves the runtime and test
@@ -45,11 +42,8 @@ subproject, and promotes JUnit discovery issues to failures
 (`junit.platform.discovery.issue.severity.critical=INFO`) — a test method that
 returns a value is a build error here, not a silently skipped test.
 
-**No coverage tooling is configured.** Neither JaCoCo nor Kover is on the build.
-Phase 0's ">85% coverage" acceptance criterion cannot be measured as the repo
-stands; adding it is part of Phase 0. *(Done: Kover is on `:core` and
-`:engine-api`, and `assertCharacterizationCoverage` holds the eight named classes to
-85% individually.)*
+Kover's `assertCharacterizationCoverage` task follows each characterized class to
+its owning module and keeps the Phase 0 per-class 85% floor in force.
 
 ## 2. Package naming
 
@@ -65,25 +59,29 @@ ID is `dev.caracal.app`. New SPI packages must therefore be
 > vacuous pass the missing `dev.` prefix would have caused, one layer down.
 > `ArchitectureTest` forbids both, and a second, enabled test asserts the scan finds
 > sources at all.
+>
+> **Module split.** Those legacy package names remain inside the new engine modules
+> to avoid unrelated import churn, but they no longer live in `:core`. The UI guard
+> still forbids both legacy and SPI-implementation spellings and now runs from `:ui`.
 
 ## 3. Where the named files actually live
 
-Every file the spec names exists, under `dev.caracal.core`:
+The module split kept established packages where no rename was needed, while moving
+each file to its production owner:
 
 | Spec name | Actual path |
 |---|---|
 | `Vault.kt`, `Kdf.kt`, `Seal.kt` | `core/…/core/vault/` |
 | `DataSafetyPolicy.kt` | `core/…/core/policy/` |
 | `Redaction.kt` | `core/…/core/text/` |
-| `PostgresCatalog.kt`, `PostgresErrors.kt`, `PostgresValues.kt` | `core/…/core/postgres/` |
-| `StatementSplitter.kt` | `core/…/core/sql/` |
-| `RedisCommandGuard.kt` | `core/…/core/redis/` |
-| `RedisKeyTree.kt` | `app/…/app/` — a **UI** concern, not core |
-| `RedisValueViewer.kt` | `app/…/app/ui/` |
+| `PostgresCatalog.kt`, `PostgresErrors.kt`, `PostgresValues.kt` | `engine-postgres/…/core/postgres/` |
+| `StatementSplitter.kt` | `engine-sql/…/core/sql/` |
+| `RedisCommandGuard.kt` | `engine-redis/…/core/redis/` |
+| `RedisKeyTree.kt` | `ui/…/app/` — a **UI** concern, not an engine concern |
+| `RedisValueViewer.kt` | `ui/…/app/ui/` |
 
-Note the last two: the spec lists `RedisKeyTree.kt` among core engine files, but the
-key-tree grouping is presentation and lives in `:app`. The engine-side Redis code is
-`RedisSession`/`RedisAdapter`/`RedisModel` in `:core`.
+The key-tree grouping and value viewer are presentation and therefore moved with the
+rest of the Compose code. Driver-facing Redis code moved to `:engine-redis`.
 
 > **Phase 4 added `VaultRecord.kt` beside them.** It is the plaintext format inside a
 > sealed envelope — a version byte, a kind byte, and length-prefixed fields — and it
@@ -131,6 +129,11 @@ object. View models hold a `RedisSession`/`PostgresSession` directly.
 > and `CommandConfirmationRequired` moved to `dev.caracal.core.policy`, next to the
 > SQL `Clearance` they are the analogue of — the guard that produces them stays in the
 > engine, per §12.
+>
+> **Module split.** The view models and Compose sources now live in `:ui`; the entry
+> point and startup wiring remain in `:app`. The source-level architecture test moved
+> with the UI, and the build independently verifies that no concrete engine project
+> reaches `:ui`'s runtime classpath.
 
 `when (engine)` switches, all on the `Engine` enum:
 
@@ -289,7 +292,7 @@ Consequence for the phase plan: "move it, do not rewrite it, and keep its tests"
 applies to `StatementSplitter.kt`, and that file is shared SQL machinery
 (`:engine-sql`), not Postgres-specific.
 
-## 8. Existing test coverage in the Phase 0 areas
+## 8. Baseline test coverage in the Phase 0 areas
 
 | File under test | Test file | Tests |
 |---|---|---|
@@ -305,6 +308,10 @@ applies to `StatementSplitter.kt`, and that file is shared SQL machinery
 current exercise is `PostgresTypesIntegrationTest`, which is container-gated and
 therefore does not run on an ordinary `./gradlew check`. **This is the largest Phase 0
 gap** and the one guarding the precision guarantee §6.1 is built around.
+
+> **Phase 0 closed the gap.** `PostgresValuesTest` now exercises the conversions
+> without a container. After the module split, each characterization test and its
+> per-class Kover floor moved with the production class it protects.
 
 ## 9. Release prerequisite
 
