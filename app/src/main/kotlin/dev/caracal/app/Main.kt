@@ -246,6 +246,7 @@ private fun FrameWindowScope.Workspace(
     val connections = remember(service) { ConnectionsViewModel(service, scope) }
     val tree = remember(service) { SchemaTreeViewModel(service, scope) }
     val chooser = rememberCsvFileChooser()
+    val databaseChooser = rememberDatabaseFileChooser()
     val tabs = remember(service, chooser) { EditorTabs(service, scope, chooser) }
     val redis = remember(service) { RedisWorkspace(service, scope) }
     val history = remember(service) { HistoryViewModel(service, scope) }
@@ -271,6 +272,7 @@ private fun FrameWindowScope.Workspace(
             history = history,
             theme = theme,
             shortcuts = shortcuts,
+            choosePath = databaseChooser,
             onLock = {
                 connections.clear()
                 // Locking closes every client, so the tree is describing a server this
@@ -337,6 +339,46 @@ private fun FrameWindowScope.rememberCsvFileChooser(): FileChooser {
 
 /** [this] as typed, unless it names no extension at all. */
 private fun String.withCsv(): String = if (contains('.')) this else "$this.csv"
+
+/**
+ * The open dialog a declared file field browses with: the platform's own, parented to
+ * the window.
+ *
+ * The same `FileDialog` the export uses, in `LOAD` rather than `SAVE`, and for the same
+ * reason — it is Finder on macOS and Explorer on Windows, which is what makes the
+ * sidebar, the network volumes and the recent places the user's own rather than this
+ * application's reimplementation of them.
+ *
+ * The engine's declared extensions become a filter, and the filter is deliberately a
+ * *hint*: `setFilenameFilter` is honoured on some platforms and ignored on others, and
+ * a file the user names anyway is opened anyway. That is the right way round for
+ * SQLite, where the extension means nothing — a database is a database because of the
+ * header inside it, and plenty of them are called `.data` or have no extension at all.
+ *
+ * It suspends on the main dispatcher, which under Compose Desktop is the AWT event
+ * thread — where a modal dialog must be shown, and where it pumps its own events while
+ * it blocks.
+ */
+@Composable
+private fun FrameWindowScope.rememberDatabaseFileChooser(): FilePicker {
+    val owner = window
+    return remember(owner) {
+        { field ->
+            withContext(Dispatchers.Main) {
+                val dialog = FileDialog(owner, "Open ${field.label.lowercase()}", FileDialog.LOAD)
+                if (field.extensions.isNotEmpty()) {
+                    dialog.setFilenameFilter { _, name ->
+                        field.extensions.any { name.endsWith(it, ignoreCase = true) }
+                    }
+                }
+                dialog.isVisible = true
+                val directory = dialog.directory
+                val chosen = dialog.file
+                if (directory == null || chosen == null) null else Path.of(directory, chosen)
+            }
+        }
+    }
+}
 
 /**
  * Cold start is a number this project has to keep an eye on — the JVM is the price of

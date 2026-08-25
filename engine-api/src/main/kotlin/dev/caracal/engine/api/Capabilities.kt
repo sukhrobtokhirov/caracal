@@ -34,6 +34,28 @@ data class EngineCapabilities(
      * the case it would have to skip is one of the ones worth keeping.
      */
     val surfacesNotices: Boolean,
+    /**
+     * Whether this engine has a type that carries an exact decimal number.
+     *
+     * Every engine so far had one and it looked like a property of SQL itself.
+     * SQLite is the counterexample that shows it is not: its five storage classes
+     * are integer, float, text, blob and null, and a `DECIMAL(30,10)` column is a
+     * *declared type*, not a type — a decimal written into one is converted to a
+     * float, and the digits past the fifteenth are gone before anything can read
+     * them back.
+     *
+     * Declared rather than discovered, for the reason [surfacesNotices] is: an
+     * engine with no exact decimal and an engine that rounds one on the way through
+     * produce the same wrong digits, and the conformance suite must fail the second
+     * while excusing the first. Excusing it is the whole cost of this line, so it is
+     * worth saying what `false` concedes: this engine cannot hold money, and an
+     * application storing money in it is choosing text and doing its own arithmetic.
+     *
+     * `false` does not mean the engine has no numbers. Exact *integers* are asserted
+     * of every SQL engine and are not covered here — SQLite has 64-bit integers and
+     * keeps every digit of one.
+     */
+    val exactNumerics: Boolean,
     /** How long an identifier may be, or 0 for an engine that has no identifiers. */
     val maxIdentifierLength: Int,
     val defaultPort: Int?,

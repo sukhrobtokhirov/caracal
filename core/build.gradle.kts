@@ -17,6 +17,7 @@ dependencies {
 
     testImplementation(project(":engine-postgres"))
     testImplementation(project(":engine-redis"))
+    testImplementation(project(":engine-sqlite"))
     testImplementation(libs.junit.jupiter)
     testImplementation(kotlin("test"))
     testImplementation(libs.kotlinx.coroutines.test)

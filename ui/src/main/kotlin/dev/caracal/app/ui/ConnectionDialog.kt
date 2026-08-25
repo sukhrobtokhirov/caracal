@@ -22,6 +22,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -36,6 +37,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.caracal.app.ConnectionFormState
+import dev.caracal.app.FilePicker
 import dev.caracal.app.declaredDefault
 import dev.caracal.core.connections.Environment
 import dev.caracal.core.connections.fields
@@ -46,6 +48,7 @@ import dev.caracal.engine.api.EngineFamily
 import dev.caracal.engine.api.FormField
 import dev.caracal.engine.api.FormKeys
 import dev.caracal.engine.api.FormSection
+import kotlinx.coroutines.launch
 
 /**
  * Adding or editing a connection, as a window rather than a pane.
@@ -70,6 +73,11 @@ fun ConnectionDialog(
     busy: Boolean,
     onSave: () -> Unit,
     onCancel: () -> Unit,
+    /**
+     * How a declared file field asks for a file, or null where nothing can show a
+     * native dialog. See [FilePicker].
+     */
+    choosePath: FilePicker? = null,
 ) {
     // One per field the engine declares, plus the two the application asks of every
     // engine. Remembered against the engine, because switching it changes the set.
@@ -158,7 +166,13 @@ fun ConnectionDialog(
         // that declares a file path and a token gets a dialog for a file path and a
         // token without this file being opened.
         form.sections.forEach { section ->
-            DeclaredSection(section = section, form = form, busy = busy, focusRequesters = focusRequesters)
+            DeclaredSection(
+                section = section,
+                form = form,
+                busy = busy,
+                focusRequesters = focusRequesters,
+                choosePath = choosePath,
+            )
         }
 
         DialogSection(
@@ -334,6 +348,7 @@ private fun DeclaredSection(
     form: ConnectionFormState,
     busy: Boolean,
     focusRequesters: Map<String, FocusRequester>,
+    choosePath: FilePicker?,
 ) {
     DialogSection(title = section.title, glyph = Glyphs.of(form.engine.id)) {
         section.fields.forEach { field ->
@@ -342,6 +357,7 @@ private fun DeclaredSection(
                 form = form,
                 busy = busy,
                 focusRequester = focusRequesters[field.key],
+                choosePath = choosePath,
             )
         }
     }
@@ -360,10 +376,13 @@ private fun DeclaredField(
     form: ConnectionFormState,
     busy: Boolean,
     focusRequester: FocusRequester?,
+    choosePath: FilePicker? = null,
 ) {
     val error = form.errors[field.key]
     when (field) {
         is FormField.Secret -> SecretField(field, form, busy)
+
+        is FormField.FilePath -> FilePathField(field, form, busy, focusRequester, choosePath)
 
         is FormField.Choice -> {
             ChipRow(field.label) {
@@ -405,6 +424,66 @@ private fun DeclaredField(
                 help = field.help,
                 modifier = Modifier.fillMaxWidth(),
             )
+        }
+    }
+}
+
+/**
+ * A declared file path: a field to type into, and a button that opens the platform's
+ * own dialog.
+ *
+ * Both, rather than a button alone. Typing is how a path arrives from a terminal, a
+ * chat message or a wiki page, and a form that only accepts a chosen file makes
+ * pasting one impossible. The dialog is how it arrives when the user is looking for
+ * it, which for a database file — buried in an application's support directory — is
+ * most of the time.
+ *
+ * The button is absent rather than inert when there is no picker to call. A control
+ * that does nothing is worse than one that is not there: the first has to be tried
+ * before anyone learns it does not work.
+ */
+@Composable
+private fun FilePathField(
+    field: FormField.FilePath,
+    form: ConnectionFormState,
+    busy: Boolean,
+    focusRequester: FocusRequester?,
+    choosePath: FilePicker?,
+) {
+    val scope = rememberCoroutineScope()
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(Space.sm),
+        // Top, not centre: the field grows downwards when it has an error or a help
+        // line under it, and a centred button would drift down the row with it.
+        verticalAlignment = Alignment.Top,
+    ) {
+        Field(
+            label = field.label + if (field.required) "" else " (optional)",
+            value = form.value(field.key),
+            onChange = { typed -> form.onValue(field, typed) },
+            error = form.errors[field.key],
+            enabled = !busy,
+            focusRequester = focusRequester,
+            tag = "field-${field.key}",
+            help = field.help,
+            modifier = Modifier.weight(1f),
+        )
+        if (choosePath != null) {
+            OutlinedButton(
+                shape = MaterialTheme.shapes.small,
+                enabled = !busy,
+                onClick = {
+                    scope.launch {
+                        // A cancelled dialog answers null and must leave whatever was
+                        // already typed alone. Opening the browser to look and changing
+                        // your mind is not a way to clear the field.
+                        choosePath(field)?.let { chosen -> form.onValue(field, chosen.toString()) }
+                    }
+                },
+                modifier = Modifier.testTag("browse-${field.key}"),
+            ) {
+                Text("Browse…")
+            }
         }
     }
 }

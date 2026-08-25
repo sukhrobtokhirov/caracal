@@ -149,8 +149,17 @@ data class SqlFixture(
     val scratchSchema: String,
     /** A schema whose contents the catalog case can list. `pg_catalog`, and its kin. */
     val systemSchema: String,
-    /** An expression producing an exact decimal, and every digit it must come back with. */
-    val exactDecimal: RoundTrip,
+    /**
+     * An expression producing an exact decimal, and every digit it must come back
+     * with.
+     *
+     * Required when the engine declares
+     * [dev.caracal.engine.api.EngineCapabilities.exactNumerics], and null otherwise.
+     * Both directions are asserted. Null is not a way out of the case: an engine
+     * whose capabilities say it has an exact decimal type and whose fixture withholds
+     * one fails rather than skips.
+     */
+    val exactDecimal: RoundTrip? = null,
     /** An expression producing an integer too large for a `Long` to be safe with. */
     val largeInteger: RoundTrip,
     /** A statement that will still be running when the cancellation case cancels it. */

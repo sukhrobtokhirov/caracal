@@ -9,6 +9,19 @@ version is 0, a minor bump may change behaviour.
 
 ### Added
 
+- **SQLite.** A third engine, and the first that opens a file instead of dialing a
+  server: a path and a create-if-missing checkbox, no host, no port and no password.
+  It browses `sqlite_schema`, quotes identifiers the standard way, cancels through
+  `sqlite3_interrupt`, and is held read-only by opening the database handle
+  `SQLITE_OPEN_READONLY` — so a write is refused by SQLite, not by a disabled button.
+  Its types are read the way SQLite actually stores them, per value rather than per
+  column, so a column declared `INTEGER` holding the string `n/a` shows `n/a`.
+- A declared file field in the connection dialog now has a **Browse…** button beside
+  it, opening the platform's own file dialog. The field is still typeable, because a
+  path pasted from a terminal or a wiki page is how one usually arrives.
+- SQLite runs the conformance suite on every `./gradlew check` rather than only when a
+  container is available, because it needs a temporary file and nothing else.
+
 - **One conformance suite every engine runs.** `EngineConformanceTest` is fifteen
   cases an engine has to pass — supplying a fixture that matches its own declarations,
   connecting, pinging, naming the failure when it cannot connect, keeping credentials
@@ -28,6 +41,11 @@ version is 0, a minor bump may change behaviour.
   excused it, rather than quietly passing. `EngineCapabilities` gained
   `surfacesNotices` because that was a difference between engines nothing declared,
   and the suite refuses to skip on anything it cannot name.
+- `EngineCapabilities` gained `exactNumerics` for the same reason, and SQLite is what
+  found it: `numeric` and `DECIMAL` made an exact decimal look like a property of SQL,
+  and SQLite's `DECIMAL(30,10)` is a declared type over a float. The round-trip case
+  now skips for an engine that says it has no exact decimal type, and still fails one
+  that claims the type and rounds it.
 - **PostgreSQL results now stream.** A statement hands back an open cursor and its
   rows are read as they arrive, where the engine used to read the whole result into a
   list before returning it. What that buys is the export: a CSV of a few hundred

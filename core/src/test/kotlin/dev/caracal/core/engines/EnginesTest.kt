@@ -15,6 +15,7 @@ import dev.caracal.engine.api.ValidationIssue
 import dev.caracal.engine.api.WriteIntent
 import dev.caracal.engine.postgres.PostgresEngine
 import dev.caracal.engine.redis.RedisEngine
+import dev.caracal.engine.sqlite.SqliteEngine
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
@@ -37,6 +38,7 @@ class EnginesTest {
         val ids = Engines.all.map { it.id.value }
         assertTrue(PostgresEngine.ID.value in ids, "postgres is not registered: $ids")
         assertTrue(RedisEngine.ID.value in ids, "redis is not registered: $ids")
+        assertTrue(SqliteEngine.ID.value in ids, "sqlite is not registered: $ids")
     }
 
     @Test

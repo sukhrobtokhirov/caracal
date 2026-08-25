@@ -41,6 +41,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import dev.caracal.app.FilePicker
 import dev.caracal.app.ConnectionsViewModel
 import dev.caracal.app.EditorTabs
 import dev.caracal.app.FocusRequest
@@ -124,6 +125,8 @@ fun WorkspaceScreen(
     theme: ThemeViewModel,
     onLock: () -> Unit,
     shortcuts: Shortcuts = remember { Shortcuts() },
+    /** How the connection form asks for a file. Null in a test, and in a headless run. */
+    choosePath: FilePicker? = null,
 ) {
     LaunchedEffect(Unit) { viewModel.refresh() }
 
@@ -519,6 +522,7 @@ fun WorkspaceScreen(
             busy = viewModel.busy,
             onSave = viewModel::save,
             onCancel = viewModel::cancelForm,
+            choosePath = choosePath,
         )
     }
 

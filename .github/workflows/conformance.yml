@@ -72,10 +72,15 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
 
       - name: Conformance suite
-        # Both bundled engines against the shared suite, plus the check that the
-        # suite still fails an engine that leaks a password and ignores read-only.
-        # A run where the suite has quietly stopped being able to fail is a run
-        # that proves nothing about the servers it just talked to.
+        # The two engines that need a server, against the shared suite, plus the
+        # check that the suite still fails an engine that leaks a password and
+        # ignores read-only. A run where the suite has quietly stopped being able to
+        # fail is a run that proves nothing about the servers it just talked to.
+        #
+        # SQLite has no leg here and should not have one. Its library is compiled
+        # into the process, so "which version" is a dependency rather than a server,
+        # and there is nothing for a matrix to vary. It runs the same suite in
+        # `./gradlew check` on every pull request instead.
         env:
           CARACAL_INTEGRATION: "1"
           CARACAL_POSTGRES_IMAGE: ${{ matrix.postgres }}

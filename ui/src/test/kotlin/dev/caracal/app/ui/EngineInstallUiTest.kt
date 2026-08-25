@@ -5,6 +5,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.test.ComposeUiTest
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -14,6 +15,7 @@ import androidx.compose.ui.test.v2.runDesktopComposeUiTest
 import dev.caracal.app.ConnectionsViewModel
 import dev.caracal.app.EditorTabs
 import dev.caracal.app.FakeConnectionService
+import dev.caracal.app.FilePicker
 import dev.caracal.app.HistoryViewModel
 import dev.caracal.app.RedisWorkspace
 import dev.caracal.app.SchemaTreeViewModel
@@ -49,7 +51,10 @@ class EngineInstallUiTest {
 
     private val ledger = EngineId("ledger")
 
-    private fun ComposeUiTest.workspace(service: FakeConnectionService): ConnectionsViewModel {
+    private fun ComposeUiTest.workspace(
+        service: FakeConnectionService,
+        picker: FilePicker? = null,
+    ): ConnectionsViewModel {
         lateinit var model: ConnectionsViewModel
         setContent {
             val scope = rememberCoroutineScope()
@@ -60,15 +65,18 @@ class EngineInstallUiTest {
             val redis = remember { RedisWorkspace(service, scope) }
             val history = remember { HistoryViewModel(service, scope) }
             CaracalTheme {
-                WorkspaceScreen(model, tree, tabs, redis, history, theme, onLock = {})
+                WorkspaceScreen(model, tree, tabs, redis, history, theme, onLock = {}, choosePath = picker)
             }
         }
         waitForIdle()
         return model
     }
 
-    private fun ComposeUiTest.newLedgerConnection(service: FakeConnectionService): ConnectionsViewModel {
-        val model = workspace(service)
+    private fun ComposeUiTest.newLedgerConnection(
+        service: FakeConnectionService,
+        picker: FilePicker? = null,
+    ): ConnectionsViewModel {
+        val model = workspace(service, picker)
         onNodeWithTag("new-connection").performClick()
         onNodeWithTag("engine-choice-ledger", useUnmergedTree = true).performClick()
         waitForIdle()
@@ -143,6 +151,55 @@ class EngineInstallUiTest {
             assertEquals(ConnectionTarget.File(java.nio.file.Path.of("/tmp/books.ledger")), saved.target)
             assertEquals("rw", saved.settings["mode"])
             assertEquals("true", saved.settings["journal"])
+        }
+
+    @Test
+    fun `a declared file field is browsable, and what is chosen lands in it`() =
+        runDesktopComposeUiTest(width = 1400, height = 1600) {
+            // The picker is a parameter for exactly this: the real one is a native
+            // modal window parented to the application's, and a test that had to open
+            // one would be a test nobody could run.
+            var asked: String? = null
+            val chosen = java.nio.file.Path.of("/tmp/chosen.ledger")
+            newLedgerConnection(FakeConnectionService(VaultState.UNLOCKED)) { field ->
+                asked = field.key
+                chosen
+            }
+
+            onNodeWithTag("browse-path").performClick()
+            waitForIdle()
+
+            assertEquals("path", asked, "the button asked for the wrong field, or for none")
+            // Compared against the path's own rendering rather than the literal above:
+            // what a picker returns is a `Path`, and Windows spells one with
+            // backslashes and a drive letter.
+            onNodeWithTag("field-path").assertTextContains(chosen.toString())
+        }
+
+    @Test
+    fun `a cancelled browse leaves what was already typed alone`() =
+        runDesktopComposeUiTest(width = 1400, height = 1600) {
+            // Opening the browser to look and changing your mind is not a way to clear
+            // the field, and a null answer is what a cancelled dialog gives.
+            newLedgerConnection(FakeConnectionService(VaultState.UNLOCKED)) { null }
+
+            onNodeWithTag("field-path").performTextClearance()
+            onNodeWithTag("field-path").performTextInput("/tmp/typed.ledger")
+            onNodeWithTag("browse-path").performClick()
+            waitForIdle()
+
+            onNodeWithTag("field-path").assertTextContains("/tmp/typed.ledger")
+        }
+
+    @Test
+    fun `with nothing to browse with there is no button rather than a dead one`() =
+        runDesktopComposeUiTest(width = 1400, height = 1600) {
+            // A control that does nothing is worse than one that is not there: the
+            // first has to be tried before anyone learns it does not work.
+            newLedgerConnection(FakeConnectionService(VaultState.UNLOCKED), picker = null)
+
+            onNodeWithTag("field-path").assertExists()
+            onNodeWithTag("browse-path").assertDoesNotExist()
         }
 
     @Test

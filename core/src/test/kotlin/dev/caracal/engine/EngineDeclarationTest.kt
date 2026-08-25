@@ -10,10 +10,12 @@ import dev.caracal.engine.api.FormField
 import dev.caracal.engine.api.FormKeys
 import dev.caracal.engine.api.NamespaceModel
 import dev.caracal.engine.api.ReadOnlyEnforcement
+import dev.caracal.engine.api.SecretRef
 import dev.caracal.core.engines.Engines
 import dev.caracal.engine.api.TlsConfig
 import dev.caracal.engine.postgres.PostgresEngine
 import dev.caracal.engine.redis.RedisEngine
+import dev.caracal.engine.sqlite.SqliteEngine
 import java.nio.file.Path
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
@@ -46,6 +48,8 @@ class EngineDeclarationTest {
     private val postgres: DatabaseEngine = Engines.byId(PostgresEngine.ID)!!
 
     private val redis: DatabaseEngine = Engines.byId(RedisEngine.ID)!!
+
+    private val sqlite: DatabaseEngine = Engines.byId(SqliteEngine.ID)!!
 
     @Test
     fun `every engine has a distinct, non-empty identity`() {
@@ -118,6 +122,11 @@ class EngineDeclarationTest {
         // Redis's are held to it by an allowlist in this process.
         assertEquals(ReadOnlyEnforcement.SESSION_SETTING, postgres.capabilities.readOnlyEnforcement)
         assertEquals(ReadOnlyEnforcement.COMMAND_GUARD_ONLY, redis.capabilities.readOnlyEnforcement)
+        // SQLite's is held by the open mode of the file handle, which is neither of
+        // the above and is enforced as firmly as PostgreSQL's: the refusal comes out
+        // of the library, not out of anything in this process that could be walked
+        // past.
+        assertEquals(ReadOnlyEnforcement.CONNECTION_URI, sqlite.capabilities.readOnlyEnforcement)
     }
 
     @Test
@@ -127,6 +136,31 @@ class EngineDeclarationTest {
         // that cannot do it.
         assertEquals(CancellationSupport.OUT_OF_BAND, postgres.capabilities.cancellation)
         assertEquals(CancellationSupport.CLIENT_ABANDON, redis.capabilities.cancellation)
+        assertEquals(CancellationSupport.INTERRUPT, sqlite.capabilities.cancellation)
+    }
+
+    @Test
+    fun `an exact decimal type is declared honestly, engine by engine`() {
+        // The declaration SQLite forced into existence. `numeric`, `DECIMAL` and
+        // `NUMBER` made an exact decimal look like a property of SQL itself, and
+        // SQLite is the counterexample: its `DECIMAL(30,10)` is a declared type over
+        // an IEEE double. The conformance suite skips its round-trip case for an
+        // engine that says so and fails it for one that says otherwise and rounds,
+        // which only works while these two answers stay different.
+        assertTrue(postgres.capabilities.exactNumerics, "PostgreSQL has numeric")
+        assertTrue(!sqlite.capabilities.exactNumerics, "SQLite has no exact decimal type")
+    }
+
+    @Test
+    fun `SQLite opens a file and refuses a credential`() {
+        // Both halves of the target generalization, from the engine that needed it.
+        // The first is the case `an engine refuses the kind of target it does not
+        // have` covers for every engine; this is the other direction — a descriptor
+        // that carries a secret for an engine whose form declares no secret field is
+        // a stored connection somebody believes is protected and is not.
+        val withSecret = descriptor(sqlite).copy(secretRef = SecretRef("vault-entry"))
+
+        assertTrue(sqlite.validate(withSecret).isNotEmpty(), "SQLite accepted a credential")
     }
 
     @Test

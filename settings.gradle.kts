@@ -22,6 +22,7 @@ include(
     ":engine-sql",
     ":engine-postgres",
     ":engine-redis",
+    ":engine-sqlite",
     ":core",
     ":ui",
     ":app",

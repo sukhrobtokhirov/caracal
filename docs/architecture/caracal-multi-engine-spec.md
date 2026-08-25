@@ -1353,6 +1353,49 @@ Phases 3–4 while being cheap to implement and requiring no download path.
 **Acceptance:** the conformance suite (§10) passes for SQLite. Read-only enforcement
 verified by attempting a write on a `mode=ro` connection and asserting the server refuses.
 
+> **Done 2026-08-25.** `:engine-sqlite` passes the whole of §10 with eleven cases run
+> and four skipped, every skip naming the declaration that excused it. Both acceptance
+> criteria hold: `read-only connection refuses a write at the server` runs for this
+> engine rather than skipping, because `SQLITE_OPEN_READONLY` is applied to the
+> database handle and the refusal comes out of SQLite.
+>
+> **The suite runs with no container**, which is the part worth carrying forward. It
+> needs a temporary file, so it is in every `./gradlew check` rather than behind
+> `CARACAL_INTEGRATION=1` — section 10's list is now held to on every pull request
+> instead of on whichever nights Docker was available. There is no matrix leg for
+> SQLite and there should not be one: the library is compiled into the process, so
+> "which version" is a dependency and not a server.
+>
+> Four things are worth carrying forward.
+>
+> - **Everything Phases 3 and 4 generalized turned out to be real, and the wiring cost
+>   was zero.** A file target, a form with no secret, `SecretBundle.None`, and a
+>   `FormField.Toggle` reaching the engine as an option all worked without an edit to
+>   `:core` or to the connection dialog. `EngineDeclarationTest`'s fold over
+>   `Engines.all` picked the engine up and held it to every shared invariant with no
+>   edit either. Adding the third engine was adding a module.
+> - **One capability was missing, and SQLite is the counterexample that found it.**
+>   `numeric`, `DECIMAL` and `NUMBER` made an exact decimal look like a property of
+>   SQL. It is not: SQLite has five storage classes and `DECIMAL(30,10)` is a declared
+>   type over an IEEE double, so the digits past the fifteenth are gone before anything
+>   can read them back. `EngineCapabilities.exactNumerics` is the declaration, and
+>   `exact numeric types survive round trip` now skips on it — which is the only way to
+>   excuse an engine that has no exact decimal while still failing one that has the
+>   type and rounds it. The conformance suite is the right shape for this: the fix was
+>   a declaration, not an arm.
+> - **The value mapping is the whole of what makes this engine different.** SQLite
+>   types *values*, not columns, so `SqliteValues` chooses its arm from the storage
+>   class and lets the declared type decide only the header and the alignment. A column
+>   declared `INTEGER` holding the string `n/a` renders as text. The mapping every
+>   other engine has — read the column's type, then read the value that way — would
+>   render it as a zero.
+> - **A file is an address.** There is no password to redact and there is still
+>   `Redaction`: a path names the user's disk, their projects and often their
+>   customers, and `DbError`'s ban on a host in a message is the same ban. It does mean
+>   the two redaction cases skip for this engine, on the declaration that its form
+>   asks for no secret — which is visible in the report rather than being two green
+>   ticks for assertions that grepped an empty list.
+
 ### Phase 7 — MySQL engine
 
 First engine using the download path. Exercises: `information_schema` catalog, backtick

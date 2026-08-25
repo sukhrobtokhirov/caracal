@@ -95,6 +95,9 @@ class PostgresEngine : DatabaseEngine {
             // `RAISE NOTICE` is the entire output of some statements, and pgjdbc
             // hands them over as warnings rather than dropping them.
             surfacesNotices = true,
+            // `numeric` is arbitrary precision and arrives as the text the server
+            // sent, so a numeric(38,10) comes back with all thirty-eight digits.
+            exactNumerics = true,
             maxIdentifierLength = 63,
             defaultPort = 5432,
         )
