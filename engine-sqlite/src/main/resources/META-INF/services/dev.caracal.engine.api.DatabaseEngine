@@ -1,0 +1,2 @@
+# This module carries its own ServiceLoader registration.
+dev.caracal.engine.sqlite.SqliteEngine

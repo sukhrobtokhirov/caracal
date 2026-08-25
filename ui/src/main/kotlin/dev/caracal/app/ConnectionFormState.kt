@@ -16,6 +16,20 @@ import dev.caracal.engine.api.DatabaseEngine
 import dev.caracal.engine.api.FormField
 
 /**
+ * Asks the user for a file, for the one declared field kind that names one.
+ *
+ * Injected rather than called, for the reason `FileChooser` is: a native open dialog
+ * is a modal window parented to the application's own, so as a parameter it is an AWT
+ * `FileDialog` in the application and a function returning a fixed path in a test —
+ * which is the difference between the browse button being verified and being verified
+ * by hand.
+ *
+ * Null where there is nowhere to parent a dialog to. The field is still typeable; what
+ * disappears is the button, rather than a button that does nothing when pressed.
+ */
+typealias FilePicker = suspend (field: FormField.FilePath) -> java.nio.file.Path?
+
+/**
  * The connection form's fields, as the user types them.
  *
  * Everything is text here because that is what a text field holds. What is no longer

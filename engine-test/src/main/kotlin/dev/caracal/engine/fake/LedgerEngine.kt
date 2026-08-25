@@ -78,6 +78,7 @@ class LedgerEngine : DatabaseEngine {
         supportsExplain = false,
         supportsSchemaDiff = false,
         surfacesNotices = false,
+        exactNumerics = false,
         maxIdentifierLength = 64,
         // A file has no port, and a UI that assumes one has to cope with that.
         defaultPort = null,

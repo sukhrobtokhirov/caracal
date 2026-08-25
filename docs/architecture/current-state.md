@@ -12,7 +12,7 @@ the latest note in a section is the current state.
 
 ## 1. Module and build layout
 
-The shipped application is split across seven modules. Two additional modules hold
+The shipped application is split across eight modules. Two additional modules hold
 shared engine tests and a fake test engine and are not shipped.
 
 | Module | Contains |
@@ -21,6 +21,7 @@ shared engine tests and a fake test engine and are not shipped.
 | `:engine-sql` | Shared SQL execution, result, history, and export machinery. |
 | `:engine-postgres` | PostgreSQL implementation, pgjdbc, HikariCP, and ServiceLoader entry. |
 | `:engine-redis` | Redis implementation, Lettuce, and ServiceLoader entry. |
+| `:engine-sqlite` | SQLite implementation, sqlite-jdbc, HikariCP, and ServiceLoader entry. |
 | `:core` | Vault, config store, policy, connections, and registry. No Compose or concrete engine dependency. |
 | `:ui` | Compose view models and screens. Depends on the SPI, shared SQL, and core only. |
 | `:app` | Entry point, startup wiring, packaging, and runtime inclusion of bundled engines. |
@@ -262,6 +263,26 @@ The connection descriptor is `ConnectionConfig`, host/port/database/user shaped,
 > Reading a stored engine name can no longer fail. A connection naming an engine this
 > build does not have lists, shows what it points at, and refuses to open with a
 > sentence — where `Engine.from` used to fail the entire store read.
+>
+> **Phase 6 used it, and nothing above the engine had to change.** `:engine-sqlite`
+> stores a `ConnectionTarget.File`, resolves `SecretBundle.None`, and declares a form
+> of one `FormField.FilePath` and one `FormField.Toggle` — through a draft, a store,
+> a dialog and a registry that were not edited for it. The one thing that did change
+> is in `:ui` and is not engine-specific: a declared file field now renders with a
+> Browse button beside it, calling a `FilePicker` injected from `:app`, because a
+> `FormField.FilePath` had been rendering as a plain text box since it was declared.
+>
+> Two facts about SQLite that no other engine had made anyone write down:
+>
+> - **`NamespaceModel.NONE` had never been used by a shipped engine.** A SQLite
+>   connection *is* the database. The catalog still needs a root, so `schemas()`
+>   returns what `PRAGMA database_list` says is attached — `main`, `temp`, and
+>   anything `ATTACH`ed — which is a listing rather than a choice a connection form
+>   has to make.
+> - **`EngineCapabilities` was missing a declaration.** See §Phase 6 of the spec:
+>   `exactNumerics` exists because SQLite has no exact decimal type and the
+>   conformance suite could not otherwise tell that apart from an engine that has one
+>   and rounds it.
 
 ## 6. Dependency surface
 
@@ -272,6 +293,18 @@ The connection descriptor is `ConnectionConfig`, host/port/database/user shaped,
 `core/store/ConfigStore.kt`, the local configuration and history store. Phase 6 gets
 the driver for free, and must not assume the artifact's presence means engine support
 exists.
+
+> **Phase 6 got the driver for free and reused none of the code, as predicted.**
+> `:engine-sqlite` depends on `sqlite-jdbc`, `hikaricp`, `:engine-sql` and `:core` —
+> the last for `Redaction` alone, because a file path is this engine's address and
+> `DbError` forbids an address in a message just as firmly as it forbids a host.
+> Nothing in `ConfigStore` was reusable: it opens one file it owns with a schema it
+> wrote, and has no cursor, no cancellation and no catalog.
+>
+> No test dependency was added. SQLite needs a temporary directory rather than a
+> container, so its conformance run is part of an ordinary `check` rather than being
+> gated behind `CARACAL_INTEGRATION` — which makes it the run that keeps §10's list
+> honest on every pull request.
 
 Testing: JUnit 5.14.2, Testcontainers 1.21.4 (`postgresql` module only — MySQL and
 MariaDB modules must be added for Phase 7). Integration tests are opt-in behind

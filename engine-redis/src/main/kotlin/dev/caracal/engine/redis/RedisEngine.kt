@@ -83,6 +83,9 @@ class RedisEngine : DatabaseEngine {
             supportsSchemaDiff = false,
             // A reply is the whole of what Redis says. There is no second channel.
             surfacesNotices = false,
+            // Redis has strings and the commands that read them as numbers. There is
+            // no decimal type to declare, and no SQL to ask one for.
+            exactNumerics = false,
             maxIdentifierLength = 0,
             defaultPort = 6379,
         )

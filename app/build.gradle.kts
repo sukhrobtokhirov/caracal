@@ -17,6 +17,7 @@ dependencies {
     runtimeOnly(libs.slf4j.simple)
     runtimeOnly(project(":engine-postgres"))
     runtimeOnly(project(":engine-redis"))
+    runtimeOnly(project(":engine-sqlite"))
 
     testImplementation(libs.compose.ui.test)
     testImplementation(libs.junit.jupiter)

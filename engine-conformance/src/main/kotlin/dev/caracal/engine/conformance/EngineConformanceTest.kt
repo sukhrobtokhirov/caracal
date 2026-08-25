@@ -135,6 +135,12 @@ abstract class EngineConformanceTest {
                 "${subject.id} declares surfacesNotices false and its fixture supplied a notice to look for",
             )
         }
+        if (sql != null && !capabilities.exactNumerics) {
+            assertTrue(
+                sql.exactDecimal == null,
+                "${subject.id} declares exactNumerics false and its fixture supplied a decimal to round trip",
+            )
+        }
     }
 
     @Test
@@ -287,14 +293,31 @@ abstract class EngineConformanceTest {
         }
     }
 
+    /**
+     * An exact decimal comes back with every digit, for an engine that has one.
+     *
+     * The skip is the interesting half. `numeric`, `DECIMAL` and `NUMBER` made an
+     * exact decimal look like a property of SQL, and SQLite is where that stops being
+     * true: its `DECIMAL(30,10)` is a declared type over a float, and the digits are
+     * gone before anything can read them back. So the case is gated on
+     * [dev.caracal.engine.api.EngineCapabilities.exactNumerics] and an engine that
+     * concedes the point lands in the skipped column saying so — which is a visible
+     * missing guarantee, and is not the same as an engine that has the type and
+     * rounds it.
+     */
     @Test
     @CapabilityGated
     fun `exact numeric types survive round trip`() = runBlocking<Unit> {
         val sql = requireSql("exact decimals are a SQL type")
+        requireCapability(capabilities.exactNumerics, "exactNumerics is false: this engine has no exact decimal type")
+        val expected = assertNotNull(
+            sql.exactDecimal,
+            "this engine declares exactNumerics, so the fixture owes an expression that produces one",
+        )
 
-        val cell = singleCell(connect(), "SELECT ${sql.exactDecimal.expression}")
+        val cell = singleCell(connect(), "SELECT ${expected.expression}")
         val decimal = assertIs<CellValue.Decimal>(cell, "an exact decimal did not arrive as one: $cell")
-        assertEquals(sql.exactDecimal.text, decimal.value.toPlainString(), "digits or scale were lost")
+        assertEquals(expected.text, decimal.value.toPlainString(), "digits or scale were lost")
     }
 
     @Test

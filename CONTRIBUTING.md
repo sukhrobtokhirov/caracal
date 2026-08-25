@@ -45,15 +45,17 @@ The boundaries between these are enforced by the build rather than by convention
   values, errors. It depends on Kotlin and coroutines and nothing else, and
   `:engine-api:assertSpiHasNoDependencies` fails the build if that changes.
 - **`:engine-sql`** — shared SQL execution, result, history, and export machinery.
-- **`:engine-postgres`** and **`:engine-redis`** — the bundled engine implementations
-  and their driver libraries. Each registers its `DatabaseEngine` with
-  `ServiceLoader` and runs the conformance suite.
+- **`:engine-postgres`**, **`:engine-redis`** and **`:engine-sqlite`** — the bundled
+  engine implementations and their driver libraries. Each registers its
+  `DatabaseEngine` with `ServiceLoader` and runs the conformance suite. SQLite's run
+  needs a temporary file rather than a container, so it is the one that runs on every
+  `check`.
 - **`:core`** — domain types, the vault, the SQLite store, policy, and the connection
   registry. Plain JVM code with no concrete engine or Compose dependencies.
 - **`:ui`** — the Compose view models and screens. It depends on the SPI, shared SQL,
   and core, never a concrete engine implementation.
 - **`:app`** — the thin application entry point, wiring, and native packaging. It
-  bundles both engine implementations at runtime.
+  bundles every engine implementation at runtime.
 - **`:engine-conformance`** — the tests every engine has to pass. Not shipped; it is
   on the test classpath of whoever has an engine to prove.
 - **`:engine-test`** — an engine that dials nothing, on the test classpath, standing
