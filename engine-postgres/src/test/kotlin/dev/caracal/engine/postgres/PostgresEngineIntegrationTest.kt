@@ -28,6 +28,7 @@ import kotlin.time.Duration.Companion.seconds
 import kotlin.time.TimeSource
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.asFlow
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
@@ -250,8 +251,26 @@ class PostgresEngineIntegrationTest {
     private suspend fun run(session: DatabaseSession, sql: String): List<StatementOutcome> =
         run(session, StatementRequest(sql = sql, sourceOffset = 0))
 
-    private suspend fun run(session: DatabaseSession, request: StatementRequest): List<StatementOutcome> =
-        session.requireFacet<QueryFacet>().execute(request).outcomes.toList()
+    /**
+     * Everything one statement produced, with its rows already read off the cursor.
+     *
+     * [StatementOutcome.Rows] carries a flow that is live only while the outcome is
+     * being delivered — the session is holding a cursor, a transaction and a pooled
+     * connection open behind it — so the rows are read inside the emission and handed
+     * on as a flow over a list. The cases above then read the whole result at once,
+     * which is what a test wants, off an engine that never assembled one.
+     */
+    private suspend fun run(session: DatabaseSession, request: StatementRequest): List<StatementOutcome> {
+        val collected = mutableListOf<StatementOutcome>()
+        session.requireFacet<QueryFacet>().execute(request).outcomes.collect { outcome ->
+            collected += if (outcome is StatementOutcome.Rows) {
+                outcome.copy(rows = outcome.rows.toList().asFlow())
+            } else {
+                outcome
+            }
+        }
+        return collected
+    }
 
     /** Waits until the sleeping statement is actually on the server. */
     private suspend fun awaitBackend() = withTimeout(10.seconds) {

@@ -14,8 +14,6 @@ import dev.caracal.engine.api.ObjectKind
 import dev.caracal.engine.api.SchemaInfo
 import dev.caracal.engine.api.ServerVersion
 import dev.caracal.engine.api.SessionState
-import dev.caracal.engine.sql.LegacySqlAdapter
-import dev.caracal.engine.sql.LegacySqlSession
 import kotlin.reflect.KClass
 import kotlin.time.Duration
 import kotlin.time.TimeSource
@@ -42,7 +40,7 @@ import kotlinx.coroutines.flow.asStateFlow
 class PostgresEngineSession internal constructor(
     private val session: PostgresSession,
     override val serverVersion: ServerVersion,
-) : DatabaseSession, LegacySqlSession {
+) : DatabaseSession {
 
     override val engineId: EngineId = PostgresEngine.ID
 
@@ -51,12 +49,6 @@ class PostgresEngineSession internal constructor(
     private val mutableState = MutableStateFlow<SessionState>(SessionState.Ready)
 
     override val state: StateFlow<SessionState> = mutableState.asStateFlow()
-
-    /**
-     * The PostgreSQL client itself, for the two `:core` calls no facet covers yet —
-     * `execute` and `exportCsv`. See `ConnectionRegistry.postgresAdapter`.
-     */
-    override val legacySqlAdapter: LegacySqlAdapter get() = session.adapter
 
     private val facets = listOf<Any>(
         PostgresQueryFacet(session.adapter),
